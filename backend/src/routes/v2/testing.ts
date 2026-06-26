@@ -1,0 +1,64 @@
+import { Router, Response } from 'express';
+import { Testing } from '../../models';
+import { authenticate, requireRole, AuthRequest } from '../../middleware/authMongo';
+
+const router = Router();
+const wrap = (fn: any) => (req: AuthRequest, res: Response, next: any) => fn(req, res, next).catch(next);
+
+// GET all testing records (Admins see all, Clients see theirs)
+router.get('/', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const query: any = { deleted_at: null };
+  if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+    query.client_id = req.user?._id;
+  }
+  const tests = await Testing.find(query).populate('client_id', 'name email companyName').sort('-createdAt');
+  return res.json({ success: true, data: tests });
+}));
+
+// GET single test
+router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const test = await Testing.findOne({ _id: req.params.id, deleted_at: null }).populate('client_id', 'name email companyName');
+  if (!test) return res.status(404).json({ success: false, error: 'Not found' });
+  if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin' && String(test.client_id._id) !== String(req.user?._id)) {
+    return res.status(403).json({ success: false, error: 'Access denied' });
+  }
+  return res.json({ success: true, data: test });
+}));
+
+// POST new test (Admin only)
+router.post('/', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  try {
+    const test = await Testing.create(req.body);
+    return res.status(201).json({ success: true, data: test });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error.message });
+  }
+}));
+
+// PUT update test (Admin only)
+router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  try {
+    const test = await Testing.findOneAndUpdate(
+      { _id: req.params.id, deleted_at: null },
+      req.body,
+      { new: true }
+    );
+    if (!test) return res.status(404).json({ success: false, error: 'Not found' });
+    return res.json({ success: true, data: test });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error.message });
+  }
+}));
+
+// DELETE soft delete (Admin only)
+router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  const test = await Testing.findOneAndUpdate(
+    { _id: req.params.id },
+    { deleted_at: new Date() },
+    { new: true }
+  );
+  if (!test) return res.status(404).json({ success: false, error: 'Not found' });
+  return res.json({ success: true, data: test });
+}));
+
+export default router;

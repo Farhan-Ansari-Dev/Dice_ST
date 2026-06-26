@@ -1,0 +1,50 @@
+/**
+ * API Router — mounts all MongoDB-backed routes.
+ * 
+ * Routes are organized into:
+ *   - Core v2 routes (fully migrated to MongoDB with Mongoose models)
+ *   - Stub routes (return realistic mock data during migration)
+ */
+import { Router, Response } from 'express';
+
+// Core v2 routes (fully MongoDB-backed)
+import authRoutes from './v2/auth';
+import applicationsRoutes from './v2/applications';
+import documentsRoutes from './v2/documents';
+import notificationsRoutes from './v2/notifications';
+import workflowsRoutes from './v2/workflows';
+import marketAccessRoutes from '../routes/marketAccessRoutes';
+
+// Stubs removed
+
+import { authenticate, AuthRequest } from '../middleware/authMongo';
+import { User } from '../models';
+
+import realAiRouter from './ai';
+import realInsightsRouter from './insights';
+
+const router = Router();
+
+// ── Core v2 routes (full Mongoose models) ─────────────────────────────────
+router.use('/auth', authRoutes);
+router.use('/applications', applicationsRoutes);
+router.use('/documents', documentsRoutes);
+router.use('/notifications', notificationsRoutes);
+router.use('/workflows', workflowsRoutes);
+router.use('/market-access', marketAccessRoutes);
+
+// ── Migrated to Mongoose ──────────────────────────────────────────────────
+router.use('/ai', realAiRouter);
+router.use('/insights', realInsightsRouter);
+
+import realPaymentsRouter from './v2/payments';
+import certificationsRouter from './v2/certifications';
+import analyticsRouter from './v2/analytics';
+import usersRouter from './v2/users';
+
+router.use('/payments', realPaymentsRouter);
+router.use('/certifications', certificationsRouter);
+router.use('/analytics', analyticsRouter);
+router.use('/users', usersRouter);
+
+export default router;

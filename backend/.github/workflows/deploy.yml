@@ -1,0 +1,262 @@
+name: Build & Deploy DICE API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [main]
+    paths: ['backend/**']
+  workflow_dispatch:    # allow manual trigger from GitHub UI
+    inputs:
+      environment:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: dice-api
+  NODE_VERSION: '20'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # 1. TEST — runs on every PR and push
+  # ─────────────────────────────────────────────────────────────────
+  test:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mongo:
+        image: mongo:7
+        ports: ['27017:27017']
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint --if-present
+        continue-on-error: true   # don't block deploys on style nits
+
+      - name: Run tests
+        run: npm test --if-present
+        env:
+          NODE_ENV: test
+          DATABASE_URL: mongodb://localhost:27017/dice_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-for-ci-only
+          JWT_REFRESH_SECRET: test-refresh-secret-for-ci-only
+
+  # ─────────────────────────────────────────────────────────────────
+  # 2. BUILD — build Docker image and push to ECR (main branch only)
+  # ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build & push Docker image
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      image_uri: ${{ steps.meta.outputs.uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          SHA_SHORT=$(echo $GITHUB_SHA | cut -c1-7)
+          TAG="${SHA_SHORT}-$(date +%Y%m%d%H%M)"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "uri=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:$TAG" >> $GITHUB_OUTPUT
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push (multi-arch)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          platforms: linux/amd64           # use linux/arm64 if you're on Graviton EC2 (cheaper)
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.uri }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─────────────────────────────────────────────────────────────────
+  # 3. DEPLOY — rolling update on ECS or EC2 ASG
+  # ─────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging-api.sanyogconformity.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Option A: ECS Fargate (recommended)
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster dice-cluster \
+            --service dice-api-staging \
+            --force-new-deployment \
+            --task-definition $(aws ecs describe-task-definition \
+              --task-definition dice-api-staging \
+              --query 'taskDefinition.taskDefinitionArn' --output text)
+
+      # Option B: EC2 ASG (if you're on EC2 instead of ECS)
+      # - name: Deploy to EC2 ASG
+      #   run: |
+      #     # Create new launch template version pointing at the new image
+      #     aws ec2 create-launch-template-version \
+      #       --launch-template-name dice-api-lt \
+      #       --version-description "${{ needs.build.outputs.image_tag }}" \
+      #       --source-version '$Latest' \
+      #       --launch-template-data '{"UserData":"'$(echo "#!/bin/bash
+      #         docker pull ${{ needs.build.outputs.image_uri }}
+      #         docker stop dice-api || true
+      #         docker run -d --name dice-api -p 80:5000 --env-file /etc/dice/.env --restart=always ${{ needs.build.outputs.image_uri }}" | base64 -w0)'"}'
+      #     # Trigger instance refresh
+      #     aws autoscaling start-instance-refresh \
+      #       --auto-scaling-group-name dice-api-staging-asg \
+      #       --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 60}'
+
+      - name: Smoke test
+        run: |
+          for i in {1..20}; do
+            if curl -fsS https://staging-api.sanyogconformity.com/health; then
+              echo "✅ Staging healthy"
+              exit 0
+            fi
+            echo "Waiting for staging... ($i/20)"
+            sleep 15
+          done
+          echo "❌ Staging did not come up within 5 minutes"
+          exit 1
+
+      - name: Run smoke tests
+        run: |
+          # Hit a representative endpoint to verify DB connectivity
+          curl -fsS -X POST https://staging-api.sanyogconformity.com/api/v1/auth/send-otp \
+            -H "Content-Type: application/json" \
+            -d '{"email":"smoketest@dice.internal"}'
+
+      - name: Slack notify
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚀 Staging deploy: ${{ job.status }}\n${{ github.event.head_commit.message }}\n${{ needs.build.outputs.image_tag }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 4. PROD — manual approval gate
+  # ─────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to PRODUCTION
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production'
+    environment:
+      name: production           # configure required reviewers in GitHub settings
+      url: https://api.sanyogconformity.com
+
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Snapshot Atlas before deploy
+        run: |
+          # Trigger an Atlas snapshot tagged with this deploy
+          curl -s -u "${{ secrets.ATLAS_PUBLIC_KEY }}:${{ secrets.ATLAS_PRIVATE_KEY }}" \
+            --digest \
+            -X POST \
+            "https://cloud.mongodb.com/api/atlas/v2/groups/${{ secrets.ATLAS_PROJECT_ID }}/clusters/sanyog-prod/backup/snapshots" \
+            -H "Accept: application/vnd.atlas.2024-08-05+json" \
+            -H "Content-Type: application/json" \
+            -d '{"description":"Pre-deploy ${{ needs.build.outputs.image_tag }}","retentionInDays":7}'
+
+      - name: Blue-green deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster dice-cluster \
+            --service dice-api-prod \
+            --force-new-deployment \
+            --deployment-configuration '{"maximumPercent":200,"minimumHealthyPercent":100}'
+
+          # Wait for deployment to stabilize
+          aws ecs wait services-stable \
+            --cluster dice-cluster \
+            --services dice-api-prod
+
+      - name: Verify production
+        run: |
+          for i in {1..10}; do
+            response=$(curl -fsS https://api.sanyogconformity.com/health)
+            echo "$response" | grep -q '"status":"ok"' && exit 0
+            sleep 10
+          done
+          exit 1
+
+      - name: Slack notify
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ job.status == 'success' && '✅' || '❌' }} *PRODUCTION* deploy: ${{ job.status }}\nVersion: `${{ needs.build.outputs.image_tag }}`\nCommit: ${{ github.event.head_commit.message }}\nBy: ${{ github.actor }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
+
+  # ─────────────────────────────────────────────────────────────────
+  # 5. ROLLBACK — manually triggered
+  # ─────────────────────────────────────────────────────────────────
+  # Use the workflow "Rollback" (see rollback.yml) to revert to a prior tag.

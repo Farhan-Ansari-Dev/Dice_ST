@@ -1,0 +1,5 @@
+domain         = "api.sanyogconformity.com"
+my_ip          = "103.165.30.80"
+ops_email      = "sanyogconformity1@gmail.com"
+s3_bucket_name = "sanyog-conformity-docs-066756667240"
+ssh_key_pub    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFReei+kX8tH4J8UdunCYWTwoJDBGK1BkWwTjF/BmYga dice-operator"

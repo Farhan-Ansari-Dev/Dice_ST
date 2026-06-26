@@ -1,0 +1,75 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_image_tag:
+        description: 'ECR image tag to roll back to (e.g. a3b7d12-20260608)'
+        required: true
+        type: string
+      reason:
+        description: 'Why are we rolling back?'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: dice-api
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production       # requires approval
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify image tag exists in ECR
+        run: |
+          aws ecr describe-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageTag=${{ inputs.target_image_tag }} \
+            > /dev/null
+          echo "✅ Image tag exists: ${{ inputs.target_image_tag }}"
+
+      - name: Update ECS task definition to old image
+        id: update-td
+        run: |
+          # Get current task def
+          TD=$(aws ecs describe-task-definition --task-definition dice-api-prod --query 'taskDefinition' --output json)
+          # Rewrite image URI
+          NEW_IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ inputs.target_image_tag }}"
+          NEW_TD=$(echo "$TD" | jq --arg img "$NEW_IMAGE" '.containerDefinitions[0].image = $img | {family, containerDefinitions, volumes, networkMode, taskRoleArn, executionRoleArn, requiresCompatibilities, cpu, memory}')
+          # Register new task definition
+          NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_TD" --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "td_arn=$NEW_TD_ARN" >> $GITHUB_OUTPUT
+
+      - name: Update service to old task definition
+        run: |
+          aws ecs update-service \
+            --cluster dice-cluster \
+            --service dice-api-prod \
+            --task-definition ${{ steps.update-td.outputs.td_arn }} \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster dice-cluster --services dice-api-prod
+
+      - name: Verify health
+        run: |
+          for i in {1..10}; do
+            curl -fsS https://api.sanyogconformity.com/health && exit 0
+            sleep 10
+          done
+          exit 1
+
+      - name: Notify Slack
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "⏪ *ROLLBACK COMPLETE*\nTag: `${{ inputs.target_image_tag }}`\nReason: ${{ inputs.reason }}\nBy: ${{ github.actor }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}

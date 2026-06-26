@@ -1,0 +1,171 @@
+name: Deploy to EC2 (bootstrap)
+
+# Simplified pipeline for single-EC2 bootstrap stage.
+# Replace with deploy.yml (ECS) once you upgrade to load-balanced infra.
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**', '.github/workflows/deploy-ec2.yml']
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── 1. TEST ─────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    services:
+      mongo:
+        image: mongo:7
+        ports: ['27017:27017']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint --if-present
+        continue-on-error: true
+      - run: npm test --if-present
+        env:
+          DATABASE_URL: mongodb://localhost:27017/dice_test
+          JWT_SECRET: test-secret
+          JWT_REFRESH_SECRET: test-refresh-secret
+
+  # ─── 2. BUILD & DEPLOY ───────────────────────────────────────
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://api.sanyogconformity.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install & build
+        working-directory: backend
+        run: |
+          npm ci --include=dev
+          npm run build
+          # Trim dev deps for smaller deploy
+          npm prune --omit=dev
+
+      - name: Create deploy tarball
+        working-directory: backend
+        run: |
+          # Ship only what's needed at runtime
+          tar -czf /tmp/deploy.tar.gz \
+              dist/ \
+              package.json package-lock.json \
+              node_modules/ \
+              src/db/ \
+              infra/bootstrap/ecosystem.config.js
+          ls -lh /tmp/deploy.tar.gz
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts
+
+      - name: Copy artifact to EC2
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key /tmp/deploy.tar.gz dice@$SSH_HOST:/tmp/
+
+      - name: Deploy (atomic switch + zero-downtime reload)
+        env:
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key dice@$SSH_HOST << ENDSSH
+            set -e
+            cd /opt/dice/backend
+
+            # 1. Stage new release in a versioned directory
+            RELEASE_DIR="/opt/dice/releases/$(date +%Y%m%d-%H%M%S)-${DEPLOY_SHA:0:7}"
+            mkdir -p "\$RELEASE_DIR"
+            tar -xzf /tmp/deploy.tar.gz -C "\$RELEASE_DIR"
+            rm /tmp/deploy.tar.gz
+
+            # 2. Atomically switch the "current" symlink
+            ln -sfn "\$RELEASE_DIR" /opt/dice/current-new
+            mv -T /opt/dice/current-new /opt/dice/current
+
+            # 3. Zero-downtime reload via PM2 cluster mode
+            pm2 reload /opt/dice/current/infra/bootstrap/ecosystem.config.js --update-env
+
+            # 4. Wait for app to come up
+            sleep 5
+            curl -fsS http://localhost:5000/health || (echo "❌ Health check failed"; exit 1)
+
+            # 5. Keep last 5 releases, prune older
+            ls -1dt /opt/dice/releases/*/ | tail -n +6 | xargs -r rm -rf
+
+            echo "✅ Deployed \${DEPLOY_SHA:0:7}"
+          ENDSSH
+
+      - name: Smoke test public endpoint
+        run: |
+          for i in {1..10}; do
+            if curl -fsS https://api.sanyogconformity.com/health; then
+              echo "✅ Production healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ Production health check failed after 100s"
+          exit 1
+
+      - name: Notify on failure
+        if: failure() && secrets.SLACK_WEBHOOK_URL
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"❌ Deploy FAILED on commit \`${{ github.sha }}\`\nMessage: ${{ github.event.head_commit.message }}\nActor: ${{ github.actor }}\"}"
+
+  # ─── 3. ROLLBACK (manual trigger) ────────────────────────────
+  rollback:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and rollback
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy_key dice@$SSH_HOST << 'ENDSSH'
+            set -e
+            PREVIOUS=$(ls -1dt /opt/dice/releases/*/ | sed -n '2p')
+            if [ -z "$PREVIOUS" ]; then
+              echo "❌ No previous release found"
+              exit 1
+            fi
+            ln -sfn "$PREVIOUS" /opt/dice/current-new
+            mv -T /opt/dice/current-new /opt/dice/current
+            pm2 reload /opt/dice/current/infra/bootstrap/ecosystem.config.js
+            echo "✅ Rolled back to: $PREVIOUS"
+          ENDSSH
