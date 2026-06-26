@@ -32,3 +32,11 @@ tfplan
 *.tfstate.backup
 tfplan
 *.tfplan
+
+# Terraform – ignore local state & provider binaries
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+tfplan
+*.tfplan
