@@ -44,6 +44,39 @@ resource "aws_security_group" "monitoring_sg" {
   }
 }
 
+resource "aws_security_group" "monitoring_sg" {
+  name        = "monitoring-sg"
+  description = "SG for monitoring EC2 (Prometheus/Grafana/Nginx)"
+  vpc_id      = data.aws_vpc.default.id
+
+  # Existing HTTP rule (port 80) – leave unchanged
+  ingress {
+    description = "HTTP (Nginx reverse proxy)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # **NEW** HTTPS rule (port 443)
+  ingress {
+    description = "HTTPS (TLS termination by Nginx)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+
 resource "aws_iam_role" "monitoring_role" {
   name = "monitoring-role"
   assume_role_policy = jsonencode({
