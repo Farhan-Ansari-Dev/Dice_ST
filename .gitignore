@@ -7,3 +7,20 @@ tfplan
 # IDE / OS files
 .DS_Store
 *.log
+
+# ── Terraform ─────────────────────────────────────
+# Do not commit the local .terraform directory (provider binaries, state files, etc.)
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+tfplan
+*.tfplan
+# ── Terraform ─────────────────────────────────────
+# Do not commit the local .terraform directory (provider binaries, state files, etc.)
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+tfplan
+*.tfplan
