@@ -9,6 +9,7 @@ export interface IRemoteConfig {
     enable_referral_rewards: boolean;
     enable_promotional_banners: boolean;
     enable_notifications: boolean;
+    consultant_verification_enabled: boolean;
   };
   dynamicConfig: {
     banner_text: string;
@@ -16,6 +17,11 @@ export interface IRemoteConfig {
     referral_reward_value: number;
     announcement_title: string;
     announcement_body: string;
+  };
+  aiSettings: {
+    provider: string;
+    model: string;
+    apiKey: string;
   };
 }
 
@@ -28,6 +34,7 @@ const remoteConfigSchema = new mongoose.Schema<IRemoteConfig>({
     enable_referral_rewards: { type: Boolean, default: true },
     enable_promotional_banners: { type: Boolean, default: false },
     enable_notifications: { type: Boolean, default: true },
+    consultant_verification_enabled: { type: Boolean, default: false },
   },
   dynamicConfig: {
     banner_text: { type: String, default: 'Welcome to DICE by Sanyog' },
@@ -35,6 +42,11 @@ const remoteConfigSchema = new mongoose.Schema<IRemoteConfig>({
     referral_reward_value: { type: Number, default: 200 },
     announcement_title: { type: String, default: '' },
     announcement_body: { type: String, default: '' },
+  },
+  aiSettings: {
+    provider: { type: String, default: 'nvidia' },
+    model: { type: String, default: 'meta/llama-3.3-70b-instruct' },
+    apiKey: { type: String, default: '' },
   }
 }, { timestamps: true });
 

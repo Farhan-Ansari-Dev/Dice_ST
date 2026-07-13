@@ -20,6 +20,7 @@ const configUpdateSchema = z.object({
     enable_referral_rewards: z.boolean().optional(),
     enable_promotional_banners: z.boolean().optional(),
     enable_notifications: z.boolean().optional(),
+    consultant_verification_enabled: z.boolean().optional(),
   }).optional(),
   dynamicConfig: z.object({
     banner_text: z.string().optional(),
@@ -27,6 +28,11 @@ const configUpdateSchema = z.object({
     referral_reward_value: z.number().optional(),
     announcement_title: z.string().optional(),
     announcement_body: z.string().optional(),
+  }).optional(),
+  aiSettings: z.object({
+    provider: z.string().optional(),
+    model: z.string().optional(),
+    apiKey: z.string().optional(),
   }).optional(),
 })
 
@@ -42,10 +48,16 @@ router.get('/', wrap(async (req: Request, res: Response) => {
   // 2. Fetch from DB
   const config = await RemoteConfig.getGlobalConfig()
   
-  // 3. Update Cache
-  await redis.setex(CACHE_KEY, 3600, JSON.stringify(config)) // 1 hour TTL
+  // Clone config and strip apiKey for security before sending to public clients
+  const safeConfig = config.toObject()
+  if (safeConfig.aiSettings?.apiKey) {
+    safeConfig.aiSettings.apiKey = '' // Never expose the API key
+  }
+  
+  // 3. Update Cache (we cache the safe version for public clients)
+  await redis.setex(CACHE_KEY, 3600, JSON.stringify(safeConfig)) // 1 hour TTL
 
-  sendSuccess(res, config, 'Config fetched from database')
+  sendSuccess(res, safeConfig, 'Config fetched from database')
 }))
 
 // Admin endpoint to get config details
@@ -66,11 +78,14 @@ router.put('/admin', authenticate, requireRole('admin'), wrap(async (req: AuthRe
   if (updates.dynamicConfig) {
     config.dynamicConfig = { ...config.dynamicConfig, ...updates.dynamicConfig }
   }
+  if (updates.aiSettings) {
+    config.aiSettings = { ...config.aiSettings, ...updates.aiSettings }
+  }
   
   await config.save()
   
-  // Immediately bust and update the cache for instant rollout
-  await redis.setex(CACHE_KEY, 3600, JSON.stringify(config))
+  // Immediately bust the public cache (we want public clients to fetch and cache the stripped version)
+  await redis.del(CACHE_KEY)
   
   logger.info(`Remote Config updated by admin ${req.user!._id}`)
   sendSuccess(res, config, 'Configuration updated successfully')

@@ -14,6 +14,18 @@ import documentsRoutes from './v2/documents';
 import notificationsRoutes from './v2/notifications';
 import workflowsRoutes from './v2/workflows';
 import marketAccessRoutes from '../routes/marketAccessRoutes';
+import testingRoutes from './v2/testing';
+import inspectionsRoutes from './v2/inspections';
+import shipmentsRoutes from './v2/shipments';
+import paymentsRoutes from './v2/payments';
+import certificationsRoutes from './v2/certifications';
+import analyticsRoutes from './v2/analytics';
+import usersRoutes from './v2/users';
+import meetingsRoutes from './v2/meetings';
+import meetingSlotsRoutes from './v2/meetingSlots';
+import supportTicketsRoutes from './v2/supportTickets';
+import businessIntelligenceRoutes from './v2/businessIntelligence';
+import configRoutes from './v2/config';
 
 // Stubs removed
 
@@ -32,19 +44,21 @@ router.use('/documents', documentsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/workflows', workflowsRoutes);
 router.use('/market-access', marketAccessRoutes);
+router.use('/testing', testingRoutes);
+router.use('/inspections', inspectionsRoutes);
+router.use('/shipments', shipmentsRoutes);
+router.use('/payments', paymentsRoutes);
+router.use('/certifications', certificationsRoutes);
+router.use('/analytics', analyticsRoutes);
+router.use('/users', usersRoutes);
+router.use('/meetings', meetingsRoutes);
+router.use('/meeting-slots', meetingSlotsRoutes);
+router.use('/support-tickets', supportTicketsRoutes);
+router.use('/bi', businessIntelligenceRoutes);
+router.use('/remote-config', configRoutes);
 
 // ── Migrated to Mongoose ──────────────────────────────────────────────────
 router.use('/ai', realAiRouter);
 router.use('/insights', realInsightsRouter);
-
-import realPaymentsRouter from './v2/payments';
-import certificationsRouter from './v2/certifications';
-import analyticsRouter from './v2/analytics';
-import usersRouter from './v2/users';
-
-router.use('/payments', realPaymentsRouter);
-router.use('/certifications', certificationsRouter);
-router.use('/analytics', analyticsRouter);
-router.use('/users', usersRouter);
 
 export default router;

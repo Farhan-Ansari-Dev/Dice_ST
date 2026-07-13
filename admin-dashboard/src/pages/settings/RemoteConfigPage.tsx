@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Settings, Save, AlertCircle } from 'lucide-react';
-import axios from 'axios';
-
-const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:5000/api/v1';
+import apiClient from '../../services/apiClient';
 
 interface RemoteConfigData {
   featureFlags: {
@@ -20,6 +18,11 @@ interface RemoteConfigData {
     announcement_title: string;
     announcement_body: string;
   };
+  aiSettings: {
+    provider: string;
+    model: string;
+    apiKey: string;
+  };
 }
 
 export default function RemoteConfigPage() {
@@ -34,7 +37,10 @@ export default function RemoteConfigPage() {
 
   const fetchConfig = async () => {
     try {
-      const response = await axios.get(`${API_URL}/remote-config/admin`, { headers: { Authorization: `Bearer demo-token` } });
+      // remote-config is exposed under v2
+      const response = await apiClient.get('/remote-config/admin', { 
+        baseURL: apiClient.defaults.baseURL?.replace('/v1', '/v2') 
+      });
       setConfig(response.data.data);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to fetch config');
@@ -48,7 +54,9 @@ export default function RemoteConfigPage() {
     setSaving(true);
     setError(null);
     try {
-      await axios.put(`${API_URL}/remote-config/admin`, config, { headers: { Authorization: `Bearer demo-token` } });
+      await apiClient.put('/remote-config/admin', config, { 
+        baseURL: apiClient.defaults.baseURL?.replace('/v1', '/v2') 
+      });
       alert('Configuration saved successfully and broadcasted instantly.');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to save config');
@@ -200,6 +208,66 @@ export default function RemoteConfigPage() {
               />
             </div>
           </div>
+        </div>
+
+        {/* AI Configuration */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 lg:col-span-2">
+          <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+            <Settings className="w-5 h-5 text-green-500" />
+            <span>AI Configuration</span>
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+              <select
+                value={config.aiSettings?.provider || 'nvidia'}
+                onChange={(e) => setConfig({
+                  ...config,
+                  aiSettings: { ...config.aiSettings, provider: e.target.value }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="nvidia">Nvidia NIM (Llama)</option>
+                <option value="openai">OpenAI (ChatGPT)</option>
+                <option value="copilot">GitHub Copilot</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="kimo">Kimo</option>
+                <option value="kiro">Kiro</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
+              <input
+                type="text"
+                placeholder="e.g. meta/llama-3.3-70b-instruct or gpt-4o"
+                value={config.aiSettings?.model || ''}
+                onChange={(e) => setConfig({
+                  ...config,
+                  aiSettings: { ...config.aiSettings, model: e.target.value }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+              <input
+                type="password"
+                placeholder="Leave blank to use environment default"
+                value={config.aiSettings?.apiKey || ''}
+                onChange={(e) => setConfig({
+                  ...config,
+                  aiSettings: { ...config.aiSettings, apiKey: e.target.value }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-4">
+            * Security Note: This API Key is NEVER sent to client devices. It remains strictly on the backend.
+          </p>
         </div>
       </div>
     </div>
