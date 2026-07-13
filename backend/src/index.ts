@@ -8,9 +8,9 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import compression from 'compression';
-import { cspMiddleware } from './middleware/security';
+import { cspMiddleware, securityHeaders } from './middleware/security';
+import { generalLimiter } from './middleware/rateLimiters';
 import morgan from 'morgan';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
@@ -30,11 +30,14 @@ async function main() {
 
   // 2. Middleware
   app.use(cspMiddleware);
+  app.use(securityHeaders);
 
   app.use(cors({
     origin: [
       process.env.FRONTEND_URL ?? 'http://localhost:8081',
       process.env.ADMIN_URL ?? 'http://localhost:5173',
+      'https://admin.sanyogconformity.com',
+      'http://sanyog-admin-prod-panel-9x2b.s3-website.ap-south-1.amazonaws.com',
       'http://localhost:19006',  // Expo web
       'http://localhost:19000',  // Expo dev
     ],
@@ -52,6 +55,8 @@ async function main() {
       origin: [
         process.env.FRONTEND_URL ?? 'http://localhost:8081',
         process.env.ADMIN_URL ?? 'http://localhost:5173',
+        'https://admin.sanyogconformity.com',
+        'http://sanyog-admin-prod-panel-9x2b.s3-website.ap-south-1.amazonaws.com',
       ],
       credentials: true,
     },
@@ -78,7 +83,8 @@ async function main() {
   });
 
   // 6. API routes
-  app.use('/api/v1', routes);
+  app.use('/api/v1', generalLimiter, routes);
+  app.use('/api/v2', generalLimiter, routes);
 
   // 7. Error handler (must be last)
   app.use(errorHandler);

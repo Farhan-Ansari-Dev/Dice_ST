@@ -32,6 +32,7 @@ import configRoutes from './v2/config';
 import { authenticate, AuthRequest } from '../middleware/authMongo';
 import { User } from '../models';
 
+import { aiLimiter, uploadLimiter } from '../middleware/rateLimiters';
 import realAiRouter from './ai';
 import realInsightsRouter from './insights';
 
@@ -40,7 +41,7 @@ const router = Router();
 // ── Core v2 routes (full Mongoose models) ─────────────────────────────────
 router.use('/auth', authRoutes);
 router.use('/applications', applicationsRoutes);
-router.use('/documents', documentsRoutes);
+router.use('/documents', uploadLimiter, documentsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/workflows', workflowsRoutes);
 router.use('/market-access', marketAccessRoutes);
@@ -58,7 +59,7 @@ router.use('/bi', businessIntelligenceRoutes);
 router.use('/remote-config', configRoutes);
 
 // ── Migrated to Mongoose ──────────────────────────────────────────────────
-router.use('/ai', realAiRouter);
+router.use('/ai', aiLimiter, realAiRouter);
 router.use('/insights', realInsightsRouter);
 
 export default router;

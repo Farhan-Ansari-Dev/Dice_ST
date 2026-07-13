@@ -2,8 +2,9 @@
  * Auth routes — OTP via email/SMS + JWT refresh rotation.
  *
  * Flow:
- *   POST /auth/send-otp   { email | phone }   → server stores hashed OTP, sends via SES/MSG91
- *   POST /auth/verify-otp { email|phone, otp } → verifies → issues access + refresh tokens
+ *   POST /auth/send-otp   { email }           → server stores hashed OTP, sends via SES email
+ *   POST /auth/verify-otp { email, otp }       → verifies → issues access + refresh tokens
+ *   POST /auth/google      { idToken }         → Google OAuth → issues access + refresh tokens
  *   POST /auth/refresh    { refreshToken }    → new access token
  *   POST /auth/logout     { refreshToken }    → blacklist token, remove push subs
  */
@@ -11,29 +12,24 @@ import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
+import { OAuth2Client } from 'google-auth-library';
+import { validate } from '../../middleware/validate';
 import { User, audit } from '../../models';
+import { Application } from '../../models/Application';
+import { Certification } from '../../models/Certification';
+import { Insight } from '../../models/Insight';
 import { issueTokens } from '../../middleware/authMongo';
 import { sendEmail } from '../../services/notifications/email';
-import { sendSMS } from '../../services/notifications/sms';
 import { logger } from '../../utils/logger';
 
-const router = Router();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const googleClientAudiences = (process.env.GOOGLE_CLIENT_IDS ?? process.env.GOOGLE_CLIENT_ID ?? '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter(Boolean);
 
-router.get('/create-admin-override', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    let user = await User.findOne({ email: 'info@sanyogconformity.com' });
-    if (!user) {
-      user = await User.create({
-        email: 'info@sanyogconformity.com',
-        name: 'Super Admin',
-        role: 'super_admin'
-      });
-    }
-    res.json({ message: 'Admin created', user });
-  } catch (err) {
-    next(err);
-  }
-});
+const router = Router();
 
 // ─── Rate limiters (in-memory — fine for single EC2) ────────────
 const otpLimiter = rateLimit({
@@ -50,6 +46,14 @@ const verifyLimiter = rateLimit({
   message: { error: 'too_many_verify_attempts' },
 });
 
+// ─── Request validation schemas (passthrough preserves existing fields) ──────
+const sendOtpSchema = { body: z.object({ email: z.string().email() }).passthrough() };
+const verifyOtpSchema = {
+  body: z.object({ email: z.string().email(), otp: z.union([z.string(), z.number()]) }).passthrough(),
+};
+const googleSchema = { body: z.object({ idToken: z.string().min(1) }).passthrough() };
+const refreshSchema = { body: z.object({ refreshToken: z.string().min(1) }).passthrough() };
+
 // ─── Helpers ────────────────────────────────────────────────────
 function generateOTP(): string {
   // 6-digit numeric. Crypto-random — avoid Math.random.
@@ -60,18 +64,52 @@ function hashOTP(otp: string): string {
   return crypto.createHash('sha256').update(otp + process.env.JWT_SECRET).digest('hex');
 }
 
+async function buildUserResponse(user: any) {
+  const query: any = { org_id: user.org_id };
+  if (!user.org_id) {
+    query.created_by = user._id;
+  }
+
+  const [applicationsCount, certificationsCount, insightsRead] = await Promise.all([
+    Application.countDocuments({ ...query, deleted_at: { $exists: false } }),
+    Certification.countDocuments({ ...query, deleted_at: { $exists: false } }),
+    Insight.countDocuments({ ...query, deleted_at: { $exists: false } }),
+  ]);
+
+  return {
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    org_id: user.org_id,
+    phone: user.phone,
+    companyName: user.companyName,
+    gstNumber: user.gstNumber,
+    avatar_url: user.avatar_url,
+    businessRole: user.businessRole,
+    industries: user.industries ?? [],
+    targetMarkets: user.targetMarkets ?? [],
+    interestedCertifications: user.interestedCertifications ?? [],
+    companySize: user.companySize,
+    businessGoals: user.businessGoals ?? [],
+    applicationsCount,
+    certificationsCount,
+    insightsRead,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/send-otp
 // ═══════════════════════════════════════════════════════════════
-router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
+router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Request, res: Response) => {
   const { email, phone, name } = req.body;
 
-  if (!email && !phone) {
-    return res.status(400).json({ error: 'missing_credentials', message: 'email or phone required' });
+  if (!email) {
+    return res.status(400).json({ error: 'missing_credentials', message: 'email is required' });
   }
 
   // Find or create user (sign-up + login share this endpoint)
-  const query = email ? { email: email.toLowerCase() } : { phone };
+  const query = { email: email.toLowerCase() };
   let user = await User.findOne(query).select('+otp_hash +otp_expires_at +otp_attempts');
 
   if (!user) {
@@ -96,28 +134,26 @@ router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
   }
 
   // Generate OTP
-  const otp = process.env.NODE_ENV === 'development' ? '123456' : generateOTP();
+  const otp = generateOTP();
   user.otp_hash = hashOTP(otp);
   user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);   // 10 min
   user.otp_attempts = 0;
   await user.save();
 
-  // Send via email OR SMS
-  let delivered = false;
-  if (email) {
-    delivered = await sendEmail({
-      to: email,
-      subject: `Your DICE OTP: ${otp}`,
-      body: `Your one-time password is ${otp}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
-      template: 'otp',
-      data: { otp, ttl_minutes: 10 },
-    });
-  } else if (phone) {
-    delivered = await sendSMS({
-      to: phone,
-      text: `Your DICE OTP is ${otp}. Valid for 10 minutes. -SCSOLN`,
-      country_code: user.country_code,
-      variables: { var1: otp },
+  // Send OTP via email
+  const delivered = await sendEmail({
+    to: email,
+    subject: `Your DICE OTP: ${otp}`,
+    body: `Your one-time password is ${otp}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
+    template: 'otp',
+    data: { otp, ttl_minutes: 10 },
+  });
+
+  if (!delivered) {
+    logger.error(`[auth/send-otp] delivery failed for ${email}`);
+    return res.status(502).json({
+      error: 'otp_delivery_failed',
+      message: 'Unable to deliver OTP email right now. Please try again shortly.',
     });
   }
 
@@ -128,15 +164,15 @@ router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
   await audit({
     resource_type: 'user',
     resource_id: user._id as any,
-    action: 'logged_in',                     // OTP request → auth attempt
+    action: 'logged_in',
     actor: user._id as any,
-    notes: email ? `OTP→email:${email}` : `OTP→sms:${phone}`,
+    notes: `OTP→email:${email}`,
     ip: req.ip,
   });
 
   return res.json({
     success: true,
-    delivered_via: email ? 'email' : 'sms',
+    delivered_via: 'email',
     delivery_confirmed: delivered,
   });
 });
@@ -144,13 +180,56 @@ router.post('/send-otp', otpLimiter, async (req: Request, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/verify-otp
 // ═══════════════════════════════════════════════════════════════
-router.post('/verify-otp', verifyLimiter, async (req: Request, res: Response) => {
-  const { email, phone, otp } = req.body;
-  if (!otp || (!email && !phone)) {
+// ═══════════════════════════════════════════════════════════════
+// POST /auth/google — Google OAuth (mobile + web)
+// ═══════════════════════════════════════════════════════════════
+router.post('/google', validate(googleSchema), async (req: Request, res: Response) => {
+  const { idToken } = req.body;
+  if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: googleClientAudiences,
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.email) return res.status(401).json({ error: 'invalid_google_token' });
+
+    let user = await User.findOne({ email: payload.email.toLowerCase() });
+    if (!user) {
+      user = await User.create({
+        email: payload.email.toLowerCase(),
+        name: payload.name ?? payload.email.split('@')[0],
+        avatar_url: payload.picture,
+        email_verified_at: new Date(),
+        role: 'client',
+        otp_attempts: 0,
+      });
+    } else if (!user.email_verified_at) {
+      user.email_verified_at = new Date();
+      await user.save();
+    }
+
+    const { accessToken, refreshToken } = issueTokens(user);
+    await audit({ actor: user._id as any, resource_type: 'user', resource_id: user._id as any, action: 'logged_in', ip: req.ip, notes: 'google_oauth' });
+
+    return res.json({
+      success: true,
+      data: { accessToken, refreshToken, user: await buildUserResponse(user) },
+    });
+  } catch (err) {
+    logger.error('[auth/google] verification failed:', err);
+    return res.status(401).json({ error: 'google_auth_failed', message: err instanceof Error ? err.message : 'unknown' });
+  }
+});
+
+router.post('/verify-otp', verifyLimiter, validate(verifyOtpSchema), async (req: Request, res: Response) => {
+  const { email, otp } = req.body;
+  if (!otp || !email) {
     return res.status(400).json({ error: 'missing_fields' });
   }
 
-  const query = email ? { email: email.toLowerCase() } : { phone };
+  const query = { email: email.toLowerCase() };
   const user = await User.findOne(query).select('+otp_hash +otp_expires_at +otp_attempts');
 
   if (!user) return res.status(401).json({ error: 'invalid_credentials' });
@@ -164,7 +243,8 @@ router.post('/verify-otp', verifyLimiter, async (req: Request, res: Response) =>
     return res.status(401).json({ error: 'otp_expired' });
   }
 
-  if (hashOTP(otp) !== user.otp_hash && otp !== '123456') {
+  const devBypass = process.env.NODE_ENV === 'development' && otp === '123456';
+  if (hashOTP(otp) !== user.otp_hash && !devBypass) {
     user.otp_attempts += 1;
     await user.save();
     return res.status(401).json({ error: 'invalid_otp' });
@@ -193,13 +273,7 @@ router.post('/verify-otp', verifyLimiter, async (req: Request, res: Response) =>
     data: {
       accessToken,
       refreshToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        org_id: user.org_id,
-      },
+      user: await buildUserResponse(user),
     },
   });
 });
@@ -207,7 +281,7 @@ router.post('/verify-otp', verifyLimiter, async (req: Request, res: Response) =>
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/refresh
 // ═══════════════════════════════════════════════════════════════
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', validate(refreshSchema), async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ error: 'missing_refresh_token' });
 

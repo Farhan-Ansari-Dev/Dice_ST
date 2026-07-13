@@ -4,8 +4,13 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { User, IUser } from '../models';
 import { logger } from '../utils/logger';
+
+// Pin the signing algorithm to prevent algorithm-confusion attacks
+// (e.g. forged tokens claiming "alg":"none" or an asymmetric algorithm).
+const JWT_ALGORITHM: jwt.Algorithm = 'HS256';
 
 export interface AuthRequest extends Request {
   user?: IUser;
@@ -34,7 +39,7 @@ export async function authenticate(
   const token = header.slice(7);
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+    const payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: [JWT_ALGORITHM] }) as JwtPayload;
     const user = await User.findById(payload.sub);
     if (!user) {
       res.status(401).json({ error: 'invalid_token', message: 'User not found' });
@@ -87,14 +92,14 @@ export function requireRole(...roles: string[]) {
  * Issue a JWT pair (access + refresh).
  */
 export function issueTokens(user: IUser): { accessToken: string; refreshToken: string } {
-  const jti = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const jti = crypto.randomUUID();
   const payload = {
     sub: (user._id as any).toString(),
     org: user.org_id?.toString(),
     role: user.role,
     jti,
   };
-  const accessToken = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: '30m' });
-  const refreshToken = jwt.sign({ sub: payload.sub, jti }, process.env.JWT_REFRESH_SECRET!, { expiresIn: '30d' });
+  const accessToken = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: '30m', algorithm: JWT_ALGORITHM });
+  const refreshToken = jwt.sign({ sub: payload.sub, jti }, process.env.JWT_REFRESH_SECRET!, { expiresIn: '30d', algorithm: JWT_ALGORITHM });
   return { accessToken, refreshToken };
 }
