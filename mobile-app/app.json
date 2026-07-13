@@ -1,0 +1,92 @@
+{
+  "expo": {
+    "newArchEnabled": true,
+    "name": "DicebySanyog",
+    "slug": "sanyog-conformity-solutions",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "scheme": "com.sanyogconformity.app",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sanyogconformity.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used for document scanning and OCR",
+        "NSPhotoLibraryUsageDescription": "Used to upload documents",
+        "NSFaceIDUsageDescription": "Used to authenticate your identity securely",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0B0F"
+      },
+      "package": "com.sanyogconformity.app",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "com.sanyogconformity.app"
+            },
+            {
+              "scheme": "https",
+              "host": "www.sanyogconformity.com",
+              "pathPrefix": "/app"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-notifications",
+      "expo-camera",
+      "expo-image-picker",
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.630266247798-h5o7hfqtact2r4ciok4b9ai3tm93jgrb"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1d04926d-1f47-4d73-b16e-3166301f0791"
+      },
+      "razorpayKeyId": "rzp_live_T6X3wzTUBSA9yb"
+    },
+    "owner": "farhan_ansari"
+  }
+}

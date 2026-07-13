@@ -1,0 +1,345 @@
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  FlatList,
+  RefreshControl,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme, BorderRadius, Shadows } from '../../theme';
+import AIWidget from '../../components/common/AIWidget';
+import Badge from '../../components/common/Badge';
+import SearchBar from '../../components/common/SearchBar';
+import EmptyState from '../../components/common/EmptyState';
+import { formatRelativeTime } from '../../utils/formatters';
+import { useDebounce } from '../../hooks/useDebounce';
+import { useBookmarkStore } from '../../store/bookmarkStore';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../services/api';
+
+const InsightsScreen: React.FC = () => {
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  const { toggle: toggleBookmark, isBookmarked } = useBookmarkStore();
+  const [refreshing, setRefreshing] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
+
+  // Fetch insights from API
+  const { data: insightsData, isLoading, refetch } = useQuery({
+    queryKey: ['insights'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/insights') as any;
+        return res?.data || [];
+      } catch (e) {
+        console.warn('Failed to fetch insights:', e);
+        return [];
+      }
+    }
+  });
+
+  const INSIGHTS = useMemo(() => {
+    if (!insightsData) return [];
+    return insightsData.map((insight: any) => ({
+      id: insight._id,
+      title: insight.title,
+      summary: insight.summary,
+      content: insight.content,
+      category: insight.category || 'news',
+      impact: insight.impact || 'low',
+      source: insight.source || 'Sanyog',
+      publishedAt: insight.published_at || new Date().toISOString(),
+      readTime: insight.read_time || 3,
+      tags: insight.tags || [],
+      image: insight.image,
+      featured: insight.featured || false,
+    }));
+  }, [insightsData]);
+
+  const handleCategoryChange = (catId: string) => {
+    setActiveCategory(catId);
+  };
+
+  const CATEGORIES = useMemo(() => [
+    { id: 'all', label: 'All', icon: 'apps' as const, color: colors.textSecondary },
+    { id: 'news', label: 'News', icon: 'newspaper-outline' as const, color: colors.primary },
+    { id: 'regulatory', label: 'Regulatory', icon: 'document-text' as const, color: colors.secondary },
+    { id: 'alerts', label: 'Alerts', icon: 'alert-circle-outline' as const, color: colors.error },
+    { id: 'analysis', label: 'Analysis', icon: 'bar-chart-outline' as const, color: colors.success },
+    { id: 'trending', label: 'Trending', icon: 'bonfire-outline' as const, color: colors.warning },
+  ], [colors]);
+
+  const IMPACT_COLORS = useMemo(() => ({
+    high: colors.error,
+    medium: colors.warning,
+    low: colors.success,
+  }), [colors]);
+
+  const filteredInsights = INSIGHTS.filter((insight: typeof INSIGHTS[0]) => {
+    const matchSearch =
+      insight.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      insight.summary.toLowerCase().includes(debouncedSearch.toLowerCase());
+    const matchCategory = activeCategory === 'all' || insight.category === activeCategory;
+    return matchSearch && matchCategory;
+  });
+
+  // Prepend AI widget as first scrollable item so it scrolls with content
+  type ListItem = { type: 'ai_widget'; id: string } | (typeof INSIGHTS[0] & { type: 'insight' });
+  const listData: ListItem[] = [
+    { type: 'ai_widget', id: '__ai_widget__' },
+    ...filteredInsights.map((i: typeof INSIGHTS[0]) => ({ ...i, type: 'insight' as const })),
+  ];
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
+
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <LinearGradient
+        colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#E8ECF4']}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.openDrawer()}>
+          <Ionicons name="menu-outline" size={26} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Insights</Text>
+          <Text style={styles.headerSubtitle}>Regulatory intelligence & updates</Text>
+        </View>
+        <TouchableOpacity style={styles.searchBtn} onPress={() => navigation.navigate('SearchInsights')}>
+          <Ionicons name="search-outline" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search + filters sit OUTSIDE FlatList — naturally pinned, no sticky tricks */}
+      <View style={styles.controls}>
+        <View style={styles.searchWrapper}>
+          <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search insights..." />
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesRow}
+          style={{ height: 48, marginBottom: 4 }}
+          contentInsetAdjustmentBehavior="never"
+        >
+          {CATEGORIES.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[styles.categoryChip, activeCategory === cat.id && { borderColor: cat.color, backgroundColor: cat.color + '20' }]}
+              onPress={() => handleCategoryChange(cat.id)}
+            >
+              <Ionicons name={cat.icon} size={14} color={activeCategory === cat.id ? cat.color : colors.textTertiary} />
+              <Text style={[styles.categoryText, activeCategory === cat.id && { color: cat.color, fontWeight: '600' }]}>
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      <FlatList
+        ref={flatListRef}
+        key={activeCategory}
+        data={listData}
+        keyExtractor={(item) => item.id}
+        style={styles.flatList}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="search-outline"
+            title="No results found"
+            subtitle="Try a different search term or category filter"
+          />
+        }
+        renderItem={({ item }) => {
+          // AI Widget — scrolls naturally as first list item
+          if (item.type === 'ai_widget') {
+            return (
+              <View style={{ marginBottom: 14 }}>
+                <AIWidget
+                  title="AI Summary: Latest compliance updates"
+                  insight="Get AI-powered insights on regulatory changes, compliance alerts, and industry trends relevant to your business."
+                  confidence={96}
+                  onPress={() => navigation.navigate('Identifier')}
+                />
+              </View>
+            );
+          }
+
+          // Insight card
+          return (
+            <TouchableOpacity
+              style={[styles.insightCard, Shadows.sm]}
+              onPress={() => navigation.navigate('InsightDetail', { id: item.id })}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
+                style={styles.insightCardInner}
+              >
+                {/* Tags row */}
+                <View style={styles.tagsRow}>
+                  <View style={[styles.impactBadge, { backgroundColor: IMPACT_COLORS[item.impact as keyof typeof IMPACT_COLORS] + '20' }]}>
+                    <View style={[styles.impactDot, { backgroundColor: IMPACT_COLORS[item.impact as keyof typeof IMPACT_COLORS] }]} />
+                    <Text style={[styles.impactText, { color: IMPACT_COLORS[item.impact as keyof typeof IMPACT_COLORS] }]}>
+                      {item.impact.toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={styles.readTime}>{item.readTime} min read</Text>
+                  <TouchableOpacity onPress={() => toggleBookmark(item.id)} style={{ marginLeft: 'auto' as any }}>
+                    <Ionicons
+                      name={isBookmarked(item.id) ? 'bookmark' : 'bookmark-outline'}
+                      size={18}
+                      color={isBookmarked(item.id) ? colors.primary : colors.textTertiary}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.insightTitle}>{item.title}</Text>
+                <Text style={styles.insightSummary} numberOfLines={2}>{item.summary}</Text>
+
+                {/* Tags */}
+                {item.tags && item.tags.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsList}>
+                    {item.tags.map((tag: string, i: number) => (
+                      <View key={i} style={styles.tag}>
+                        <Text style={styles.tagText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+
+                {/* Footer */}
+                <View style={styles.insightFooter}>
+                  <Ionicons name="newspaper-outline" size={12} color={colors.textTertiary} />
+                  <Text style={styles.insightSource}>{item.source}</Text>
+                  <Text style={styles.insightDate}>{formatRelativeTime(item.publishedAt)}</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
+  );
+};
+
+const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.bgDark },
+    menuBtn: {
+      width: 40,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 12,
+    },
+    headerTitle: { fontSize: 24, fontWeight: '800', color: colors.textPrimary },
+    headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+    searchBtn: { width: 40, height: 32, alignItems: 'center', justifyContent: 'center' },
+    aiChatBtn: { borderRadius: 14, overflow: 'hidden' },
+    aiChatBtnGradient: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    controls: {
+      paddingTop: 8,
+    },
+    searchWrapper: { paddingHorizontal: 20, marginBottom: 12 },
+    categoriesRow: { paddingHorizontal: 20, gap: 8, alignItems: 'center' },
+    categoryChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: BorderRadius.full,
+      backgroundColor: isDark ? colors.bgCard : '#FFFFFF',
+      borderWidth: 1.5,
+      borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
+    },
+    categoryText: { fontSize: 12, color: colors.textTertiary, fontWeight: '500' },
+    flatList: { flex: 1 },
+    listContent: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 100, flexGrow: 1 },
+    insightCard: {
+      marginBottom: 14,
+      borderRadius: BorderRadius.lg,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border,
+    },
+    insightCardInner: { padding: 16 },
+    tagsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+    impactBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: BorderRadius.full,
+    },
+    impactDot: { width: 5, height: 5, borderRadius: 3 },
+    impactText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+    readTime: { fontSize: 11, color: colors.textTertiary },
+    insightTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      lineHeight: 21,
+      marginBottom: 6,
+    },
+    insightSummary: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      lineHeight: 19,
+      marginBottom: 10,
+    },
+    tagsList: { marginBottom: 10 },
+    tag: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.full,
+      marginRight: 6,
+    },
+    tagText: { fontSize: 10, color: colors.textTertiary, fontWeight: '500' },
+    insightFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: isDark ? 'rgba(255,255,255,0.04)' : colors.border,
+    },
+    insightSource: { flex: 1, fontSize: 11, color: colors.textTertiary },
+    insightDate: { fontSize: 11, color: colors.textTertiary },
+  });
+
+export default InsightsScreen;

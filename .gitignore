@@ -19,6 +19,14 @@ build/
 **/build/
 .expo/
 web-build/
+expo-export/
+
+# ─── Mobile (React Native / Expo) ───
+ios/Pods/
+ios/build/
+android/app/build/
+android/.gradle/
+coverage/
 
 # ─── Archives / generated bundles (never commit) ───
 *.tar.gz

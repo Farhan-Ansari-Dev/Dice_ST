@@ -1,0 +1,11 @@
+# Large unnecessary directories
+node_modules/
+android_backup/
+ios_backup/
+dist/
+.expo/
+docs/
+
+# Build artifacts
+*.hbc
+*.jsbundle
