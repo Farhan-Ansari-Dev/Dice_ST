@@ -1,42 +1,46 @@
-# Terraform-generated files – do NOT commit them
-*.tfstate
-*.tfstate.backup
-tfplan
-*.tfplan
+# ─── Dependencies ───
+node_modules/
+**/node_modules/
+
+# ─── Environment / secrets ───
+.env
+.env.local
+.env.*.local
+**/.env
+!**/.env.example
+*.pem
+*.keystore
+*-key.json
+
+# ─── Build output ───
+dist/
+**/dist/
+build/
+**/build/
+.expo/
+web-build/
+
+# ─── Archives / generated bundles (never commit) ───
+*.tar.gz
+*.zip
+*.apk
+*.aab
+
+# ─── Terraform ───
 .terraform/
-# IDE / OS files
-.DS_Store
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# ─── Logs / OS ───
 *.log
+logs/
+.DS_Store
 
-# ── Terraform ─────────────────────────────────────
-# Do not commit the local .terraform directory (provider binaries, state files, etc.)
-.terraform/
-**/.terraform/
-*.tfstate
-*.tfstate.backup
-tfplan
-*.tfplan
-# ── Terraform ─────────────────────────────────────
-# Do not commit the local .terraform directory (provider binaries, state files, etc.)
-.terraform/
-**/.terraform/
-*.tfstate
-*.tfstate.backup
-tfplan
-*.tfplan
+# ─── Editor ───
+.vscode/
+.idea/
 
-# Terraform – ignore local state & provider binaries
-.terraform/
-**/.terraform/
-*.tfstate
-*.tfstate.backup
-tfplan
-*.tfplan
-
-# Terraform – ignore local state & provider binaries
-.terraform/
-**/.terraform/
-*.tfstate
-*.tfstate.backup
-tfplan
-*.tfplan
+# ─── Accidental shell-command files ───
+eval*
