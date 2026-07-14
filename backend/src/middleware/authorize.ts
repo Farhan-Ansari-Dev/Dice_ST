@@ -14,25 +14,22 @@ export const authorize = (allowedRoles: string[], options?: { orgScoped?: boolea
   const { orgScoped = true, disallowEmployeeEdit = false } = options || {};
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'unauthenticated' });
+      res.status(401).json({ error: 'unauthenticated' });
+      return;
     }
     const userRole = req.user.role;
     if (!allowedRoles.includes(userRole)) {
-      return res.status(403).json({ error: 'forbidden', required: allowedRoles });
+      res.status(403).json({ error: 'forbidden', required: allowedRoles });
+      return;
     }
-    // Org‑scoping: ensure the resource's org matches the user's org (if applicable)
     if (orgScoped && userRole !== 'admin' && userRole !== 'super_admin') {
-      // Expect the route to have req.params.orgId or the document to have org_id field later in the handler.
-      // Here we simply store the user's org for later checks.
       (req as any).userOrgId = req.user.org_id?.toString();
     }
-    // Employee‑vs‑Employee edit protection
     if (disallowEmployeeEdit && userRole === 'employee') {
-      // The handler should pass the target user's role in req.body.targetRole or similar.
-      // If the target role is also employee, block the operation.
-      const targetRole = (req.body as any).role; // may be undefined for non‑user routes
+      const targetRole = (req.body as any).role;
       if (targetRole && targetRole === 'employee') {
-        return res.status(403).json({ error: 'employee_cannot_modify_employee' });
+        res.status(403).json({ error: 'employee_cannot_modify_employee' });
+        return;
       }
     }
     next();

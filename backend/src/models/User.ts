@@ -36,6 +36,15 @@ export interface IUser extends Document {
     quiet_hours?: { start: string; end: string; timezone: string };
   };
 
+  // Consultant verification
+  consultant_verification_status?: 'pending' | 'verified' | 'rejected';
+  consultant_verification_documents?: Array<{
+    url: string;
+    name: string;
+    uploaded_at: Date;
+  }>;
+  consultant_rejection_reason?: string;
+
   // DPDP / GDPR
   consents: {
     privacy_policy: { version: string; accepted_at: Date };
@@ -69,6 +78,18 @@ const UserSchema = new Schema<IUser>(
 
     totp_secret:   { type: String, select: false },
     totp_enabled:  { type: Boolean, default: false },
+
+    consultant_verification_status: {
+      type: String,
+      enum: ['pending', 'verified', 'rejected'],
+    },
+    consultant_verification_documents: [{
+      url:         { type: String, required: true },
+      name:        { type: String, required: true },
+      uploaded_at: { type: Date, default: Date.now },
+      _id: false,
+    }],
+    consultant_rejection_reason: { type: String },
 
     expo_push_tokens: { type: [String], default: [] },
     webpush_subscriptions: [

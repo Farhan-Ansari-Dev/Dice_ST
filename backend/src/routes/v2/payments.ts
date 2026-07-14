@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { authenticate, AuthRequest } from '../../middleware/authMongo'
 import { authorize } from '../../middleware/authorize'
 import { Payment } from '../../models/Payment'
+import { User } from '../../models/User'
 import { razorpayService } from '../../services/razorpayService'
 import { sendSuccess } from '../../utils/response'
 import { calculateQuotation } from '../../services/paymentService'
@@ -41,7 +42,7 @@ router.post('/quotations', authenticate, authorize(['admin','employee']), wrap(a
     application_id,
     totalPaise,
     'Certification Fees & Sanyog Consultancy',
-    currency,
+    currency as 'INR' | 'USD',
     breakdown
   );
 
@@ -125,16 +126,17 @@ router.post('/webhook', wrap(async (req: Request, res: Response) => {
 
 // New endpoint to fetch/generate invoice URL
 router.get('/:id/invoice', authenticate, authorize(['admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
-  const payment = await Payment.findById(req.params.id)
+  const payment = await Payment.findById(req.params.id).populate('user_id')
   if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' })
   if (!payment.invoice_url) {
-    // Trigger invoice generation via service (placeholder)
     const { generateInvoicePDF } = await import('../../services/invoiceService')
-    const url = await generateInvoicePDF(payment)
+    const user = await User.findById(payment.user_id)
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' })
+    const url = await generateInvoicePDF(payment, user)
     payment.invoice_url = url
     await payment.save()
   }
   return res.json({ success: true, invoice_url: payment.invoice_url })
-})
+}))
 
 export default router

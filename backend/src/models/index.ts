@@ -17,5 +17,6 @@ export { Payment, IPayment, PaymentStatus } from './Payment';
 export { Task, ITask } from './Task';
 export * from './AIConversation';
 export { Insight, IInsight } from './Insight';
+export { Inspection, IInspection } from './Inspection';
 export { Shipment, IShipment } from './Shipment';
 export { Testing, ITesting } from './Testing';

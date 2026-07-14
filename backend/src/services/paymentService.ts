@@ -1,5 +1,5 @@
 import { Application } from '../models/Application';
-import { User } from '../models/User';
+import { User, IUser } from '../models/User';
 
 /**
  * Calculates the quotation breakdown and total amount for a payment.
@@ -7,7 +7,7 @@ import { User } from '../models/User';
  * role 'employee'. For Indian users the consultancy fee is ₹1999 and GST of 18%
  * is applied.
  */
-export async function calculateQuotation(user: User, data: {
+export async function calculateQuotation(user: IUser, data: {
   application_id: string;
   gov_fee: number | string;
   lab_fee: number | string;
