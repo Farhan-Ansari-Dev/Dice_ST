@@ -97,6 +97,9 @@ export interface IApplication extends Document {
   deleted_at?: Date;
   created_at: Date;
   updated_at: Date;
+
+  canTransitionTo(newStatus: ApplicationStatus): boolean;
+  transitionTo(newStatus: ApplicationStatus, userId: Types.ObjectId, meta?: { reason?: string }): void;
 }
 
 const StatusTransitionSchema = new Schema<IStatusTransition>(

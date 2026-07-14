@@ -19,20 +19,21 @@ beforeAll(async () => {
   await setupTestDB();
 
   // Create prerequisite records
-  const org = await Organization.create({
-    name: 'Test Corp',
-    type: 'manufacturer',
-    industry: ['electronics'],
-  });
-  orgId = org._id as mongoose.Types.ObjectId;
-
   const user = await User.create({
     email: 'test@example.com',
     name: 'Test User',
     role: 'client',
-    org_id: orgId,
   });
   userId = user._id as mongoose.Types.ObjectId;
+
+  const org = await Organization.create({
+    name: 'Test Corp',
+    type: 'manufacturer',
+    owner_user_id: userId,
+  });
+  orgId = org._id as mongoose.Types.ObjectId;
+  user.org_id = orgId;
+  await user.save();
 
   const product = await Product.create({
     name: 'USB Charger',

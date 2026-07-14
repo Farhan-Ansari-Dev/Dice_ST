@@ -8,6 +8,9 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
   },
+  moduleNameMapper: {
+    '^expo-server-sdk$': '<rootDir>/src/__tests__/__mocks__/expo-server-sdk.ts',
+  },
   // mongodb-memory-server needs time to download/start
   testTimeout: 30000,
   // Suppress console noise during tests

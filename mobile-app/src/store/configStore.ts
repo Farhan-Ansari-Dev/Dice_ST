@@ -71,8 +71,8 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     // Fetch from remote
     try {
       const response = await api.get('/remote-config') as any;
-      if (response.data?.data) {
-        const config = response.data.data;
+      if (response?.data) {
+        const config = response.data;
         const newFlags = config.featureFlags || DEFAULT_FEATURE_FLAGS;
         const newDynamic = config.dynamicConfig || DEFAULT_DYNAMIC_CONFIG;
         const timestamp = Date.now();
