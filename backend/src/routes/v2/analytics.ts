@@ -4,6 +4,8 @@ import { Certification } from '../../models/Certification'
 import { Application } from '../../models/Application'
 import { Payment } from '../../models/Payment'
 import { User } from '../../models/User'
+import { AuditLog } from '../../models/AuditLog'
+import { Document } from '../../models/Document'
 import { sendSuccess } from '../../utils/response'
 
 const router = Router()
@@ -90,6 +92,157 @@ router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Respons
     country_data,
     certification_mix
   })
+}))
+
+router.get('/dashboard', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const query: any = {}
+  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    query.org_id = req.user!.org_id
+  }
+
+  const [total_applications, active_certifications, pending_payments_agg, expiring_certs, recent_audit] = await Promise.all([
+    Application.countDocuments({ ...query, deleted_at: { $exists: false } }),
+    Certification.countDocuments({ ...query, status: 'active', deleted_at: { $exists: false } }),
+    Payment.countDocuments({ ...query, status: 'pending' }),
+    Certification.find({ ...query, status: 'expiring_soon', deleted_at: { $exists: false } })
+      .populate('product_id', 'name')
+      .sort({ expiry_date: 1 }).limit(5).lean(),
+    AuditLog.find(query.org_id ? { 'meta.org_id': query.org_id } : {})
+      .sort({ ts: -1 }).limit(10).lean(),
+  ])
+
+  const currentYear = new Date().getFullYear()
+  const monthly_apps = await Application.aggregate([
+    { $match: { ...query, created_at: { $gte: new Date(`${currentYear}-01-01`) }, deleted_at: { $exists: false } } },
+    { $group: { _id: { $month: "$created_at" }, count: { $sum: 1 } } }
+  ])
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const monthly_applications = months.map((month, i) => {
+    const m = monthly_apps.find(x => x._id === i + 1)
+    return { month, count: m ? m.count : 0 }
+  })
+
+  const docCount = await Document.countDocuments(query.org_id ? { org_id: query.org_id } : {})
+  const compliance_score = active_certifications > 0
+    ? Math.min(100, Math.round((active_certifications / Math.max(1, total_applications)) * 100))
+    : 0
+
+  sendSuccess(res, {
+    total_applications,
+    active_certifications,
+    pending_payments: pending_payments_agg,
+    compliance_score,
+    monthly_applications,
+    recent_activity: recent_audit.map(a => ({
+      id: a._id,
+      type: a.meta.action,
+      title: `${a.meta.resource_type} ${a.meta.action}`,
+      description: `${a.meta.resource_type} was ${a.meta.action}`,
+      created_at: a.ts,
+    })),
+    expiring_soon: expiring_certs.map(c => ({
+      id: c._id,
+      cert_type: c.cert_type,
+      product_name: (c.product_id as any)?.name || 'Unknown',
+      expiry_date: c.expiry_date,
+      days_left: Math.max(0, Math.ceil((new Date(c.expiry_date).getTime() - Date.now()) / 86400000)),
+    })),
+  })
+}))
+
+router.get('/compliance-score', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const query: any = {}
+  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    query.org_id = req.user!.org_id
+  }
+
+  const [totalCerts, activeCerts, totalDocs] = await Promise.all([
+    Certification.countDocuments({ ...query, deleted_at: { $exists: false } }),
+    Certification.countDocuments({ ...query, status: 'active', deleted_at: { $exists: false } }),
+    Document.countDocuments(query.org_id ? { org_id: query.org_id } : {}),
+  ])
+
+  const certRatio = totalCerts > 0 ? (activeCerts / totalCerts) * 100 : 0
+  const docScore = Math.min(100, totalDocs * 10)
+  const overall = Math.round((certRatio * 0.7 + docScore * 0.3))
+
+  sendSuccess(res, {
+    overall_score: overall,
+    bis_score: certRatio,
+    epr_score: certRatio,
+    fssai_score: certRatio,
+    wpc_score: certRatio,
+    customs_score: certRatio,
+    document_score: docScore,
+    improvements: overall < 80 ? ['Complete pending certification applications', 'Upload required documents'] : [],
+    trend: 0,
+  })
+}))
+
+router.get('/activity', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const limit = Math.min(parseInt(req.query.limit as string || '20', 10), 100)
+  const auditQuery: any = {}
+  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    auditQuery['meta.org_id'] = req.user!.org_id
+  }
+
+  const logs = await AuditLog.find(auditQuery).sort({ ts: -1 }).limit(limit).lean()
+
+  sendSuccess(res, logs.map(a => ({
+    id: a._id,
+    type: a.meta.action,
+    title: `${a.meta.resource_type} ${a.meta.action}`,
+    description: `${a.meta.resource_type} was ${a.meta.action}`,
+    created_at: a.ts,
+  })))
+}))
+
+router.get('/action-required', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const query: any = {}
+  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    query.org_id = req.user!.org_id
+  }
+
+  const [pendingApps, expiringCerts, pendingPayments] = await Promise.all([
+    Application.countDocuments({ ...query, status: { $in: ['submitted', 'under_review'] }, deleted_at: { $exists: false } }),
+    Certification.countDocuments({ ...query, status: 'expiring_soon', deleted_at: { $exists: false } }),
+    Payment.countDocuments({ ...query, status: 'pending' }),
+  ])
+
+  sendSuccess(res, {
+    total: pendingApps + expiringCerts + pendingPayments,
+    categories: {
+      pending_applications: pendingApps,
+      expiring_certifications: expiringCerts,
+      pending_payments: pendingPayments,
+    },
+  })
+}))
+
+router.get('/action-required/items', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const category = req.query.category as string
+  const query: any = {}
+  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    query.org_id = req.user!.org_id
+  }
+
+  let items: any[] = []
+  switch (category) {
+    case 'pending_applications':
+      items = await Application.find({ ...query, status: { $in: ['submitted', 'under_review'] }, deleted_at: { $exists: false } })
+        .populate('product_id', 'name').sort({ created_at: -1 }).limit(20).lean()
+      break
+    case 'expiring_certifications':
+      items = await Certification.find({ ...query, status: 'expiring_soon', deleted_at: { $exists: false } })
+        .populate('product_id', 'name').sort({ expiry_date: 1 }).limit(20).lean()
+      break
+    case 'pending_payments':
+      items = await Payment.find({ ...query, status: 'pending' })
+        .populate('user_id', 'name email').sort({ created_at: -1 }).limit(20).lean()
+      break
+  }
+
+  sendSuccess(res, items)
 }))
 
 export default router

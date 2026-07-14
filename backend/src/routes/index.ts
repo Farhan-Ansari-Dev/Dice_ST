@@ -27,6 +27,7 @@ import supportTicketsRoutes from './v2/supportTickets';
 import businessIntelligenceRoutes from './v2/businessIntelligence';
 import configRoutes from './v2/config';
 import standardsRoutes from './v2/standards';
+import consultantsRoutes from './v2/consultants';
 
 // Stubs removed
 
@@ -59,6 +60,7 @@ router.use('/support-tickets', supportTicketsRoutes);
 router.use('/bi', businessIntelligenceRoutes);
 router.use('/remote-config', configRoutes);
 router.use('/standards', standardsRoutes);
+router.use('/consultants', consultantsRoutes);
 
 // ── Migrated to Mongoose ──────────────────────────────────────────────────
 router.use('/ai', aiLimiter, realAiRouter);

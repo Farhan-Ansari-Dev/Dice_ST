@@ -79,7 +79,7 @@ router.post('/create-order', authenticate, wrap(async (req: AuthRequest, res: Re
 
 router.post('/verify-payment', authenticate, authorize(['admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body
-  
+
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
     return res.status(400).json({ success: false, message: 'Missing payment signature fields' })
   }
@@ -96,6 +96,28 @@ router.post('/verify-payment', authenticate, authorize(['admin','employee']), wr
   }
 
   return res.json({ success: true, message: 'Payment verified successfully' })
+}))
+
+router.post('/verify', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const { order_id, payment_id, signature } = req.body
+
+  if (!order_id || !payment_id || !signature) {
+    return res.status(400).json({ success: false, message: 'Missing payment signature fields' })
+  }
+
+  const isValid = await razorpayService.verifyPayment(
+    order_id,
+    payment_id,
+    signature,
+    req.user!._id.toString()
+  )
+
+  if (!isValid) {
+    return res.status(400).json({ success: false, message: 'Payment verification failed' })
+  }
+
+  const payment = await Payment.findOne({ razorpay_order_id: order_id })
+  return res.json({ success: true, data: payment, message: 'Payment verified successfully' })
 }))
 
 router.post('/webhook', wrap(async (req: Request, res: Response) => {

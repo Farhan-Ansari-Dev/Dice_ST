@@ -36,4 +36,28 @@ router.get('/recommendations', wrap(async (req: AuthRequest, res: Response) => {
   sendSuccess(res, recs)
 }))
 
+router.post('/ask', wrap(async (req: AuthRequest, res: Response) => {
+  const { message, question, conversationId } = req.body
+  const result = await aiService.chat(req.user!._id.toString(), message || question, conversationId)
+  sendSuccess(res, result)
+}))
+
+router.post('/analyze-hs-code', wrap(async (req: AuthRequest, res: Response) => {
+  const { hsCode, hs_code } = req.body
+  const result = await aiService.analyzeHsCode(hsCode || hs_code)
+  sendSuccess(res, result)
+}))
+
+router.post('/analyze-risks', wrap(async (req: AuthRequest, res: Response) => {
+  const { context, product, market } = req.body
+  const result = await aiService.analyzeRisks(context || `${product} in ${market}`)
+  sendSuccess(res, result)
+}))
+
+router.post('/analyze-certifications', wrap(async (req: AuthRequest, res: Response) => {
+  const { productName, product_name, markets } = req.body
+  const result = await aiService.analyzeCertifications(productName || product_name, markets || [])
+  sendSuccess(res, result)
+}))
+
 export default router

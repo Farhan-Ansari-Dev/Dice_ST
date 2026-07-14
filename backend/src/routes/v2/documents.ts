@@ -11,6 +11,30 @@ const router = Router();
 router.use(authenticate);
 
 // Step 1: Get presigned URL for direct browser-to-S3 upload
+router.post('/presigned-url', async (req: AuthRequest, res: Response) => {
+  const { filename, mime_type, content_type, size_bytes, sha256, doc_type, document_id } = req.body;
+  const mimeType = mime_type || content_type;
+  if (!filename || !mimeType) {
+    return res.status(400).json({ error: 'missing_fields' });
+  }
+
+  try {
+    const result = await documentService.presignUpload({
+      org_id: req.user!.org_id!,
+      user_id: req.user!._id as any,
+      filename,
+      mime_type: mimeType,
+      size_bytes: size_bytes || 0,
+      sha256: sha256 || '',
+      doc_type: doc_type || 'general',
+      document_id: document_id ? new Types.ObjectId(document_id) : undefined,
+    });
+    return res.json({ data: { uploadUrl: result.url, key: result.s3_key, publicUrl: result.url } });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/presign', async (req: AuthRequest, res: Response) => {
   const { filename, mime_type, size_bytes, sha256, doc_type, document_id } = req.body;
   if (!filename || !mime_type || !size_bytes || !sha256 || !doc_type) {

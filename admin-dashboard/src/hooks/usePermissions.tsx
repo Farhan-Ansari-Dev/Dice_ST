@@ -1,13 +1,7 @@
-// src/hooks/usePermissions.tsx
-import { useContext } from 'react'
-import { AuthContext } from '../context/AuthContext'
+import { useAuthStore } from '../store/authStore'
 
-/**
- * Hook that returns permission booleans based on the logged‑in user's role.
- * Roles: admin, employee, consultant, cb, lab, ib, viewer
- */
 export const usePermissions = () => {
-  const { user } = useContext(AuthContext)
+  const { user } = useAuthStore()
   const role = user?.role ?? 'viewer'
 
   const isAdmin = role === 'admin' || role === 'super_admin'

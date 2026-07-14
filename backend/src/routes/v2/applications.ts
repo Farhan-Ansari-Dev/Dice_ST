@@ -271,6 +271,55 @@ async function issueCertification(app: any, by: Types.ObjectId): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PUT /applications/:id/status — mobile compat (maps to transition)
+// ═══════════════════════════════════════════════════════════════
+router.put('/:id/status', async (req: AuthRequest, res: Response) => {
+  const { status, notes } = req.body as { status: string; notes?: string };
+  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  const oldStatus = app.status;
+  try {
+    (app as any).transitionTo(status as ApplicationStatus, req.user!._id, { reason: notes });
+  } catch (err: any) {
+    return res.status(400).json({ error: 'invalid_transition', message: err.message });
+  }
+  await app.save();
+
+  await audit({
+    actor: req.user!._id as any,
+    org_id: req.user!.org_id,
+    resource_type: 'application',
+    resource_id: app._id as any,
+    action: 'status_changed',
+    before: { status: oldStatus },
+    after: { status, notes },
+    ip: req.ip,
+  });
+
+  if (status === 'cert_issued') {
+    await issueCertification(app, req.user!._id as any);
+  }
+
+  return res.json({ success: true, data: app });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PUT /applications/:id/assign — mobile compat (maps to POST assign)
+// ═══════════════════════════════════════════════════════════════
+router.put('/:id/assign', async (req: AuthRequest, res: Response) => {
+  const { assigned_to } = req.body as { assigned_to: string };
+  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  app.assignees = [new Types.ObjectId(assigned_to)];
+  app.primary_assignee = new Types.ObjectId(assigned_to);
+  await app.save();
+
+  return res.json({ success: true, data: app });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // PUT /applications/:id — modify base application fields
 // ═══════════════════════════════════════════════════════════════
 router.put('/:id', async (req: AuthRequest, res: Response) => {

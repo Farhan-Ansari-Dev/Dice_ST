@@ -25,7 +25,7 @@ export default function PaymentsPage() {
       p.method || '-',
       formatDate(p.created_at)
     ]);
-    console.log('Export CSV triggered');
+    const csvContent = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
