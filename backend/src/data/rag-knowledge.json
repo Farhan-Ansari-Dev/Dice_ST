@@ -1,0 +1,53 @@
+[
+  {
+    "category": "BIS",
+    "question": "What is BIS certification and who needs it?",
+    "answer": "BIS (Bureau of Indian Standards) certification ensures product quality, safety, and reliability. Under the CRS (Compulsory Registration Scheme) and ISI Mark schemes, manufacturers (both domestic and foreign) of notified products like electronics, toys, and machinery must obtain BIS certification before selling in the Indian market.",
+    "keywords": [
+      "BIS",
+      "ISI",
+      "CRS",
+      "electronics",
+      "toys",
+      "safety"
+    ]
+  },
+  {
+    "category": "FSSAI",
+    "question": "What documents are required for an FSSAI Central License?",
+    "answer": "For an FSSAI Central License, you need: 1. Form B (duly completed and signed), 2. Blueprint/layout plan of the processing unit, 3. List of Directors/Partners with ID proofs, 4. List of machinery and equipment, 5. Proof of possession of premises (Sale deed/Rent agreement), 6. Water testing report, and 7. Food safety management system (FSMS) plan.",
+    "keywords": [
+      "FSSAI",
+      "license",
+      "food",
+      "documents",
+      "FSMS",
+      "central"
+    ]
+  },
+  {
+    "category": "EPR",
+    "question": "What is the penalty for non-compliance with EPR rules in India?",
+    "answer": "Non-compliance with EPR (Extended Producer Responsibility) for plastic, e-waste, or battery waste can result in heavy environmental compensation fines imposed by the CPCB or SPCB. Continuous non-compliance may lead to the revocation of your operating consent, confiscation of goods, and legal action against company directors.",
+    "keywords": [
+      "EPR",
+      "penalty",
+      "plastic",
+      "e-waste",
+      "fine",
+      "CPCB"
+    ]
+  },
+  {
+    "category": "TEC",
+    "question": "How long does MTCTE certification take for telecom equipment?",
+    "answer": "Under the MTCTE (Mandatory Testing and Certification of Telecom Equipment) scheme, the process typically takes 4 to 8 weeks depending on the equipment category. This includes the time required for testing at a TEC-designated laboratory and the final application review by the TEC portal.",
+    "keywords": [
+      "TEC",
+      "MTCTE",
+      "telecom",
+      "timeline",
+      "testing"
+    ]
+  }
+]

@@ -1,0 +1,203 @@
+# CloudWatch Alarms & Monitoring Configuration
+# Add these resources to backend/infra/terraform/main.tf
+# Or in a separate cloudwatch-alarms.tf file
+
+# SNS Topic for Alerts
+resource "aws_sns_topic" "sanyog_alerts" {
+  name = "sanyog-api-alerts"
+
+  tags = {
+    Name = "Sanyog API Alerts"
+  }
+}
+
+resource "aws_sns_topic_subscription" "email_alerts" {
+  topic_arn = aws_sns_topic.sanyog_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email # Add this variable: default = "your-email@example.com"
+}
+
+# ─── CloudWatch Alarms ──────────────────────────────────────────
+
+# ALARM 1: High CPU Utilization
+resource "aws_cloudwatch_metric_alarm" "high_cpu" {
+  alarm_name          = "sanyog-api-high-cpu"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "300"  # 5 minutes
+  statistic           = "Average"
+  threshold           = "70"
+  alarm_description   = "Alert when CPU exceeds 70%"
+  alarm_actions       = [aws_sns_topic.sanyog_alerts.arn]
+  ok_actions          = [aws_sns_topic.sanyog_alerts.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+  }
+}
+
+# ALARM 2: High Memory Utilization (Custom Metric)
+resource "aws_cloudwatch_metric_alarm" "high_memory" {
+  alarm_name          = "sanyog-api-high-memory"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "MemoryUtilization"
+  namespace           = "CWAgent"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "Alert when memory exceeds 80%"
+  alarm_actions       = [aws_sns_topic.sanyog_alerts.arn]
+  ok_actions          = [aws_sns_topic.sanyog_alerts.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+  }
+}
+
+# ALARM 3: Disk Space Usage (Custom Metric)
+resource "aws_cloudwatch_metric_alarm" "high_disk" {
+  alarm_name          = "sanyog-api-high-disk"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "DiskUtilization"
+  namespace           = "CWAgent"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "Alert when disk usage exceeds 80%"
+  alarm_actions       = [aws_sns_topic.sanyog_alerts.arn]
+  ok_actions          = [aws_sns_topic.sanyog_alerts.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+    Path       = "/"
+  }
+}
+
+# ALARM 4: Instance Status Check Failed
+resource "aws_cloudwatch_metric_alarm" "instance_health" {
+  alarm_name          = "sanyog-api-instance-health"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "StatusCheckFailed"
+  namespace           = "AWS/EC2"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "1"
+  alarm_description   = "Alert if instance health checks fail"
+  alarm_actions       = [aws_sns_topic.sanyog_alerts.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+  }
+}
+
+# ALARM 5: Low Available Memory
+resource "aws_cloudwatch_metric_alarm" "low_memory" {
+  alarm_name          = "sanyog-api-low-memory"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "MemoryAvailable"
+  namespace           = "CWAgent"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "512"  # Less than 512MB available
+  alarm_description   = "Alert when available memory drops below 512MB"
+  alarm_actions       = [aws_sns_topic.sanyog_alerts.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+  }
+}
+
+# ALARM 6: Network In Spike (DDoS Detection)
+resource "aws_cloudwatch_metric_alarm" "high_network_in" {
+  alarm_name          = "sanyog-api-high-network-in"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "NetworkIn"
+  namespace           = "AWS/EC2"
+  period              = "60"  # 1 minute
+  statistic           = "Average"
+  threshold           = "10000000"  # 10MB/sec
+  alarm_description   = "Alert on unusually high inbound network traffic (potential DDoS)"
+  alarm_actions       = [aws_sns_topic.sanyog_alerts.arn]
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+  }
+}
+
+# ─── CloudWatch Log Group ───────────────────────────────────────
+
+resource "aws_cloudwatch_log_group" "api_logs" {
+  name              = "/aws/ec2/sanyog-api"
+  retention_in_days = 7  # Change to desired retention
+
+  tags = {
+    Name = "Sanyog API Logs"
+  }
+}
+
+# ─── CloudWatch Dashboard ───────────────────────────────────────
+
+resource "aws_cloudwatch_dashboard" "sanyog_api" {
+  dashboard_name = "sanyog-api-overview"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", { stat = "Average" }],
+            [".", "NetworkIn", { stat = "Sum" }],
+            [".", "NetworkOut", { stat = "Sum" }]
+          ]
+          period = 300
+          stat   = "Average"
+          region = var.region
+          title  = "EC2 Performance Metrics"
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["CWAgent", "MemoryUtilization", { stat = "Average" }],
+            [".", "DiskUtilization", { stat = "Average" }]
+          ]
+          period = 300
+          stat   = "Average"
+          region = var.region
+          title  = "System Resources"
+        }
+      },
+      {
+        type = "log"
+        properties = {
+          query   = <<-EOT
+            fields @timestamp, @message
+            | stats count() as error_count by @message
+            | filter @message like /ERROR/
+            | sort error_count desc
+            | limit 10
+          EOT
+          region = var.region
+          title  = "Top 10 Errors (Last 4 Hours)"
+        }
+      }
+    ]
+  })
+}
+
+# ─── Variables (Add to variables.tf) ────────────────────────────
+
+# variable "alert_email" {
+#   description = "Email for CloudWatch alerts"
+#   type        = string
+#   default     = "admin@sanyogconformity.com"
+# }
