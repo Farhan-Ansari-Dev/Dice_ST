@@ -11,7 +11,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../../middleware/rateLimiters';
 import { z } from 'zod';
 import { OAuth2Client } from 'google-auth-library';
 import { validate } from '../../middleware/validate';
@@ -32,16 +32,14 @@ const googleClientAudiences = (process.env.GOOGLE_CLIENT_IDS ?? process.env.GOOG
 
 const router = Router();
 
-// ─── Rate limiters (in-memory — fine for single EC2) ────────────
-const otpLimiter = rateLimit({
+// ─── Rate limiters (Redis-backed when REDIS_URL is set → shared across workers) ──
+const otpLimiter = makeLimiter('rl:otp:', {
   windowMs: 15 * 60 * 1000,
   max: 5,                                    // 5 OTP requests per 15 min per IP
   message: { error: 'too_many_requests', message: 'Try again in a few minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const verifyLimiter = rateLimit({
+const verifyLimiter = makeLimiter('rl:otp-verify:', {
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'too_many_verify_attempts' },
