@@ -1,5 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express'
-import { authenticate, requireRole, AuthRequest } from '../middleware/auth'
+// authMongo resolves req.user to the full User document (correct _id + role);
+// the lightweight auth.ts middleware reads a non-existent `userId` claim and
+// leaves req.user.id undefined, which we need for createdBy.
+import { authenticate, requireRole, ADMIN_ROLES, AuthRequest } from '../middleware/authMongo'
 import { Insight } from '../models'
 import redis from '../config/redis'
 import { aiService } from '../services/aiService'
@@ -53,35 +56,32 @@ router.get('/:id', wrap(async (req: Request, res: Response) => {
 }))
 
 // ── Admin CRUD (super_admin inherits admin) ─────────────────────
-router.post('/', requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
-  const { title, summary, content, category, country, source, link, imageUrl, author, tags, relevanceScore, published, featured, targetCountries, certifications, publishedAt } = req.body
-  if (!title || !summary || !category) {
-    return sendError(res, 'title, summary and category are required', 400)
+router.post('/', requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest, res: Response) => {
+  const { title, summary, content, category, country, source, link, tags, published, featured, publishedAt } = req.body
+  // Text-based insights: Title, Short Summary, Source Name and Source URL are required.
+  if (!title || !summary || !category || !source || !link) {
+    return sendError(res, 'title, summary, category, source (name) and link (source URL) are required', 400)
   }
   const insight = await Insight.create({
     title,
     summary,
     content: content || '',
     category,
-    country: country || 'India',
-    source: source || 'Sanyog Conformity',
-    link: link || '',
-    imageUrl: imageUrl || '',
-    author: author || '',
+    country: country || undefined,          // optional
+    source,                                  // Source Name
+    link,                                    // Source URL
     tags: Array.isArray(tags) ? tags : [],
-    relevanceScore: Number(relevanceScore) || 0,
     published: published !== false,
     featured: featured === true,
-    targetCountries: Array.isArray(targetCountries) ? targetCountries : [],
-    certifications: Array.isArray(certifications) ? certifications : [],
+    createdBy: req.user!._id,
     publishedAt: publishedAt ? new Date(publishedAt) : new Date(),
   })
   await bumpCacheVersion()
   return sendSuccess(res, insight, 'Created successfully', 201)
 }))
 
-router.put('/:id', requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
-  const allowed = ['title', 'summary', 'content', 'category', 'country', 'source', 'link', 'imageUrl', 'author', 'tags', 'relevanceScore', 'published', 'featured', 'targetCountries', 'certifications', 'publishedAt']
+router.put('/:id', requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest, res: Response) => {
+  const allowed = ['title', 'summary', 'content', 'category', 'country', 'source', 'link', 'tags', 'published', 'featured', 'publishedAt']
   const update: any = {}
   for (const k of allowed) {
     if (req.body[k] !== undefined) update[k] = req.body[k]
@@ -92,7 +92,7 @@ router.put('/:id', requireRole('admin', 'super_admin'), wrap(async (req: AuthReq
   return sendSuccess(res, insight, 'Updated successfully')
 }))
 
-router.delete('/:id', requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest, res: Response) => {
   const insight = await Insight.findByIdAndDelete(req.params.id)
   if (!insight) return sendError(res, 'Not found', 404)
   await bumpCacheVersion()

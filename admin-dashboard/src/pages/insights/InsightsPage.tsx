@@ -12,10 +12,8 @@ const CATEGORY_COLOR: Record<string, string> = {
 }
 
 const EMPTY_FORM = {
-  title: '', summary: '', content: '', category: 'bis_update', country: 'India',
-  source: 'Sanyog Conformity', link: '', imageUrl: '', author: '',
-  tags: '', relevanceScore: 80, published: true, featured: false,
-  targetCountries: '', certifications: '',
+  title: '', summary: '', content: '', category: 'bis_update', country: '',
+  source: '', link: '', tags: '', published: true, featured: false,
 }
 
 const csv = (v: any): string[] => typeof v === 'string' ? v.split(',').map((t: string) => t.trim()).filter(Boolean) : (Array.isArray(v) ? v : [])
@@ -44,9 +42,6 @@ export default function InsightsPage() {
   const toPayload = (f: any) => ({
     ...f,
     tags: csv(f.tags),
-    targetCountries: csv(f.targetCountries),
-    certifications: csv(f.certifications),
-    relevanceScore: Number(f.relevanceScore) || 0,
   })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['insights'] })
@@ -80,13 +75,10 @@ export default function InsightsPage() {
     setEditingId(ins._id)
     setFormData({
       title: ins.title || '', summary: ins.summary || '', content: ins.content || '',
-      category: ins.category || 'bis_update', country: ins.country || 'India',
-      source: ins.source || '', link: ins.link || '', imageUrl: ins.imageUrl || '',
-      author: ins.author || '', tags: (ins.tags || []).join(', '),
-      relevanceScore: Number(ins.relevanceScore) || 0,
+      category: ins.category || 'bis_update', country: ins.country || '',
+      source: ins.source || '', link: ins.link || '',
+      tags: (ins.tags || []).join(', '),
       published: ins.published !== false, featured: ins.featured === true,
-      targetCountries: (ins.targetCountries || []).join(', '),
-      certifications: (ins.certifications || []).join(', '),
     })
     setModalOpen(true)
   }
@@ -113,12 +105,22 @@ export default function InsightsPage() {
                 <input required value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} placeholder="e.g. BIS Amends IS 1293 for Electrical Plugs" style={modalInput} />
               </div>
               <div style={{ marginBottom: 14 }}>
-                <label style={modalLabel}>Short Description</label>
+                <label style={modalLabel}>Short Summary</label>
                 <textarea required rows={2} value={formData.summary} onChange={e => setFormData({ ...formData, summary: e.target.value })} placeholder="One or two sentences shown in the feed…" style={{ ...modalInput, fontFamily: 'inherit' }} />
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={modalLabel}>Full Content</label>
                 <textarea rows={6} value={formData.content} onChange={e => setFormData({ ...formData, content: e.target.value })} placeholder="Full article body shown when the reader opens the insight…" style={{ ...modalInput, fontFamily: 'inherit' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Source Name *</label>
+                  <input required value={formData.source} onChange={e => setFormData({ ...formData, source: e.target.value })} placeholder="Bureau of Indian Standards" style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Source URL *</label>
+                  <input required type="url" value={formData.link} onChange={e => setFormData({ ...formData, link: e.target.value })} placeholder="https://bis.gov.in/…" style={modalInput} />
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
                 <div style={{ flex: 1 }}>
@@ -128,51 +130,13 @@ export default function InsightsPage() {
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Country</label>
-                  <input required value={formData.country} onChange={e => setFormData({ ...formData, country: e.target.value })} style={modalInput} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Author</label>
-                  <input value={formData.author} onChange={e => setFormData({ ...formData, author: e.target.value })} placeholder="Optional" style={modalInput} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Source</label>
-                  <input required value={formData.source} onChange={e => setFormData({ ...formData, source: e.target.value })} placeholder="BIS Official" style={modalInput} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Relevance (0–100)</label>
-                  <input type="number" min={0} max={100} value={formData.relevanceScore === 0 ? '' : String(formData.relevanceScore)}
-                    onChange={e => {
-                      const parsed = parseInt(e.target.value, 10)
-                      setFormData({ ...formData, relevanceScore: Number.isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed)) })
-                    }} style={modalInput} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Source Link (optional)</label>
-                  <input value={formData.link} onChange={e => setFormData({ ...formData, link: e.target.value })} placeholder="https://…" style={modalInput} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Image URL (optional)</label>
-                  <input value={formData.imageUrl} onChange={e => setFormData({ ...formData, imageUrl: e.target.value })} placeholder="https://…/cover.jpg" style={modalInput} />
+                  <label style={modalLabel}>Country (optional)</label>
+                  <input value={formData.country} onChange={e => setFormData({ ...formData, country: e.target.value })} placeholder="e.g. India" style={modalInput} />
                 </div>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={modalLabel}>Tags (comma-separated)</label>
                 <input value={formData.tags} onChange={e => setFormData({ ...formData, tags: e.target.value })} placeholder="BIS, IS 1293, Electrical" style={modalInput} />
-              </div>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Target Countries (comma-separated)</label>
-                  <input value={formData.targetCountries} onChange={e => setFormData({ ...formData, targetCountries: e.target.value })} placeholder="India, UAE, Germany" style={modalInput} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={modalLabel}>Related Certifications (comma-separated)</label>
-                  <input value={formData.certifications} onChange={e => setFormData({ ...formData, certifications: e.target.value })} placeholder="BIS, CE, FSSAI" style={modalInput} />
-                </div>
               </div>
               <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>
@@ -243,12 +207,7 @@ export default function InsightsPage() {
                   {unpublished && (
                     <span style={{ background: 'rgba(139,146,165,0.15)', color: '#8B92A5', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>DRAFT — hidden from app</span>
                   )}
-                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{ins.source}{ins.author ? ` · ${ins.author}` : ''} · {formatRelative(ins.publishedAt || ins.createdAt)}</span>
-                  {ins.relevanceScore > 0 && (
-                    <span style={{ background: 'rgba(0,200,150,0.12)', color: '#00C896', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
-                      {Math.round(ins.relevanceScore)}% relevant
-                    </span>
-                  )}
+                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{ins.source} · {formatRelative(ins.publishedAt || ins.createdAt)}</span>
                 </div>
                 <h3 style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 700, margin: '0 0 8px', lineHeight: 1.4 }}>{ins.title}</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '0 0 12px', lineHeight: 1.6 }}>{ins.summary}</p>

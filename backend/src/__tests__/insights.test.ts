@@ -65,21 +65,29 @@ describe('Insights CRUD (admin dashboard + mobile app share this API)', () => {
         content: 'Full article body with details of the amendment…',
         category: 'bis_update',
         country: 'India',
-        source: 'BIS Official',
-        author: 'Compliance Desk',
-        imageUrl: 'https://example.com/cover.jpg',
+        source: 'Bureau of Indian Standards',
+        link: 'https://bis.gov.in/is-1293',
         tags: ['BIS', 'IS 1293'],
-        targetCountries: ['India'],
-        certifications: ['BIS'],
-        relevanceScore: 95,
         published: true,
         featured: false,
       });
     expect(res.status).toBe(201);
     expect(res.body.data.title).toBe('BIS Amends IS 1293 for Electrical Plugs');
     expect(res.body.data.content).toContain('Full article body');
+    expect(res.body.data.source).toBe('Bureau of Indian Standards');
+    expect(res.body.data.link).toBe('https://bis.gov.in/is-1293');
+    expect(res.body.data.createdBy).toBeTruthy();       // stamped from the admin user
+    expect(res.body.data.imageUrl).toBeUndefined();     // no image fields anymore
     expect(res.body.data.published).toBe(true);
     insightId = res.body.data._id;
+  });
+
+  it('rejects an insight missing the required Source URL', async () => {
+    const res = await request(app)
+      .post('/api/v1/insights')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ title: 'No source url', summary: 'x', category: 'customs', source: 'Someone' });
+    expect(res.status).toBe(400);
   });
 
   it('GET /insights returns the created insight (what the mobile app receives)', async () => {
@@ -89,7 +97,8 @@ describe('Insights CRUD (admin dashboard + mobile app share this API)', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBe(1);
     expect(res.body.data[0]._id).toBe(insightId);
-    expect(res.body.data[0].imageUrl).toBe('https://example.com/cover.jpg');
+    expect(res.body.data[0].source).toBe('Bureau of Indian Standards');
+    expect(res.body.data[0].link).toBe('https://bis.gov.in/is-1293');
   });
 
   it('super_admin edits the insight and the change is immediately visible', async () => {

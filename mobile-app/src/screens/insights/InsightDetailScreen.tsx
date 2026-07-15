@@ -5,22 +5,50 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  Linking,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, BorderRadius, Shadows } from '../../theme';
-import AIWidget from '../../components/common/AIWidget';
+import { useQuery } from '@tanstack/react-query';
+import { useTheme, BorderRadius } from '../../theme';
 import Button from '../../components/common/Button';
+import EmptyState from '../../components/common/EmptyState';
+import { api } from '../../services/api';
+import { formatDate } from '../../utils/formatters';
 
 const InsightDetailScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const id = route.params?.id as string | undefined;
+
+  // Fully API-driven — no hardcoded article. Fetches the same document the
+  // admin dashboard wrote, from the same collection via the same REST API.
+  const { data: insight, isLoading, isError } = useQuery({
+    queryKey: ['insight', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const res = (await api.get(`/insights/${id}`)) as any;
+      return res?.data ?? null;
+    },
+  });
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  const openSource = async () => {
+    if (!insight?.link) return;
+    const supported = await Linking.canOpenURL(insight.link).catch(() => false);
+    if (supported) {
+      Linking.openURL(insight.link);
+    } else {
+      Alert.alert('Cannot open link', insight.link);
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -33,50 +61,71 @@ const InsightDetailScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Insight Detail</Text>
-        <TouchableOpacity>
-          <Ionicons name="share-outline" size={22} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.metaRow}>
-          <View style={styles.impactBadge}>
-            <View style={[styles.impactDot, { backgroundColor: colors.error }]} />
-            <Text style={[styles.impactText, { color: colors.error }]}>HIGH IMPACT</Text>
+
+      {isLoading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : isError || !insight ? (
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Insight unavailable"
+          subtitle="This article could not be loaded. Please try again."
+        />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+          <View style={styles.metaRow}>
+            <View style={styles.categoryBadge}>
+              <View style={[styles.categoryDot, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.categoryText, { color: colors.primary }]}>
+                {String(insight.category || 'news').replace(/_/g, ' ').toUpperCase()}
+              </Text>
+            </View>
+            <Text style={styles.date}>{formatDate(insight.publishedAt || insight.createdAt)}</Text>
           </View>
-          <Text style={styles.readTime}>4 min read</Text>
-          <Text style={styles.date}>45 minutes ago</Text>
-        </View>
-        <Text style={styles.title}>BIS Mandatory Certification Extended to Smart Home Devices</Text>
-        <View style={styles.sourceRow}>
-          <Ionicons name="newspaper-outline" size={14} color={colors.textTertiary} />
-          <Text style={styles.source}>Bureau of Indian Standards</Text>
-        </View>
-        <Text style={styles.body}>
-          The Bureau of Indian Standards (BIS) has issued a notification extending mandatory BIS certification requirements to include all smart home IoT devices sold in India effective April 1, 2025.{'\n\n'}
-          This amendment to the Compulsory Registration Order (CRO) covers a wide range of products including smart speakers, smart displays, home automation controllers, connected sensors, and all Wi-Fi or Bluetooth-enabled home devices.{'\n\n'}
-          Manufacturers and importers must obtain BIS registration under IS 13252 (Part 1) and IS 16103 before placing their products in the Indian market after the cut-off date.{'\n\n'}
-          Key Requirements:{'\n'}
-          • Product testing at NABL-accredited laboratories{'\n'}
-          • Factory audit for domestic manufacturers{'\n'}
-          • Quarterly test reports for continued compliance{'\n'}
-          • BIS mark on all product packaging and unit{'\n\n'}
-          Companies currently importing or selling smart home devices should initiate certification immediately, as the process typically takes 3-6 months.
-        </Text>
-        <AIWidget
-          title="What this means for your business"
-          insight="Based on your registered products, your smart speaker and home hub imports will require BIS certification before April 2025. We recommend initiating applications in November to meet the deadline comfortably."
-          confidence={91}
-          onPress={() => navigation.navigate('Identifier')}
-          
-        />
-        <Button
-          title="Start BIS Application"
-          onPress={() => navigation.navigate('NewApplication')}
-          fullWidth
-          
-        />
-        <View style={{ height: 100 }} />
-      </ScrollView>
+
+          <Text style={styles.title}>{insight.title}</Text>
+
+          <View style={styles.sourceRow}>
+            <Ionicons name="newspaper-outline" size={14} color={colors.textTertiary} />
+            <Text style={styles.source}>{insight.source}</Text>
+            {insight.country ? <Text style={styles.source}>· {insight.country}</Text> : null}
+          </View>
+
+          {/* Short summary lead-in */}
+          {insight.summary ? <Text style={styles.summary}>{insight.summary}</Text> : null}
+
+          {/* Full article body */}
+          {insight.content ? <Text style={styles.body}>{insight.content}</Text> : null}
+
+          {/* Tags */}
+          {Array.isArray(insight.tags) && insight.tags.length > 0 && (
+            <View style={styles.tagsWrap}>
+              {insight.tags.map((tag: string, i: number) => (
+                <View key={i} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Visit Official Source — opens the stored Source URL */}
+          {insight.link ? (
+            <View style={{ marginTop: 24 }}>
+              <Button
+                title="Visit Official Source"
+                onPress={openSource}
+                fullWidth
+                icon={<Ionicons name="open-outline" size={18} color="#FFFFFF" />}
+              />
+            </View>
+          ) : null}
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -84,6 +133,7 @@ const InsightDetailScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -102,18 +152,17 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.textPrimary },
     content: { paddingHorizontal: 20, paddingTop: 8 },
     metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
-    impactBadge: {
+    categoryBadge: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 5,
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: BorderRadius.full,
-      backgroundColor: 'rgba(255,71,87,0.15)',
+      backgroundColor: colors.primary + '20',
     },
-    impactDot: { width: 6, height: 6, borderRadius: 3 },
-    impactText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
-    readTime: { fontSize: 12, color: colors.textTertiary },
+    categoryDot: { width: 6, height: 6, borderRadius: 3 },
+    categoryText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
     date: { fontSize: 12, color: colors.textTertiary },
     title: {
       fontSize: 22,
@@ -124,11 +173,26 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     },
     sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20 },
     source: { fontSize: 12, color: colors.textTertiary, fontStyle: 'italic' },
+    summary: {
+      fontSize: 16,
+      color: colors.textPrimary,
+      fontWeight: '600',
+      lineHeight: 24,
+      marginBottom: 16,
+    },
     body: {
       fontSize: 15,
       color: colors.textSecondary,
       lineHeight: 26,
     },
+    tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 20 },
+    tag: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: BorderRadius.full,
+    },
+    tagText: { fontSize: 11, color: colors.textTertiary, fontWeight: '500' },
   });
 
 export default InsightDetailScreen;

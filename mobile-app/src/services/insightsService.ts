@@ -1,19 +1,21 @@
 import api from './api';
 
+// Text-based insight — mirrors the backend Insight schema (no image fields).
 export interface Insight {
-  id: string;
+  _id: string;
   title: string;
   summary: string;
   content: string;
-  category: 'bis' | 'customs' | 'epr' | 'fssai' | 'regulatory' | 'industry';
-  source: string;
-  sourceUrl?: string;
-  publishedAt: string;
-  isBookmarked: boolean;
-  readTime: number;
+  category: string;
+  country?: string;
+  source: string;        // Source Name
+  link: string;          // Source URL — "Visit Official Source"
   tags: string[];
-  impact: 'high' | 'medium' | 'low';
-  imageUrl?: string;
+  published: boolean;
+  featured: boolean;
+  publishedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AIInsight {

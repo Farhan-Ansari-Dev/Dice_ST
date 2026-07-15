@@ -56,12 +56,9 @@ const InsightsScreen: React.FC = () => {
       summary: insight.summary,
       content: insight.content,
       category: insight.category || 'news',
-      impact: insight.impact || 'low',
       source: insight.source || 'Sanyog',
-      publishedAt: insight.published_at || new Date().toISOString(),
-      readTime: insight.read_time || 3,
+      publishedAt: insight.publishedAt || insight.createdAt || new Date().toISOString(),
       tags: insight.tags || [],
-      image: insight.image,
       featured: insight.featured || false,
     }));
   }, [insightsData]);
@@ -78,12 +75,6 @@ const InsightsScreen: React.FC = () => {
     { id: 'analysis', label: 'Analysis', icon: 'bar-chart-outline' as const, color: colors.success },
     { id: 'trending', label: 'Trending', icon: 'bonfire-outline' as const, color: colors.warning },
   ], [colors]);
-
-  const IMPACT_COLORS = useMemo(() => ({
-    high: colors.error,
-    medium: colors.warning,
-    low: colors.success,
-  }), [colors]);
 
   const filteredInsights = INSIGHTS.filter((insight: typeof INSIGHTS[0]) => {
     const matchSearch =
@@ -200,15 +191,14 @@ const InsightsScreen: React.FC = () => {
                 colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
                 style={styles.insightCardInner}
               >
-                {/* Tags row */}
+                {/* Category row */}
                 <View style={styles.tagsRow}>
-                  <View style={[styles.impactBadge, { backgroundColor: IMPACT_COLORS[item.impact as keyof typeof IMPACT_COLORS] + '20' }]}>
-                    <View style={[styles.impactDot, { backgroundColor: IMPACT_COLORS[item.impact as keyof typeof IMPACT_COLORS] }]} />
-                    <Text style={[styles.impactText, { color: IMPACT_COLORS[item.impact as keyof typeof IMPACT_COLORS] }]}>
-                      {item.impact.toUpperCase()}
+                  <View style={[styles.impactBadge, { backgroundColor: colors.primary + '20' }]}>
+                    <View style={[styles.impactDot, { backgroundColor: colors.primary }]} />
+                    <Text style={[styles.impactText, { color: colors.primary }]}>
+                      {String(item.category).replace(/_/g, ' ').toUpperCase()}
                     </Text>
                   </View>
-                  <Text style={styles.readTime}>{item.readTime} min read</Text>
                   <TouchableOpacity onPress={() => toggleBookmark(item.id)} style={{ marginLeft: 'auto' as any }}>
                     <Ionicons
                       name={isBookmarked(item.id) ? 'bookmark' : 'bookmark-outline'}
