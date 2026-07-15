@@ -63,6 +63,11 @@ export const razorpayService = {
     return { order, payment }
   },
 
+  /**
+   * Checkout-flow verification: the client returns the order/payment/signature
+   * from Razorpay Checkout. We recompute the HMAC(order|payment) and, if valid,
+   * capture idempotently.
+   */
   async verifyPayment(orderId: string, paymentId: string, signature: string, userId: string): Promise<boolean> {
     const body = `${orderId}|${paymentId}`
     const expected = crypto
@@ -75,45 +80,69 @@ export const razorpayService = {
       return false
     }
 
-    const payment = await Payment.findOne({ razorpay_order_id: orderId });
-    if (!payment) return false;
+    return this.markCaptured(orderId, paymentId, userId, signature)
+  },
 
-    let invoice_url = payment.invoice_url;
+  /**
+   * Idempotent capture. Only the atomic pending→captured transition runs the
+   * side effects (invoice + notification), so the checkout verify call and the
+   * webhook can both fire without double-notifying or re-capturing a refund.
+   */
+  async markCaptured(orderId: string, paymentId: string, userId?: string, signature?: string): Promise<boolean> {
+    const set: Record<string, unknown> = {
+      status: 'captured',
+      razorpay_payment_id: paymentId,
+      captured_at: new Date(),
+    }
+    if (signature) set.razorpay_signature = signature
+
+    // Atomic guard: matches only while still pending. Under a race, exactly one
+    // caller gets modifiedCount === 1; everyone else is a no-op.
+    const result = await Payment.updateOne(
+      { razorpay_order_id: orderId, status: 'pending' },
+      { $set: set }
+    )
+
+    const payment = await Payment.findOne({ razorpay_order_id: orderId })
+    if (!payment) {
+      logger.warn(`markCaptured: no payment for order ${orderId}`)
+      return false
+    }
+    // Already captured earlier → idempotent no-op (no duplicate side effects).
+    if (result.modifiedCount === 0) return true
+
+    const resolvedUserId = userId || payment.user_id?.toString()
+
+    // Generate the invoice once.
     try {
-      const user = await User.findById(userId);
-      if (user && !invoice_url) {
-        const { generateInvoicePDF } = require('./invoiceService');
-        invoice_url = await generateInvoicePDF(payment, user);
+      if (!payment.invoice_url && resolvedUserId) {
+        const user = await User.findById(resolvedUserId)
+        if (user) {
+          const { generateInvoicePDF } = require('./invoiceService')
+          const url = await generateInvoicePDF(payment, user)
+          await Payment.updateOne({ _id: payment._id }, { $set: { invoice_url: url } })
+        }
       }
     } catch (err) {
-      logger.error('Failed to generate PDF invoice:', err);
+      logger.error('Failed to generate PDF invoice:', err)
     }
 
-    await Payment.updateOne(
-      { razorpay_order_id: orderId },
-      { 
-        $set: { 
-          status: 'captured', 
-          razorpay_payment_id: paymentId,
-          razorpay_signature: signature,
-          invoice_url: invoice_url,
-          captured_at: new Date() 
-        } 
-      }
-    )
-
-    await notificationService.notify(
-      userId,
-      'Payment Successful',
-      'Your payment has been processed successfully.',
-      'payment'
-    )
+    // Notify once.
+    if (resolvedUserId) {
+      await notificationService.notify(
+        resolvedUserId,
+        'Payment Successful',
+        'Your payment has been processed successfully.',
+        'payment'
+      )
+    }
 
     return true
   },
 
   async handleWebhook(payload: string, signature: string): Promise<boolean> {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET ?? ''
+    if (!webhookSecret || !signature) return false
     try {
       Razorpay.validateWebhookSignature(payload, signature, webhookSecret)
       return true
