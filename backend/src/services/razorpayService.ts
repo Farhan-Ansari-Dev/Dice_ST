@@ -5,10 +5,21 @@ import { User } from '../models/User'
 import { notificationService } from './notificationService'
 import { logger } from '../utils/logger'
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID ?? 'rzp_test_placeholder',
-  key_secret: process.env.RAZORPAY_KEY_SECRET ?? 'placeholder',
-})
+// Lazily construct the client so importing this module never silently falls back
+// to a placeholder key. Missing keys are caught at boot by validateEnv(); if a
+// call still slips through without keys, it throws a clear error instead.
+let _razorpay: Razorpay | null = null
+function razorpayClient(): Razorpay {
+  if (!_razorpay) {
+    const key_id = process.env.RAZORPAY_KEY_ID
+    const key_secret = process.env.RAZORPAY_KEY_SECRET
+    if (!key_id || !key_secret) {
+      throw new Error('Razorpay is not configured (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET missing)')
+    }
+    _razorpay = new Razorpay({ key_id, key_secret })
+  }
+  return _razorpay
+}
 
 export const razorpayService = {
   async createOrder(
@@ -26,7 +37,7 @@ export const razorpayService = {
       subtotal_paise: number
     }
   ) {
-    const order = await razorpay.orders.create({
+    const order = await razorpayClient().orders.create({
       amount: totalPaise,
       currency: currency,
       notes: {

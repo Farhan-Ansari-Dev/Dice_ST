@@ -20,8 +20,12 @@ import { connectMongo, disconnectMongo, pingMongo } from './db/mongo';
 import routes from './routes/index';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
+import { validateEnv } from './config/validateEnv';
 
 async function main() {
+  // 0. Fail fast on missing/invalid production secrets (payments, auth, db).
+  validateEnv();
+
   // 1. Connect to MongoDB FIRST
   await connectMongo();
 
