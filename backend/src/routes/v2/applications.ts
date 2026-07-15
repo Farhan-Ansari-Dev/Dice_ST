@@ -10,7 +10,7 @@
 import { Router, Response } from 'express';
 import { Types } from 'mongoose';
 import { Application, ApplicationStatus, Workflow, Product, Certification, audit } from '../../models';
-import { authenticate, AuthRequest, requireRole } from '../../middleware/authMongo';
+import { authenticate, AuthRequest, requireRole, ADMIN_ROLES } from '../../middleware/authMongo';
 import { notify } from '../../services/notifications';
 
 const router = Router();
@@ -178,7 +178,7 @@ router.post('/:id/transition', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 // POST /applications/:id/assign
 // ═══════════════════════════════════════════════════════════════
-router.post('/:id/assign', requireRole('admin', 'consultant'), async (req: AuthRequest, res: Response) => {
+router.post('/:id/assign', requireRole(...ADMIN_ROLES, 'consultant'), async (req: AuthRequest, res: Response) => {
   const { user_ids, primary } = req.body as { user_ids: string[]; primary?: string };
   const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
   if (!app) return res.status(404).json({ error: 'not_found' });

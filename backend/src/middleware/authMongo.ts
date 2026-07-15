@@ -12,6 +12,14 @@ import { logger } from '../utils/logger';
 // (e.g. forged tokens claiming "alg":"none" or an asymmetric algorithm).
 const JWT_ALGORITHM: jwt.Algorithm = 'HS256';
 
+/**
+ * Shared permission hierarchy: super_admin inherits every permission that admin has.
+ * Use these constants in requireRole() and authorize() calls so the hierarchy
+ * is defined in one place and never needs to be duplicated per-route.
+ */
+export const ADMIN_ROLES = ['admin', 'super_admin'] as const;
+export const STAFF_ROLES = ['admin', 'super_admin', 'employee'] as const;
+
 export interface AuthRequest extends Request {
   user?: IUser;
   token_payload?: JwtPayload;

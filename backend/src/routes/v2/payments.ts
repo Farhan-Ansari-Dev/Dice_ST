@@ -10,7 +10,7 @@ import { calculateQuotation } from '../../services/paymentService'
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
 
-router.get('/', authenticate, authorize(['admin','employee','consultant','cb','lab','ib','viewer']), wrap(async (req: AuthRequest, res: Response) => {
+router.get('/', authenticate, authorize(['admin','super_admin','employee','consultant','cb','lab','ib','viewer']), wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}
   if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
     query.org_id = req.user!.org_id
@@ -19,7 +19,7 @@ router.get('/', authenticate, authorize(['admin','employee','consultant','cb','l
   sendSuccess(res, payments)
 }))
 
-router.get('/:id', authenticate, authorize(['admin','employee','consultant','cb','lab','ib','viewer']), wrap(async (req: AuthRequest, res: Response) => {
+router.get('/:id', authenticate, authorize(['admin','super_admin','employee','consultant','cb','lab','ib','viewer']), wrap(async (req: AuthRequest, res: Response) => {
   const payment = await Payment.findOne({ _id: req.params.id, org_id: req.user!.org_id }).lean()
   sendSuccess(res, payment)
 }))
@@ -27,7 +27,7 @@ router.get('/:id', authenticate, authorize(['admin','employee','consultant','cb'
 
 
 // Create a Razorpay order / Quotation
-router.post('/quotations', authenticate, authorize(['admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
+router.post('/quotations', authenticate, authorize(['admin','super_admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
   const { application_id, gov_fee, lab_fee } = req.body;
 
   // Use the new service for consistent fee logic and consultancy fee handling
@@ -77,7 +77,7 @@ router.post('/create-order', authenticate, wrap(async (req: AuthRequest, res: Re
   }
 }))
 
-router.post('/verify-payment', authenticate, authorize(['admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
+router.post('/verify-payment', authenticate, authorize(['admin','super_admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body
 
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -147,7 +147,7 @@ router.post('/webhook', wrap(async (req: Request, res: Response) => {
 }))
 
 // New endpoint to fetch/generate invoice URL
-router.get('/:id/invoice', authenticate, authorize(['admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
+router.get('/:id/invoice', authenticate, authorize(['admin','super_admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
   const payment = await Payment.findById(req.params.id).populate('user_id')
   if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' })
   if (!payment.invoice_url) {
