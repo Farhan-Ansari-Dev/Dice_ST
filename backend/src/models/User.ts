@@ -136,6 +136,16 @@ UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { delete
 UserSchema.index({ phone: 1 }, { unique: true, sparse: true });
 UserSchema.index({ org_id: 1, role: 1 });
 
+// Clear any stale/invalid consultant_verification_status values before save.
+// The DB may contain "unverified" (or other legacy strings) from before the enum was defined.
+// "unverified" is semantically equivalent to undefined — the field absent means not yet submitted.
+const VALID_CVS = new Set(['pending', 'verified', 'rejected']);
+UserSchema.pre('save', function () {
+  if (this.consultant_verification_status !== undefined && !VALID_CVS.has(this.consultant_verification_status as string)) {
+    this.consultant_verification_status = undefined;
+  }
+});
+
 // Auto-exclude soft-deleted in default queries (use .setOptions({ includeDeleted: true }) to bypass)
 UserSchema.pre(/^find/, function (this: any) {
   if (!this.getOptions().includeDeleted) {

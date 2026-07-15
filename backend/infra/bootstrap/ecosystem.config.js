@@ -20,7 +20,11 @@ module.exports = {
     instances: 2,                         // match t4g.small vCPU count
     exec_mode: 'cluster',                 // enable load balancing across workers
 
-    // Environment
+    // Environment — always production; env_file layered on top
+    node_args: '--max-old-space-size=512',
+    env: {
+      NODE_ENV: 'production',
+    },
     env_file: '/etc/dice/.env',
 
     // Restart strategy
