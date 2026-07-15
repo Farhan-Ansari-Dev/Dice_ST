@@ -7,6 +7,17 @@ import { sendSuccess, sendError } from '../../utils/response'
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
 
+// Server-side field whitelists prevent mass assignment (e.g. a caller injecting
+// role, deleted_at, otp_hash, org_id, email_verified_at into the update body).
+const CREATE_FIELDS = ['name', 'email', 'phone', 'role', 'org_id', 'country_code', 'locale', 'avatar_url']
+const UPDATE_FIELDS = ['name', 'email', 'phone', 'avatar_url', 'locale', 'country_code']
+const pick = (body: any, fields: string[]) => {
+  const out: any = {}
+  for (const k of fields) if (body[k] !== undefined) out[k] = body[k]
+  return out
+}
+const isAdmin = (role?: string) => role === 'admin' || role === 'super_admin'
+
 router.get('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   res.json({ success: true, data: req.user });
 }))
@@ -90,7 +101,7 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
 }))
 
 router.post('/', authenticate, authorize(['admin','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
-  const userData = { ...req.body }
+  const userData = pick(req.body, CREATE_FIELDS)
   if (userData.phone === '') {
     delete userData.phone
   }
@@ -111,15 +122,22 @@ router.post('/', authenticate, authorize(['admin','super_admin']), wrap(async (r
 }))
 
 router.put('/:id', authenticate, authorize(['admin','employee','super_admin'], { disallowEmployeeEdit: true }), wrap(async (req: AuthRequest, res: Response) => {
-  const updateData = { ...req.body }
+  const updateData = pick(req.body, UPDATE_FIELDS)
   if (updateData.phone === '') {
     delete updateData.phone
+  }
+
+  // Only admins/super_admins may change a role. Employees can reach this route
+  // (disallowEmployeeEdit only blocks employee→employee edits), so the role guard
+  // here is what actually prevents privilege escalation via mass assignment.
+  if (req.body.role !== undefined && isAdmin(req.user!.role)) {
+    updateData.role = req.body.role
   }
 
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { ...updateData, updated_at: new Date() },
-    { new: true }
+    { new: true, runValidators: true }
   ).select('-password_hash -otp_hash -totp_secret')
 
   if (!user) return sendError(res, 'Not found', 404)
