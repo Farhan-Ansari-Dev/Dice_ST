@@ -3,7 +3,8 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Award, ClipboardList, FileText, TrendingUp,
   CreditCard, Truck, FlaskConical, Briefcase, Bot, BarChart3, Settings,
-  ChevronLeft, ChevronRight, LogOut, Shield, Sliders
+  ChevronLeft, ChevronRight, LogOut, Shield, Sliders,
+  Globe2, Building2, CalendarClock,
 } from 'lucide-react'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
@@ -11,18 +12,24 @@ import Avatar from '../common/Avatar'
 import logo from '../../assets/logo.png'
 
 const NAV = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/clients', icon: Users, label: 'Clients' },
-  { to: '/certifications', icon: Award, label: 'Certifications' },
-  { to: '/applications', icon: ClipboardList, label: 'Applications' },
-  { to: '/documents', icon: FileText, label: 'Documents' },
-  { to: '/insights', icon: TrendingUp, label: 'Insights' },
-  { to: '/payments', icon: CreditCard, label: 'Payments' },
-  { to: '/employees', icon: Briefcase, label: 'Employees' },
-  { to: '/ai-assistant', icon: Bot, label: 'AI Assistant' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/remote-config', icon: Sliders, label: 'Remote Config' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/dashboard',                    icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/clients',                      icon: Users,           label: 'Clients' },
+  { to: '/certifications',               icon: Award,           label: 'Certifications' },
+  { to: '/applications',                 icon: ClipboardList,   label: 'Applications' },
+  { to: '/documents',                    icon: FileText,        label: 'Documents' },
+  { to: '/inspections',                  icon: Shield,          label: 'Inspections' },
+  { to: '/shipments',                    icon: Truck,           label: 'Shipments' },
+  { to: '/testing',                      icon: FlaskConical,    label: 'Testing' },
+  { to: '/market-access/countries',      icon: Globe2,          label: 'Countries' },
+  { to: '/market-access/opportunities',  icon: Building2,       label: 'Opportunities' },
+  { to: '/consultants/meetings',         icon: CalendarClock,   label: 'Meetings' },
+  { to: '/insights',                     icon: TrendingUp,      label: 'Insights' },
+  { to: '/payments',                     icon: CreditCard,      label: 'Payments' },
+  { to: '/employees',                    icon: Briefcase,       label: 'Employees' },
+  { to: '/ai-assistant',                 icon: Bot,             label: 'AI Assistant' },
+  { to: '/analytics',                    icon: BarChart3,       label: 'Analytics' },
+  { to: '/remote-config',                icon: Sliders,         label: 'Remote Config' },
+  { to: '/settings',                     icon: Settings,        label: 'Settings' },
 ]
 
 export default function Sidebar() {

@@ -22,6 +22,10 @@ const AIAssistantPage = lazy(() => import('./pages/ai-assistant/AIAssistantPage'
 const AnalyticsPage = lazy(() => import('./pages/analytics/AnalyticsPage'))
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'))
 const RemoteConfigPage = lazy(() => import('./pages/settings/RemoteConfigPage'))
+const InspectionsPage = lazy(() => import('./pages/inspections/InspectionsPage'))
+const CountriesPage = lazy(() => import('./pages/market-access/CountriesPage'))
+const OpportunitiesPage = lazy(() => import('./pages/market-access/OpportunitiesPage'))
+const MeetingAvailabilityPage = lazy(() => import('./pages/consultants/MeetingAvailabilityPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,6 +73,10 @@ function ThemedApp() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="remote-config" element={<RemoteConfigPage />} />
+            <Route path="inspections" element={<InspectionsPage />} />
+            <Route path="market-access/countries" element={<CountriesPage />} />
+            <Route path="market-access/opportunities" element={<OpportunitiesPage />} />
+            <Route path="consultants/meetings" element={<MeetingAvailabilityPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
