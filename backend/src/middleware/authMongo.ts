@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { User, IUser } from '../models';
 import { logger } from '../utils/logger';
+import { isJtiDenylisted } from '../utils/tokenDenylist';
 
 // Pin the signing algorithm to prevent algorithm-confusion attacks
 // (e.g. forged tokens claiming "alg":"none" or an asymmetric algorithm).
@@ -48,6 +49,13 @@ export async function authenticate(
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: [JWT_ALGORITHM] }) as JwtPayload;
+
+    // Session revocation: a logged-out / rotated jti is rejected immediately.
+    if (await isJtiDenylisted(payload.jti)) {
+      res.status(401).json({ error: 'token_revoked' });
+      return;
+    }
+
     const user = await User.findById(payload.sub);
     if (!user) {
       res.status(401).json({ error: 'invalid_token', message: 'User not found' });

@@ -10,9 +10,22 @@ import Redis from 'ioredis';
 import { logger } from '../utils/logger';
 
 // ── In-memory fallback (dev-only, single-process) ────────────────────────────
+// Node's setTimeout silently clamps delays > 2^31-1 ms (~24.8 days) to 1 ms,
+// which would evict long-TTL keys almost immediately. Only schedule a proactive
+// cleanup timer when it fits; longer TTLs rely on lazy expiry in get().
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 class MemoryCache {
   private store = new Map<string, { value: string; expiresAt?: number }>();
   private timers = new Map<string, NodeJS.Timeout>();
+
+  private schedule(key: string, ms: number) {
+    const existing = this.timers.get(key);
+    if (existing) clearTimeout(existing);
+    if (ms <= MAX_TIMEOUT_MS) {
+      this.timers.set(key, setTimeout(() => this.store.delete(key), ms));
+    }
+  }
 
   async get(key: string): Promise<string | null> {
     const entry = this.store.get(key);
@@ -31,10 +44,7 @@ class MemoryCache {
 
   async setex(key: string, seconds: number, value: string): Promise<'OK'> {
     this.store.set(key, { value, expiresAt: Date.now() + seconds * 1000 });
-    // Auto-cleanup
-    const existing = this.timers.get(key);
-    if (existing) clearTimeout(existing);
-    this.timers.set(key, setTimeout(() => this.store.delete(key), seconds * 1000));
+    this.schedule(key, seconds * 1000);
     return 'OK';
   }
 
@@ -58,9 +68,7 @@ class MemoryCache {
     const entry = this.store.get(key);
     if (!entry) return 0;
     entry.expiresAt = Date.now() + seconds * 1000;
-    const existing = this.timers.get(key);
-    if (existing) clearTimeout(existing);
-    this.timers.set(key, setTimeout(() => this.store.delete(key), seconds * 1000));
+    this.schedule(key, seconds * 1000);
     return 1;
   }
 

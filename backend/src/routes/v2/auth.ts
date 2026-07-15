@@ -20,6 +20,7 @@ import { Application } from '../../models/Application';
 import { Certification } from '../../models/Certification';
 import { Insight } from '../../models/Insight';
 import { issueTokens } from '../../middleware/authMongo';
+import { denylistJti, isJtiDenylisted, remainingTtl } from '../../utils/tokenDenylist';
 import { sendEmail } from '../../services/notifications/email';
 import { logger } from '../../utils/logger';
 
@@ -287,8 +288,18 @@ router.post('/refresh', validate(refreshSchema), async (req: Request, res: Respo
 
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as any;
+
+    // Reject a revoked (logged-out or already-rotated) refresh token.
+    if (await isJtiDenylisted(payload.jti)) {
+      return res.status(401).json({ error: 'token_revoked' });
+    }
+
     const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ error: 'user_not_found' });
+
+    // Rotate: single-use refresh tokens. Revoke the presented jti, then issue a
+    // brand-new session pair. A replayed/stolen old refresh token is now dead.
+    await denylistJti(payload.jti, remainingTtl(payload.exp));
 
     const { accessToken, refreshToken: newRefresh } = issueTokens(user);
     return res.json({ accessToken, refreshToken: newRefresh });
@@ -306,7 +317,9 @@ router.post('/logout', async (req: Request, res: Response) => {
   if (refreshToken) {
     try {
       const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as any;
-      // Optionally: blacklist payload.jti in Redis. At this scale, skip — token expires in 30d anyway.
+      // Revoke the session: denylist the jti so both the refresh token and its
+      // paired access token stop working immediately (not in 30 days).
+      await denylistJti(payload.jti, remainingTtl(payload.exp));
       if (push_token) {
         // Clean up push token for this device
         await User.updateOne(
