@@ -142,7 +142,9 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
   // Send OTP via email
   const delivered = await sendEmail({
     to: email,
-    subject: `Your DICE OTP: ${otp}`,
+    // Keep the OTP out of the subject line — subjects are logged by mail relays
+    // and shown in lock-screen/notification previews.
+    subject: 'Your DICE verification code',
     body: `Your one-time password is ${otp}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
     template: 'otp',
     data: { otp, ttl_minutes: 10 },

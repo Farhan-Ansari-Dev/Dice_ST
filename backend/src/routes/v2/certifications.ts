@@ -4,6 +4,7 @@ import { authorize } from '../../middleware/authorize'
 import { Certification } from '../../models/Certification'
 import { Application } from '../../models/Application'
 import { sendSuccess, sendError } from '../../utils/response'
+import { stripProtected } from '../../utils/sanitize'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -55,7 +56,7 @@ router.post('/', authenticate, authorize(['admin','employee','super_admin']), wr
     product_id = product_id || app.product_id
   }
   const cert = new Certification({
-    ...req.body,
+    ...stripProtected(req.body),
     org_id,
     product_id,
     created_at: new Date(),
@@ -68,7 +69,7 @@ router.post('/', authenticate, authorize(['admin','employee','super_admin']), wr
 router.put('/:id', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   const cert = await Certification.findOneAndUpdate(
     certScope(req),
-    { ...req.body, updated_at: new Date() },
+    { ...stripProtected(req.body), updated_at: new Date() },
     { new: true }
   )
   if (!cert) return sendError(res, 'Not found', 404)

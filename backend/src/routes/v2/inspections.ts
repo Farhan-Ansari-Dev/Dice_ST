@@ -3,6 +3,7 @@ import { Inspection } from '../../models';
 import { authenticate, requireRole, AuthRequest } from '../../middleware/authMongo';
 
 import { getPaginationData, buildPaginationResponse } from '../../utils/pagination';
+import { stripProtected } from '../../utils/sanitize';
 
 const router = Router();
 const wrap = (fn: any) => (req: AuthRequest, res: Response, next: any) => fn(req, res, next).catch(next);
@@ -54,7 +55,7 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
 router.post('/', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   try {
     const inspection = await Inspection.create({
-      ...req.body,
+      ...stripProtected(req.body),
       client_id: req.user?._id,
       org_id: req.user?.org_id,
       created_at: new Date(),
@@ -71,7 +72,7 @@ router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async
   try {
     const inspection = await Inspection.findOneAndUpdate(
       { _id: req.params.id, deleted_at: null },
-      { ...req.body, updated_at: new Date() },
+      { ...stripProtected(req.body), updated_at: new Date() },
       { new: true }
     );
     if (!inspection) return res.status(404).json({ success: false, error: 'Not found' });
