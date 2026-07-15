@@ -3,6 +3,7 @@ import { RemoteConfig } from '../../models/RemoteConfig'
 import { authenticate, requireRole, ADMIN_ROLES, AuthRequest } from '../../middleware/authMongo'
 import { sendSuccess } from '../../utils/response'
 import redis from '../../config/redis'
+import { audit } from '../../models/AuditLog'
 import { z } from 'zod'
 import { logger } from '../../utils/logger'
 
@@ -83,10 +84,21 @@ router.put('/admin', authenticate, requireRole('admin', 'super_admin'), wrap(asy
   }
   
   await config.save()
-  
+
   // Immediately bust the public cache (we want public clients to fetch and cache the stripped version)
   await redis.del(CACHE_KEY)
-  
+
+  // Audit which sections changed (Remote Config alters the mobile app for all
+  // users and holds the AI key — never record the key value itself).
+  const changed = Object.keys(updates).filter((k) => (updates as any)[k] !== undefined)
+  await audit({
+    actor: req.user!._id as any,
+    resource_type: 'remote_config',
+    resource_id: config._id as any,
+    action: 'updated',
+    notes: `sections=${changed.join(',') || 'none'}${updates.aiSettings?.apiKey ? ' (ai apiKey rotated)' : ''}`,
+  })
+
   logger.info(`Remote Config updated by admin ${req.user!._id}`)
   sendSuccess(res, config, 'Configuration updated successfully')
 }))

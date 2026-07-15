@@ -8,6 +8,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Payment } from '../models/Payment';
 import { Notification } from '../models/Notification';
 import { User } from '../models/User';
+import { AuditLog } from '../models/AuditLog';
 import { razorpayService } from '../services/razorpayService';
 
 let mongoServer: MongoMemoryServer;
@@ -60,6 +61,10 @@ describe('LB-3 — idempotent payment capture', () => {
 
     notifs = await Notification.countDocuments({ user_id: user._id, type: 'payment' });
     expect(notifs).toBe(1); // still exactly one
+
+    // C-4 — capture is audited exactly once.
+    const audits = await AuditLog.countDocuments({ 'meta.action': 'payment_received', 'meta.resource_id': afterSecond!._id });
+    expect(audits).toBe(1);
   });
 
   it('checkout verifyPayment rejects a bad signature', async () => {

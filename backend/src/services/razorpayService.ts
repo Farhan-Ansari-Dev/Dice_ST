@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { Payment } from '../models/Payment'
 import { User } from '../models/User'
 import { notificationService } from './notificationService'
+import { audit } from '../models/AuditLog'
 import { logger } from '../utils/logger'
 
 // Lazily construct the client so importing this module never silently falls back
@@ -147,6 +148,16 @@ export const razorpayService = {
         'payment'
       )
     }
+
+    // Audit the money-movement event (financial governance).
+    await audit({
+      actor: resolvedUserId ? (payment.user_id as any) : null,
+      org_id: payment.org_id as any,
+      resource_type: 'payment',
+      resource_id: payment._id as any,
+      action: 'payment_received',
+      notes: `order=${orderId} payment=${paymentId} total_paise=${payment.total_paise} ${payment.currency}`,
+    })
 
     return true
   },
