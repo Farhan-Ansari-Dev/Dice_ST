@@ -66,7 +66,17 @@ export default function RemoteConfigPage() {
   };
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading Configuration...</div>;
-  if (!config) return <div className="p-8 text-center text-red-500">No configuration found.</div>;
+  if (!config) return (
+    <div className="p-8 text-center text-red-500">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <AlertCircle className="w-5 h-5" />
+        <span>{error || 'No configuration found.'}</span>
+      </div>
+      <button onClick={() => { setLoading(true); setError(null); fetchConfig(); }} style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+        Retry
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-6">

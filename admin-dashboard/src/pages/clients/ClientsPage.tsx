@@ -13,6 +13,9 @@ export default function ClientsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [showDeleted, setShowDeleted] = useState(true)
+  const [isModalOpen, setModalOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '' })
 
   const { data: clients, isLoading } = useQuery({
     queryKey: ['clients', showDeleted],
@@ -20,6 +23,22 @@ export default function ClientsPage() {
       const res = await apiClient.get(`/users?role=client${showDeleted ? '&showDeleted=true' : ''}`)
       return res.data.data || []
     }
+  })
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setEditingId(null)
+    setFormData({ name: '', email: '', phone: '' })
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiClient.post('/users', { ...data, role: 'client' }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['clients'] }); closeModal() }
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => apiClient.put(`/users/${id}`, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['clients'] }); closeModal() }
   })
 
   const deleteMutation = useMutation({
@@ -31,6 +50,21 @@ export default function ClientsPage() {
     mutationFn: (id: string) => apiClient.post(`/users/${id}/restore`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['clients'] })
   })
+
+  const openEdit = (client: any) => {
+    setEditingId(client._id)
+    setFormData({ name: client.name || '', email: client.email || '', phone: client.phone || '' })
+    setModalOpen(true)
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: formData })
+    } else {
+      createMutation.mutate(formData)
+    }
+  }
 
   const filtered = (clients || []).filter((c: any) =>
     c.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -58,8 +92,38 @@ export default function ClientsPage() {
     document.body.removeChild(link);
   };
 
+  const modalInput: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none' }
+
   return (
     <div>
+      {isModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'var(--bg-card)', padding: 24, borderRadius: 'var(--radius-lg)', width: 400, border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px', color: 'var(--text-primary)' }}>{editingId ? 'Edit Client' : 'Add Client'}</h3>
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Full Name</label>
+                <input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Acme Industries" style={modalInput} />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Email</label>
+                <input required type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="client@example.com" style={modalInput} />
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Phone (Optional)</label>
+                <input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+91 9876543210" style={modalInput} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
+                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Add Client'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
@@ -73,7 +137,7 @@ export default function ClientsPage() {
           <Button variant="secondary" icon={<Filter size={14} />} size="sm" onClick={() => setShowDeleted(!showDeleted)}>
             {showDeleted ? 'Hide Deleted' : 'Show Deleted'}
           </Button>
-          <Button icon={<Plus size={14} />} size="sm">Add Client</Button>
+          <Button icon={<Plus size={14} />} size="sm" onClick={() => { setEditingId(null); setFormData({ name: '', email: '', phone: '' }); setModalOpen(true) }}>Add Client</Button>
         </div>
       </div>
 
@@ -124,7 +188,7 @@ export default function ClientsPage() {
                 <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 12 }}>{formatDate(client.updated_at)}</td>
                 <td style={{ padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Edit">
+                    <button onClick={() => openEdit(client)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Edit">
                       <Edit2 size={14} />
                     </button>
                     {client.deleted_at ? (

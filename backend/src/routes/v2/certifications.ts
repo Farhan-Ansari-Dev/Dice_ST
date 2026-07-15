@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { authenticate, AuthRequest } from '../../middleware/authMongo'
 import { authorize } from '../../middleware/authorize'
 import { Certification } from '../../models/Certification'
+import { Application } from '../../models/Application'
 import { sendSuccess, sendError } from '../../utils/response'
 
 const router = Router()
@@ -26,16 +27,37 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
   return sendSuccess(res, certs)
 }))
 
+// Admins/super_admins operate platform-wide (matching the list route); others stay org-scoped.
+const certScope = (req: AuthRequest): any => {
+  const filter: any = { _id: req.params.id }
+  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    filter.org_id = req.user!.org_id
+  }
+  return filter
+}
+
 router.get('/:id', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
-  const cert = await Certification.findOne({ _id: req.params.id, org_id: req.user!.org_id }).lean()
+  const cert = await Certification.findOne(certScope(req)).lean()
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert)
 }))
 
 router.post('/', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
+  // The schema requires org_id + product_id + application_id. Admins have no org of
+  // their own, so when an application_id is supplied we derive org/product from it
+  // server-side (never trusting client-sent org_id).
+  let org_id = req.user!.org_id
+  let { product_id } = req.body
+  if (req.body.application_id) {
+    const app = await Application.findById(req.body.application_id).lean()
+    if (!app) return sendError(res, 'Application not found', 400)
+    org_id = app.org_id as any
+    product_id = product_id || app.product_id
+  }
   const cert = new Certification({
     ...req.body,
-    org_id: req.user!.org_id,
+    org_id,
+    product_id,
     created_at: new Date(),
     updated_at: new Date()
   })
@@ -45,7 +67,7 @@ router.post('/', authenticate, authorize(['admin','employee','super_admin']), wr
 
 router.put('/:id', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   const cert = await Certification.findOneAndUpdate(
-    { _id: req.params.id, org_id: req.user!.org_id },
+    certScope(req),
     { ...req.body, updated_at: new Date() },
     { new: true }
   )
@@ -55,7 +77,7 @@ router.put('/:id', authenticate, authorize(['admin','employee','super_admin']), 
 
 router.delete('/:id', authenticate, authorize(['admin','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   const cert = await Certification.findOneAndUpdate(
-    { _id: req.params.id, org_id: req.user!.org_id },
+    certScope(req),
     { deleted_at: new Date(), updated_at: new Date() },
     { new: true }
   )
@@ -65,7 +87,7 @@ router.delete('/:id', authenticate, authorize(['admin','super_admin']), wrap(asy
 
 router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   const cert = await Certification.findOneAndUpdate(
-    { _id: req.params.id, org_id: req.user!.org_id },
+    certScope(req),
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
     { new: true }
   )

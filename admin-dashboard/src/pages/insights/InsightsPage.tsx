@@ -1,34 +1,211 @@
 import React, { useState } from 'react'
-import { TrendingUp, Bookmark, ExternalLink, Bot, RefreshCw } from 'lucide-react'
+import { ExternalLink, RefreshCw, Plus, Edit2, Trash2, Pin, PinOff, Eye, EyeOff } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Button from '../../components/common/Button'
 import { formatRelative } from '../../utils/formatters'
 import { INSIGHT_CATEGORIES } from '../../utils/constants'
-
-const INSIGHTS = [
-  { id: '1', category: 'bis_update', title: 'BIS Amends IS 1293:2025 for Electrical Plugs & Sockets', summary: 'The Bureau of Indian Standards has released Amendment No. 3 to IS 1293:2025, affecting all plug and socket certifications issued before March 2025. Manufacturers must comply by September 2025.', source: 'BIS Official', date: '2025-05-24T09:30:00Z', tags: ['BIS', 'IS 1293', 'Electrical'], aiSummary: 'Critical update for electronics manufacturers. 23 of your active certifications may need review. Recommend initiating amendment compliance check immediately.', relevance: 0.95 },
-  { id: '2', category: 'customs', title: 'CBIC Issues Circular on Import Duty for Electronic Goods', summary: 'The Central Board of Indirect Taxes & Customs has revised import duty structure for consumer electronics under HS Code 8501-8543. New duty rates effective from June 1, 2025.', source: 'CBIC', date: '2025-05-23T14:00:00Z', tags: ['Customs', 'CBIC', 'Electronics', 'Import Duty'], aiSummary: 'Import duty changes affect cost structures for imported components. Clients in electronics sector should review their supply chains.', relevance: 0.88 },
-  { id: '3', category: 'export_import', title: 'DGFT Updates SCOMET Policy for Dual-Use Goods', summary: 'Directorate General of Foreign Trade has updated the Special Chemicals, Organisms, Materials, Equipment and Technologies (SCOMET) policy with 12 new items added to the controlled list.', source: 'DGFT', date: '2025-05-22T11:00:00Z', tags: ['DGFT', 'SCOMET', 'Export Control'], aiSummary: 'SCOMET list expansion affects exporters of specialized chemicals and advanced materials. License applications required for new controlled items.', relevance: 0.76 },
-  { id: '4', category: 'certification', title: 'FSSAI Mandates QR Code on All Packaged Food Products', summary: 'Food Safety and Standards Authority of India has made it mandatory for all packaged food manufacturers to include QR codes linking to product batch information, manufacturing date, and safety certifications from July 1, 2025.', source: 'FSSAI', date: '2025-05-21T10:00:00Z', tags: ['FSSAI', 'QR Code', 'Food Safety', 'Labelling'], aiSummary: 'FSSAI mandate impacts all food-sector clients. Packaging changes needed within 6 weeks. Proactively notify relevant clients.', relevance: 0.92 },
-  { id: '5', category: 'government', title: 'Government Launches PLI Scheme for Specialty Chemicals', summary: 'Ministry of Chemicals and Fertilizers announces Production Linked Incentive scheme offering 10% incentive on incremental sales for specialty chemical manufacturers, requiring IS certification.', source: 'Ministry of Chemicals', date: '2025-05-20T15:00:00Z', tags: ['PLI', 'Specialty Chemicals', 'Government Scheme'], aiSummary: 'Excellent business opportunity for BIS certification in specialty chemicals segment. Recommend proactively outreach to chemical manufacturers.', relevance: 0.73 },
-]
+import { apiClient } from '../../services/apiClient'
+import { toast } from '../../store/toastStore'
 
 const CATEGORY_COLOR: Record<string, string> = {
   bis_update: '#6C63FF', customs: '#FFB347', export_import: '#00D4FF', certification: '#00C896', government: '#FF6B9D',
 }
 
+const EMPTY_FORM = {
+  title: '', summary: '', content: '', category: 'bis_update', country: 'India',
+  source: 'Sanyog Conformity', link: '', imageUrl: '', author: '',
+  tags: '', relevanceScore: 80, published: true, featured: false,
+  targetCountries: '', certifications: '',
+}
+
+const csv = (v: any): string[] => typeof v === 'string' ? v.split(',').map((t: string) => t.trim()).filter(Boolean) : (Array.isArray(v) ? v : [])
+
 export default function InsightsPage() {
+  const queryClient = useQueryClient()
   const [activeCategory, setActiveCategory] = useState('all')
-  const [bookmarked, setBookmarked] = useState<string[]>([])
-  const filtered = activeCategory === 'all' ? INSIGHTS : INSIGHTS.filter(i => i.category === activeCategory)
+  const [isModalOpen, setModalOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formData, setFormData] = useState<any>(EMPTY_FORM)
+
+  // includeUnpublished=true → admins manage drafts here; mobile app (same endpoint,
+  // same collection) omits the flag and only ever receives published insights.
+  const { data: insights = [], isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['insights', activeCategory],
+    queryFn: async () => {
+      const params = new URLSearchParams({ includeUnpublished: 'true', limit: '50' })
+      if (activeCategory !== 'all') params.set('category', activeCategory)
+      const res = await apiClient.get(`/insights?${params}`)
+      return res.data.data || []
+    }
+  })
+
+  const closeModal = () => { setModalOpen(false); setEditingId(null); setFormData(EMPTY_FORM) }
+
+  const toPayload = (f: any) => ({
+    ...f,
+    tags: csv(f.tags),
+    targetCountries: csv(f.targetCountries),
+    certifications: csv(f.certifications),
+    relevanceScore: Number(f.relevanceScore) || 0,
+  })
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['insights'] })
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiClient.post('/insights', toPayload(data)),
+    onSuccess: () => { invalidate(); closeModal(); toast.success('Insight published') },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to publish insight')
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => apiClient.put(`/insights/${id}`, toPayload(data)),
+    onSuccess: () => { invalidate(); closeModal(); toast.success('Insight updated') },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to update insight')
+  })
+
+  // Publish/unpublish and pin/unpin are partial updates — no form round-trip needed
+  const patchMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: any }) => apiClient.put(`/insights/${id}`, patch),
+    onSuccess: () => invalidate(),
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Update failed')
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/insights/${id}`),
+    onSuccess: () => { invalidate(); toast.success('Insight deleted') },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to delete insight')
+  })
+
+  const openEdit = (ins: any) => {
+    setEditingId(ins._id)
+    setFormData({
+      title: ins.title || '', summary: ins.summary || '', content: ins.content || '',
+      category: ins.category || 'bis_update', country: ins.country || 'India',
+      source: ins.source || '', link: ins.link || '', imageUrl: ins.imageUrl || '',
+      author: ins.author || '', tags: (ins.tags || []).join(', '),
+      relevanceScore: Number(ins.relevanceScore) || 0,
+      published: ins.published !== false, featured: ins.featured === true,
+      targetCountries: (ins.targetCountries || []).join(', '),
+      certifications: (ins.certifications || []).join(', '),
+    })
+    setModalOpen(true)
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (editingId) updateMutation.mutate({ id: editingId, data: formData })
+    else createMutation.mutate(formData)
+  }
+
+  const modalInput: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none' }
+  const modalLabel: React.CSSProperties = { display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }
+  const iconBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex' }
 
   return (
     <div>
+      {isModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'var(--bg-card)', padding: 24, borderRadius: 'var(--radius-lg)', width: 620, maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px', color: 'var(--text-primary)' }}>{editingId ? 'Edit Insight' : 'New Insight'}</h3>
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={modalLabel}>Title</label>
+                <input required value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} placeholder="e.g. BIS Amends IS 1293 for Electrical Plugs" style={modalInput} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={modalLabel}>Short Description</label>
+                <textarea required rows={2} value={formData.summary} onChange={e => setFormData({ ...formData, summary: e.target.value })} placeholder="One or two sentences shown in the feed…" style={{ ...modalInput, fontFamily: 'inherit' }} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={modalLabel}>Full Content</label>
+                <textarea rows={6} value={formData.content} onChange={e => setFormData({ ...formData, content: e.target.value })} placeholder="Full article body shown when the reader opens the insight…" style={{ ...modalInput, fontFamily: 'inherit' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Category</label>
+                  <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} style={modalInput}>
+                    {INSIGHT_CATEGORIES.filter(c => c.key !== 'all').map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Country</label>
+                  <input required value={formData.country} onChange={e => setFormData({ ...formData, country: e.target.value })} style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Author</label>
+                  <input value={formData.author} onChange={e => setFormData({ ...formData, author: e.target.value })} placeholder="Optional" style={modalInput} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Source</label>
+                  <input required value={formData.source} onChange={e => setFormData({ ...formData, source: e.target.value })} placeholder="BIS Official" style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Relevance (0–100)</label>
+                  <input type="number" min={0} max={100} value={formData.relevanceScore === 0 ? '' : String(formData.relevanceScore)}
+                    onChange={e => {
+                      const parsed = parseInt(e.target.value, 10)
+                      setFormData({ ...formData, relevanceScore: Number.isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed)) })
+                    }} style={modalInput} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Source Link (optional)</label>
+                  <input value={formData.link} onChange={e => setFormData({ ...formData, link: e.target.value })} placeholder="https://…" style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Image URL (optional)</label>
+                  <input value={formData.imageUrl} onChange={e => setFormData({ ...formData, imageUrl: e.target.value })} placeholder="https://…/cover.jpg" style={modalInput} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={modalLabel}>Tags (comma-separated)</label>
+                <input value={formData.tags} onChange={e => setFormData({ ...formData, tags: e.target.value })} placeholder="BIS, IS 1293, Electrical" style={modalInput} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Target Countries (comma-separated)</label>
+                  <input value={formData.targetCountries} onChange={e => setFormData({ ...formData, targetCountries: e.target.value })} placeholder="India, UAE, Germany" style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Related Certifications (comma-separated)</label>
+                  <input value={formData.certifications} onChange={e => setFormData({ ...formData, certifications: e.target.value })} placeholder="BIS, CE, FSSAI" style={modalInput} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>
+                  <input type="checkbox" checked={formData.published} onChange={e => setFormData({ ...formData, published: e.target.checked })} />
+                  Published (visible in mobile app)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>
+                  <input type="checkbox" checked={formData.featured} onChange={e => setFormData({ ...formData, featured: e.target.checked })} />
+                  Featured (pinned to top)
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
+                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Create Insight'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)', fontSize: 20, fontWeight: 700, margin: 0 }}>Regulatory Insights</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>AI-powered compliance intelligence — updated continuously</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>Same collection & API the mobile app reads — publish here, live in the app instantly</p>
         </div>
-        <Button variant="secondary" icon={<RefreshCw size={14} />} size="sm">Refresh Feed</Button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Button variant="secondary" icon={<RefreshCw size={14} />} size="sm" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? 'Refreshing…' : 'Refresh Feed'}
+          </Button>
+          <Button icon={<Plus size={14} />} size="sm" onClick={() => { setEditingId(null); setFormData(EMPTY_FORM); setModalOpen(true) }}>New Insight</Button>
+        </div>
       </div>
 
       {/* Category Tabs */}
@@ -46,48 +223,69 @@ export default function InsightsPage() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {filtered.map(ins => (
-          <div key={ins.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', borderLeft: `3px solid ${CATEGORY_COLOR[ins.category] ?? '#6C63FF'}` }}>
+        {isLoading ? (
+          <p style={{ color: 'var(--text-muted)' }}>Loading insights…</p>
+        ) : insights.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>No insights in this category yet. Publish one to feed the mobile app.</p>
+        ) : insights.map((ins: any) => {
+          const unpublished = ins.published === false
+          return (
+          <div key={ins._id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', borderLeft: `3px solid ${CATEGORY_COLOR[ins.category] ?? '#6C63FF'}`, opacity: unpublished ? 0.6 : 1 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                   <span style={{ background: (CATEGORY_COLOR[ins.category] ?? '#6C63FF') + '20', color: CATEGORY_COLOR[ins.category] ?? '#6C63FF', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {ins.category.replace('_', ' ')}
+                    {(ins.category || '').replace('_', ' ')}
                   </span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{ins.source} · {formatRelative(ins.date)}</span>
-                  <span style={{ background: 'rgba(0,200,150,0.12)', color: '#00C896', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
-                    {Math.round(ins.relevance * 100)}% relevant
-                  </span>
+                  {ins.featured && (
+                    <span style={{ background: 'rgba(255,179,71,0.15)', color: '#FFB347', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>📌 PINNED</span>
+                  )}
+                  {unpublished && (
+                    <span style={{ background: 'rgba(139,146,165,0.15)', color: '#8B92A5', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>DRAFT — hidden from app</span>
+                  )}
+                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{ins.source}{ins.author ? ` · ${ins.author}` : ''} · {formatRelative(ins.publishedAt || ins.createdAt)}</span>
+                  {ins.relevanceScore > 0 && (
+                    <span style={{ background: 'rgba(0,200,150,0.12)', color: '#00C896', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
+                      {Math.round(ins.relevanceScore)}% relevant
+                    </span>
+                  )}
                 </div>
                 <h3 style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 700, margin: '0 0 8px', lineHeight: 1.4 }}>{ins.title}</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '0 0 12px', lineHeight: 1.6 }}>{ins.summary}</p>
 
-                {/* AI Summary */}
-                <div style={{ background: 'rgba(108,99,255,0.06)', border: '1px solid rgba(108,99,255,0.15)', borderRadius: 8, padding: '10px 14px', display: 'flex', gap: 10 }}>
-                  <Bot size={14} color="var(--accent-purple)" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 12, margin: 0, lineHeight: 1.5 }}>
-                    <strong style={{ color: 'var(--accent-purple)' }}>AI Summary: </strong>{ins.aiSummary}
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-                  {ins.tags.map(tag => (
-                    <span key={tag} style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{tag}</span>
-                  ))}
-                </div>
+                {(ins.tags || []).length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {ins.tags.map((tag: string) => (
+                      <span key={tag} style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{tag}</span>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-                <button onClick={() => setBookmarked(b => b.includes(ins.id) ? b.filter(x => x !== ins.id) : [...b, ins.id])} style={{ background: 'none', border: 'none', cursor: 'pointer', color: bookmarked.includes(ins.id) ? 'var(--accent-amber)' : 'var(--text-muted)', padding: 6, display: 'flex' }}>
-                  <Bookmark size={16} fill={bookmarked.includes(ins.id) ? 'currentColor' : 'none'} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                <button onClick={() => patchMutation.mutate({ id: ins._id, patch: { published: unpublished } })}
+                  title={unpublished ? 'Publish' : 'Unpublish'} style={{ ...iconBtn, color: unpublished ? '#00C896' : 'var(--text-muted)' }}>
+                  {unpublished ? <Eye size={16} /> : <EyeOff size={16} />}
                 </button>
-                <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 6, display: 'flex' }}>
-                  <ExternalLink size={16} />
+                <button onClick={() => patchMutation.mutate({ id: ins._id, patch: { featured: !ins.featured } })}
+                  title={ins.featured ? 'Unpin' : 'Pin to top'} style={{ ...iconBtn, color: ins.featured ? '#FFB347' : 'var(--text-muted)' }}>
+                  {ins.featured ? <PinOff size={16} /> : <Pin size={16} />}
                 </button>
+                <button onClick={() => openEdit(ins)} title="Edit" style={{ ...iconBtn, color: 'var(--text-muted)' }}>
+                  <Edit2 size={16} />
+                </button>
+                <button onClick={() => { if (window.confirm(`Delete "${ins.title}"?`)) deleteMutation.mutate(ins._id) }} title="Delete" style={{ ...iconBtn, color: '#FF6B9D' }}>
+                  <Trash2 size={16} />
+                </button>
+                {ins.link && (
+                  <a href={ins.link} target="_blank" rel="noopener noreferrer" title="Open source" style={{ ...iconBtn, color: 'var(--text-muted)' }}>
+                    <ExternalLink size={16} />
+                  </a>
+                )}
               </div>
             </div>
           </div>
-        ))}
+        )})}
       </div>
     </div>
   )

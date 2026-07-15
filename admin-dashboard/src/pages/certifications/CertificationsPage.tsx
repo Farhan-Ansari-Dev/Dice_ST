@@ -12,10 +12,15 @@ const isExpiringSoon = (expiry: string) => {
   return days > 0 && days <= 60
 }
 
+const EMPTY_CERT = { application_id: '', cert_number: '', cert_type: 'BIS_CRS', issuing_body: 'BIS', scheme: '', issue_date: '', expiry_date: '', status: 'active' }
+
 export default function CertificationsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [showDeleted, setShowDeleted] = useState(true)
+  const [isModalOpen, setModalOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formData, setFormData] = useState<any>(EMPTY_CERT)
 
   const { data: certs, isLoading } = useQuery({
     queryKey: ['certifications', showDeleted],
@@ -23,6 +28,28 @@ export default function CertificationsPage() {
       const res = await apiClient.get(`/certifications${showDeleted ? '?showDeleted=true' : ''}`)
       return res.data.data || []
     }
+  })
+
+  // Applications feed the create form — org & product are derived server-side from the chosen application
+  const { data: applications } = useQuery({
+    queryKey: ['applications_for_cert'],
+    queryFn: async () => {
+      const res = await apiClient.get('/applications?limit=100')
+      return res.data.data || []
+    },
+    enabled: isModalOpen && !editingId,
+  })
+
+  const closeModal = () => { setModalOpen(false); setEditingId(null); setFormData(EMPTY_CERT) }
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiClient.post('/certifications', data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['certifications'] }); closeModal() }
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => apiClient.put(`/certifications/${id}`, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['certifications'] }); closeModal() }
   })
 
   const deleteMutation = useMutation({
@@ -35,6 +62,30 @@ export default function CertificationsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['certifications'] })
   })
 
+  const openEdit = (cert: any) => {
+    setEditingId(cert._id)
+    setFormData({
+      cert_number: cert.cert_number || '',
+      cert_type: cert.cert_type || 'BIS_CRS',
+      issuing_body: cert.issuing_body || 'BIS',
+      scheme: cert.scheme || '',
+      issue_date: cert.issue_date ? cert.issue_date.split('T')[0] : '',
+      expiry_date: cert.expiry_date ? cert.expiry_date.split('T')[0] : '',
+      status: cert.status || 'active',
+    })
+    setModalOpen(true)
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (editingId) {
+      const { application_id, ...update } = formData
+      updateMutation.mutate({ id: editingId, data: update })
+    } else {
+      createMutation.mutate(formData)
+    }
+  }
+
   const filtered = (certs || []).filter((c: any) =>
     (c.org_id?.name || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.cert_type || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -43,8 +94,81 @@ export default function CertificationsPage() {
 
   const expiringCount = filtered.filter((c: any) => isExpiringSoon(c.expiry_date) && !c.deleted_at).length
 
+  const modalInput: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none' }
+  const modalLabel: React.CSSProperties = { display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }
+
   return (
     <div>
+      {isModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'var(--bg-card)', padding: 24, borderRadius: 'var(--radius-lg)', width: 480, maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px', color: 'var(--text-primary)' }}>{editingId ? 'Edit Certificate' : 'Add Certificate'}</h3>
+            <form onSubmit={handleSubmit}>
+              {!editingId && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={modalLabel}>Application (links client & product)</label>
+                  <select required value={formData.application_id} onChange={e => setFormData({ ...formData, application_id: e.target.value })} style={modalInput}>
+                    <option value="">Select an application…</option>
+                    {(applications || []).map((app: any) => (
+                      <option key={app._id} value={app._id}>
+                        {app.application_number || app._id.substring(0, 8)} — {app.product_id?.name || 'Unknown product'} ({app.cert_type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Certificate Number</label>
+                  <input required value={formData.cert_number} onChange={e => setFormData({ ...formData, cert_number: e.target.value })} placeholder="e.g. R-41012345" style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Type</label>
+                  <input required value={formData.cert_type} onChange={e => setFormData({ ...formData, cert_type: e.target.value })} placeholder="BIS_CRS" style={modalInput} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Issuing Body</label>
+                  <input required value={formData.issuing_body} onChange={e => setFormData({ ...formData, issuing_body: e.target.value })} placeholder="BIS" style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Scheme / Standard</label>
+                  <input required value={formData.scheme} onChange={e => setFormData({ ...formData, scheme: e.target.value })} placeholder="IS 13252" style={modalInput} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Issue Date</label>
+                  <input required type="date" value={formData.issue_date} onChange={e => setFormData({ ...formData, issue_date: e.target.value })} style={modalInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={modalLabel}>Expiry Date</label>
+                  <input required type="date" value={formData.expiry_date} onChange={e => setFormData({ ...formData, expiry_date: e.target.value })} style={modalInput} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={modalLabel}>Status</label>
+                <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} style={modalInput}>
+                  <option value="active">Active</option>
+                  <option value="expiring_soon">Expiring Soon</option>
+                  <option value="expired">Expired</option>
+                  <option value="renewed">Renewed</option>
+                  <option value="revoked">Revoked</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
+                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingId ? 'Save Changes' : 'Add Certificate'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)', fontSize: 20, fontWeight: 700, margin: 0 }}>Certifications</h2>
@@ -54,7 +178,7 @@ export default function CertificationsPage() {
           <Button variant="secondary" icon={<Filter size={14} />} size="sm" onClick={() => setShowDeleted(!showDeleted)}>
             {showDeleted ? 'Hide Deleted' : 'Show Deleted'}
           </Button>
-          <Button icon={<Plus size={14} />} size="sm">Add Certificate</Button>
+          <Button icon={<Plus size={14} />} size="sm" onClick={() => { setEditingId(null); setFormData(EMPTY_CERT); setModalOpen(true) }}>Add Certificate</Button>
         </div>
       </div>
 
@@ -119,7 +243,7 @@ export default function CertificationsPage() {
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Edit">
+                      <button onClick={() => openEdit(cert)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Edit">
                         <Edit2 size={14} />
                       </button>
                       {cert.deleted_at ? (

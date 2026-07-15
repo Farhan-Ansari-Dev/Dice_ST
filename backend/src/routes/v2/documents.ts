@@ -5,7 +5,7 @@ import { Router, Response } from 'express';
 import { Types } from 'mongoose';
 import { Document, DocumentVersion } from '../../models';
 import { documentService } from '../../services/documentService';
-import { authenticate, AuthRequest } from '../../middleware/authMongo';
+import { authenticate, requireRole, ADMIN_ROLES, AuthRequest } from '../../middleware/authMongo';
 
 const router = Router();
 router.use(authenticate);
@@ -119,6 +119,21 @@ router.get('/:id/download', async (req: AuthRequest, res: Response) => {
     req.user!._id as any
   );
   return res.json({ data: { url, expires_in: 900 } });
+});
+
+// Soft-delete a document (S3 objects retained for audit/versioning immutability)
+router.delete('/:id', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthRequest, res: Response) => {
+  const filter: any = { _id: req.params.id };
+  if (!ADMIN_ROLES.includes(req.user!.role as any)) {
+    filter.org_id = req.user!.org_id;
+  }
+  const doc = await Document.findOneAndUpdate(
+    filter,
+    { deleted_at: new Date() },
+    { new: true }
+  );
+  if (!doc) return res.status(404).json({ error: 'not_found' });
+  return res.json({ data: { id: doc._id }, message: 'Deleted successfully' });
 });
 
 // List all versions of a document

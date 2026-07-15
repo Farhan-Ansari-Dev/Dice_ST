@@ -4,13 +4,16 @@ import Button from '../../components/common/Button'
 import apiClient from '../../services/apiClient'
 import { toast } from '../../store/toastStore'
 
+const EMPTY_FORM = {
+  title: '', slug: '', category: 'Manufacturing', industry: 'Electronics', country: 'India', overview: '', investment: 0, demand: 'Medium', risk: 'Medium', status: 'draft'
+}
+
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [formData, setFormData] = useState({
-    title: '', slug: '', category: 'Manufacturing', industry: 'Electronics', country: 'India', overview: '', investment: 0, demand: 'Medium', risk: 'Medium', status: 'draft'
-  })
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [formData, setFormData] = useState<any>(EMPTY_FORM)
 
   const fetchOpps = async () => {
     try {
@@ -25,15 +28,46 @@ export default function OpportunitiesPage() {
 
   useEffect(() => { fetchOpps() }, [])
 
+  const openCreate = () => { setEditingId(null); setFormData(EMPTY_FORM); setShowModal(true) }
+
+  const openEdit = (opp: any) => {
+    setEditingId(opp._id)
+    setFormData({
+      title: opp.title || '', slug: opp.slug || '', category: opp.category || 'Manufacturing',
+      industry: opp.industry || '', country: opp.country || '', overview: opp.overview || '',
+      investment: Number(opp.investment) || 0, demand: opp.demand || 'Medium',
+      risk: opp.risk || 'Medium', status: opp.status || 'draft',
+      requiredCertifications: opp.requiredCertifications || [],
+    })
+    setShowModal(true)
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this opportunity?')) return
+    try {
+      await apiClient.delete(`/bi/opportunities/${id}`)
+      toast.success('Opportunity deleted')
+      fetchOpps()
+    } catch (err) {
+      toast.error('Delete failed')
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await apiClient.post('/bi/opportunities', formData)
-      toast.success('Opportunity Created!')
+      if (editingId) {
+        await apiClient.put(`/bi/opportunities/${editingId}`, formData)
+        toast.success('Opportunity updated!')
+      } else {
+        await apiClient.post('/bi/opportunities', formData)
+        toast.success('Opportunity Created!')
+      }
       setShowModal(false)
+      setEditingId(null)
       fetchOpps()
     } catch (err) {
-      toast.error('Creation failed')
+      toast.error(editingId ? 'Update failed' : 'Creation failed')
     }
   }
 
@@ -44,7 +78,7 @@ export default function OpportunitiesPage() {
           <h2 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Business Opportunities</h2>
           <p style={{ color: 'var(--text-muted)', margin: '4px 0 0' }}>Manage market access and investment opportunities.</p>
         </div>
-        <Button variant="primary" icon={<Plus size={16} />} onClick={() => setShowModal(true)}>Add Opportunity</Button>
+        <Button variant="primary" icon={<Plus size={16} />} onClick={openCreate}>Add Opportunity</Button>
       </div>
 
       <div className="glass" style={{ borderRadius: 'var(--radius-lg)', padding: 16 }}>
@@ -72,8 +106,8 @@ export default function OpportunitiesPage() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-blue)' }}><Edit2 size={16}/></button>
-                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)' }}><Trash2 size={16}/></button>
+                      <button onClick={() => openEdit(opp)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-blue)' }}><Edit2 size={16}/></button>
+                      <button onClick={() => handleDelete(opp._id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)' }}><Trash2 size={16}/></button>
                     </div>
                   </td>
                 </tr>
@@ -86,7 +120,7 @@ export default function OpportunitiesPage() {
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div className="glass" style={{ padding: 24, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-lg)' }}>
-            <h3>Create Opportunity</h3>
+            <h3>{editingId ? 'Edit Opportunity' : 'Create Opportunity'}</h3>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <input placeholder="Title / Name" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value, slug: e.target.value.toLowerCase().replace(/ /g, '-')})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
               <input placeholder="Industry (Tag)" required value={formData.industry} onChange={e => setFormData({...formData, industry: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
@@ -97,7 +131,13 @@ export default function OpportunitiesPage() {
               <div style={{ display: 'flex', gap: 16 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Est. Investment</label>
-                  <input placeholder="Investment Required" type="number" required value={formData.investment} onChange={e => setFormData({...formData, investment: Number(e.target.value)})} style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
+                  <input placeholder="Investment Required" type="number" min={0} step={1} required
+                    value={formData.investment === 0 ? '' : String(formData.investment)}
+                    onChange={e => {
+                      const parsed = parseInt(e.target.value, 10)
+                      setFormData({ ...formData, investment: Number.isNaN(parsed) ? 0 : Math.max(0, parsed) })
+                    }}
+                    style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Market Demand</label>
@@ -122,7 +162,7 @@ export default function OpportunitiesPage() {
               
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 12 }}>
                 <Button variant="secondary" onClick={() => setShowModal(false)} type="button">Cancel</Button>
-                <Button variant="primary" type="submit">Create</Button>
+                <Button variant="primary" type="submit">{editingId ? 'Save Changes' : 'Create'}</Button>
               </div>
             </form>
           </div>

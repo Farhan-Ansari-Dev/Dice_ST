@@ -64,20 +64,32 @@ export const aiService = {
     const fullMessage = message + contextStr
     messages.push({ role: 'user', content: fullMessage })
 
-    if (!openai) {
-      // Fallback when OpenAI is not configured
-      const fallback = `I understand your question about "${message.slice(0, 50)}...". AI-powered compliance advice is temporarily unavailable. Please contact support@sanyogconformity.com for expert guidance.`
+    // Offline/degraded fallback — used when no provider is configured OR the provider call fails.
+    const offlineFallback = async (): Promise<{ response: string; conversationId: string }> => {
+      const greeting = /^\s*(hi|hello|hey|namaste)\b/i.test(message)
+      const fallback = greeting
+        ? `Hello! I'm the Sanyog compliance assistant. AI-powered answers are temporarily unavailable, but I'm still here — you can browse certifications, applications, and insights from the sidebar, or reach support@sanyogconformity.com for expert guidance.`
+        : `I understand your question about "${message.slice(0, 50)}". AI-powered compliance advice is temporarily unavailable. Please contact support@sanyogconformity.com for expert guidance.`
+      messages[messages.length - 1].content = message
       messages.push({ role: 'assistant', content: fallback })
       const newConv = await AIConversation.create({ user_id: userId, messages })
       return { response: fallback, conversationId: newConv._id.toString() }
     }
 
-    const completion = await openai.chat.completions.create({
-      model: model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
-      max_tokens: 1024,
-      temperature: 0.6,
-    })
+    if (!openai) return offlineFallback()
+
+    let completion
+    try {
+      completion = await openai.chat.completions.create({
+        model: model,
+        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+        max_tokens: 1024,
+        temperature: 0.6,
+      })
+    } catch (err: any) {
+      logger.error('[aiService.chat] provider call failed, using fallback:', err?.message)
+      return offlineFallback()
+    }
 
     const response = completion.choices[0].message.content ?? ''
     
