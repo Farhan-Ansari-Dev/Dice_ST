@@ -61,13 +61,13 @@ router.get('/', wrap(async (req: Request, res: Response) => {
 }))
 
 // Admin endpoint to get config details
-router.get('/admin', authenticate, requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest, res: Response) => {
+router.get('/admin', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
   const config = await RemoteConfig.getGlobalConfig()
   sendSuccess(res, config, 'Admin config fetched')
 }))
 
 // Admin endpoint to update config and bust cache
-router.put('/admin', authenticate, requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest, res: Response) => {
+router.put('/admin', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
   const updates = configUpdateSchema.parse(req.body)
   
   let config = await RemoteConfig.getGlobalConfig()

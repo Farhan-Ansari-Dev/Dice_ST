@@ -25,6 +25,10 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
       delete update.name;
     }
 
+    if (update.phone === '') {
+      delete update.phone;
+    }
+
     if (Object.keys(update).length === 0) {
       return res.json({ success: true, data: req.user });
     }
@@ -86,9 +90,14 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
 }))
 
 router.post('/', authenticate, authorize(['admin','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
+  const userData = { ...req.body }
+  if (userData.phone === '') {
+    delete userData.phone
+  }
+
   const user = new User({
-    ...req.body,
-    org_id: req.body.org_id || req.user!.org_id,
+    ...userData,
+    org_id: userData.org_id || req.user!.org_id,
     created_at: new Date(),
     updated_at: new Date()
   })
@@ -102,9 +111,14 @@ router.post('/', authenticate, authorize(['admin','super_admin']), wrap(async (r
 }))
 
 router.put('/:id', authenticate, authorize(['admin','employee','super_admin'], { disallowEmployeeEdit: true }), wrap(async (req: AuthRequest, res: Response) => {
+  const updateData = { ...req.body }
+  if (updateData.phone === '') {
+    delete updateData.phone
+  }
+
   const user = await User.findByIdAndUpdate(
     req.params.id,
-    { ...req.body, updated_at: new Date() },
+    { ...updateData, updated_at: new Date() },
     { new: true }
   ).select('-password_hash -otp_hash -totp_secret')
 

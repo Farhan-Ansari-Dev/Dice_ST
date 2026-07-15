@@ -23,9 +23,9 @@ const AnalyticsPage = lazy(() => import('./pages/analytics/AnalyticsPage'))
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'))
 const RemoteConfigPage = lazy(() => import('./pages/settings/RemoteConfigPage'))
 const InspectionsPage = lazy(() => import('./pages/inspections/InspectionsPage'))
+const MeetingAvailabilityPage = lazy(() => import('./pages/consultants/MeetingAvailabilityPage'))
 const CountriesPage = lazy(() => import('./pages/market-access/CountriesPage'))
 const OpportunitiesPage = lazy(() => import('./pages/market-access/OpportunitiesPage'))
-const MeetingAvailabilityPage = lazy(() => import('./pages/consultants/MeetingAvailabilityPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
