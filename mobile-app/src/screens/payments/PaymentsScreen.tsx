@@ -38,15 +38,27 @@ const PaymentsScreen: React.FC = () => {
 
   const TRANSACTIONS = useMemo(() => {
     if (!paymentsData) return [];
-    return paymentsData.map((p: any) => ({
-      id: p._id,
-      desc: p.description || 'Payment',
-      appNo: p.reference_no || 'N/A',
-      method: p.payment_method || 'Bank Transfer',
-      date: p.created_at,
-      amount: p.amount,
-      status: p.status,
-    }));
+    return paymentsData.map((p: any) => {
+      // Map the backend Payment contract to this screen's vocabulary:
+      // amounts are stored in paise; status uses captured/pending/authorized/failed.
+      const isPaid = p.status === 'captured' || p.status === 'paid';
+      const status = isPaid
+        ? 'paid'
+        : (p.status === 'pending' || p.status === 'authorized')
+          ? 'quote'          // unpaid quotation awaiting payment
+          : p.status;        // failed / refunded shown as-is
+      return {
+        id: p._id,
+        desc: p.description || 'Payment',
+        appNo: p.invoice_number || (p.application_id ? String(p.application_id).slice(-6) : 'N/A'),
+        method: p.method || 'Online',
+        date: p.created_at,
+        amount: (p.total_paise ?? 0) / 100,   // paise → rupees
+        status,
+        currency: p.currency || 'INR',
+        invoice_url: p.invoice_url || null,
+      };
+    });
   }, [paymentsData]);
 
   const totalPaid = TRANSACTIONS.filter((t: typeof TRANSACTIONS[0]) => t.status === 'paid').reduce((s: number, t: typeof TRANSACTIONS[0]) => s + t.amount, 0);
