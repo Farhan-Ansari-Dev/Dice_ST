@@ -6,6 +6,10 @@
  * helmet, CORS, audit logs, background jobs.
  */
 import 'dotenv/config';
+// Forward rejected promises from async route handlers to the error middleware.
+// Without this, any thrown error in an unwrapped async handler (e.g. a CastError
+// from a malformed :id) hangs the request forever on Express 4.
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';

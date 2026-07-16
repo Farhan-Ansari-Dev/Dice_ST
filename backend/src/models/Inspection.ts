@@ -25,7 +25,8 @@ export interface IInspection {
 
 const InspectionSchema = new Schema<IInspection>({
   inspection_number: { type: String, required: true, unique: true },
-  org_id: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+  // Optional: single-tenant users have no Organization (same as Payment.org_id)
+  org_id: { type: Schema.Types.ObjectId, ref: 'Organization' },
   client_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   product_id: { type: Schema.Types.ObjectId, ref: 'Product' },
   product_name: String,

@@ -350,11 +350,13 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 // POST /applications/:id/restore — restore soft deleted application
 // ═══════════════════════════════════════════════════════════════
 router.post('/:id/restore', async (req: AuthRequest, res: Response) => {
+  // includeDeleted — the soft-delete pre-find hook would otherwise hide the
+  // application being restored.
   const app = await Application.findOneAndUpdate(
     { _id: req.params.id, org_id: req.user!.org_id },
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
     { new: true }
-  );
+  ).setOptions({ includeDeleted: true } as any);
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ success: true, data: app });
 });

@@ -10,17 +10,27 @@ import { calculateQuotation } from '../../services/paymentService'
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
 
-router.get('/', authenticate, authorize(['admin','super_admin','employee','consultant','cb','lab','ib','viewer']), wrap(async (req: AuthRequest, res: Response) => {
+// Staff see all payments; every other role (including the paying client on
+// mobile) sees only their own. Scoping by user_id — org_id is undefined for
+// org-less users and `{ org_id: undefined }` would match ALL org-less payments.
+const PAYMENT_STAFF = ['admin', 'super_admin', 'employee']
+const PAYMENT_READERS = [...PAYMENT_STAFF, 'consultant', 'cb', 'lab', 'ib', 'viewer', 'client']
+
+router.get('/', authenticate, authorize(PAYMENT_READERS), wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}
-  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
+  if (!PAYMENT_STAFF.includes(req.user!.role)) {
+    query.user_id = req.user!._id
   }
   const payments = await Payment.find(query).populate('user_id', 'name email').populate('org_id', 'name').sort({ created_at: -1 }).lean()
   sendSuccess(res, payments)
 }))
 
-router.get('/:id', authenticate, authorize(['admin','super_admin','employee','consultant','cb','lab','ib','viewer']), wrap(async (req: AuthRequest, res: Response) => {
-  const payment = await Payment.findOne({ _id: req.params.id, org_id: req.user!.org_id }).lean()
+router.get('/:id', authenticate, authorize(PAYMENT_READERS), wrap(async (req: AuthRequest, res: Response) => {
+  const filter: any = { _id: req.params.id }
+  if (!PAYMENT_STAFF.includes(req.user!.role)) {
+    filter.user_id = req.user!._id
+  }
+  const payment = await Payment.findOne(filter).lean()
   sendSuccess(res, payment)
 }))
 
@@ -149,9 +159,14 @@ router.post('/webhook', wrap(async (req: Request, res: Response) => {
 }))
 
 // New endpoint to fetch/generate invoice URL
-router.get('/:id/invoice', authenticate, authorize(['admin','super_admin','employee']), wrap(async (req: AuthRequest, res: Response) => {
+router.get('/:id/invoice', authenticate, authorize(PAYMENT_READERS), wrap(async (req: AuthRequest, res: Response) => {
   const payment = await Payment.findById(req.params.id).populate('user_id')
   if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' })
+  // Non-staff may only fetch their own invoice
+  const ownerId = (payment.user_id as any)?._id ?? payment.user_id
+  if (!PAYMENT_STAFF.includes(req.user!.role) && String(ownerId) !== String(req.user!._id)) {
+    return res.status(403).json({ success: false, message: 'Access denied' })
+  }
   if (!payment.invoice_url) {
     const { generateInvoicePDF } = await import('../../services/invoiceService')
     const user = await User.findById(payment.user_id)

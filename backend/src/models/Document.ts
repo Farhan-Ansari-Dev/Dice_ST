@@ -47,7 +47,8 @@ export interface IDocument extends MongooseDoc {
 
 const DocumentSchema = new Schema<IDocument>(
   {
-    org_id:      { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    // Optional: staff users have no Organization (same as Payment.org_id)
+    org_id:      { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
     uploaded_by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
 
     name:     { type: String, required: true, trim: true },

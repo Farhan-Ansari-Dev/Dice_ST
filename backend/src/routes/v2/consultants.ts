@@ -3,9 +3,12 @@ import { authorize } from '../../middleware/authorize';
 import { User } from '../../models/User';
 import { sendSuccess, sendError } from '../../utils/response';
 import { isValidObjectId } from 'mongoose';
-import { AuthRequest } from '../../middleware/authMongo';
+import { authenticate, AuthRequest } from '../../middleware/authMongo';
 
 const router = Router();
+// authorize() only checks req.user.role — authenticate must run first to
+// populate req.user, otherwise every request is rejected as unauthenticated.
+router.use(authenticate);
 
 /**
  * @route   POST /api/v2/consultants/request-verification

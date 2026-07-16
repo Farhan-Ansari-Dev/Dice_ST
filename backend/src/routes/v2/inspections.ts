@@ -54,8 +54,13 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
 // POST new inspection (Clients create, Admins approve)
 router.post('/', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   try {
+    // Server-generated sequence — the schema requires a unique inspection_number
+    // and no client supplies one.
+    const count = await Inspection.countDocuments({});
+    const inspectionNumber = `INSP-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
     const inspection = await Inspection.create({
       ...stripProtected(req.body),
+      inspection_number: inspectionNumber,
       client_id: req.user?._id,
       org_id: req.user?.org_id,
       created_at: new Date(),

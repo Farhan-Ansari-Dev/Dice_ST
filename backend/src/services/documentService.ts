@@ -46,7 +46,9 @@ export const documentService = {
     const versionNum = input.document_id
       ? (await DocumentVersion.countDocuments({ document_id: input.document_id })) + 1
       : 1;
-    const s3_key = `orgs/${input.org_id}/docs/${input.document_id ?? 'new-' + crypto.randomUUID()}/v${versionNum}-${safeName}`;
+    // Admin/staff users have no Organization — store their uploads under 'platform'
+    const orgSegment = input.org_id ? input.org_id.toString() : 'platform';
+    const s3_key = `orgs/${orgSegment}/docs/${input.document_id ?? 'new-' + crypto.randomUUID()}/v${versionNum}-${safeName}`;
 
     const cmd = new PutObjectCommand({
       Bucket: BUCKET,
@@ -56,7 +58,7 @@ export const documentService = {
       ServerSideEncryption: 'AES256',
       Metadata: {
         sha256: input.sha256,
-        org_id: input.org_id.toString(),
+        org_id: orgSegment,
         uploaded_by: input.user_id.toString(),
       },
     });

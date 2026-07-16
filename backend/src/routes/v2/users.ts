@@ -91,8 +91,10 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
   if (req.query.showDeleted !== 'true') {
     query.deleted_at = { $exists: false }
   }
-  
+
+  // includeDeleted: the soft-delete pre-find hook would override showDeleted=true
   const users = await User.find(query)
+    .setOptions(req.query.showDeleted === 'true' ? ({ includeDeleted: true } as any) : {})
     .select('-password_hash -otp_hash -totp_secret')
     .sort({ created_at: -1 })
     .lean()
@@ -160,11 +162,13 @@ router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Res
     return sendError(res, 'Unauthorized', 403)
   }
 
+  // includeDeleted — the soft-delete pre-find hook would otherwise hide the
+  // very user we are trying to restore.
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
     { new: true }
-  ).select('-password_hash -otp_hash -totp_secret')
+  ).setOptions({ includeDeleted: true } as any).select('-password_hash -otp_hash -totp_secret')
 
   if (!user) return sendError(res, 'Not found', 404)
   return sendSuccess(res, user, 'Restored successfully')

@@ -14,12 +14,13 @@ export async function calculateQuotation(user: IUser, data: {
 }) {
   const { application_id, gov_fee, lab_fee } = data;
 
-  const app: any = await Application.findById(application_id).populate('client_id');
+  // Applications track their owner as created_by (there is no client_id path)
+  const app: any = await Application.findById(application_id);
   if (!app) {
     throw new Error('Application not found');
   }
 
-  const clientUser = await User.findById(app.client_id);
+  const clientUser = await User.findById(app.created_by);
   const isIndian = clientUser?.country_code === 'IN';
 
   const currency = isIndian ? 'INR' : 'USD';

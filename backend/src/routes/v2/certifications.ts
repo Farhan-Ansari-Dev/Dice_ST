@@ -19,7 +19,9 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
     query.deleted_at = { $exists: false }
   }
 
+  // includeDeleted: the soft-delete pre-find hook would override showDeleted=true
   const certs = await Certification.find(query)
+    .setOptions(req.query.showDeleted === 'true' ? ({ includeDeleted: true } as any) : {})
     .populate('org_id', 'name')
     .populate('product_id', 'name')
     .sort({ created_at: -1 })
@@ -87,11 +89,13 @@ router.delete('/:id', authenticate, authorize(['admin','super_admin']), wrap(asy
 }))
 
 router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  // includeDeleted — the soft-delete pre-find hook would otherwise hide the
+  // certification being restored.
   const cert = await Certification.findOneAndUpdate(
     certScope(req),
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
     { new: true }
-  )
+  ).setOptions({ includeDeleted: true } as any)
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert, 'Restored successfully')
 }))
