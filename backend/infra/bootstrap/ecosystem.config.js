@@ -20,12 +20,16 @@ module.exports = {
     instances: 2,                         // match t4g.small vCPU count
     exec_mode: 'cluster',                 // enable load balancing across workers
 
-    // Environment — always production; env_file layered on top
+    // Environment — always production.
+    // PM2 has NO env_file option (it silently ignores unknown keys), so secrets
+    // in /etc/dice/.env are loaded by the app itself: index.ts imports
+    // 'dotenv/config', which honors DOTENV_CONFIG_PATH. dotenv never overrides
+    // vars PM2 already set (NODE_ENV stays production).
     node_args: '--max-old-space-size=512',
     env: {
       NODE_ENV: 'production',
+      DOTENV_CONFIG_PATH: '/etc/dice/.env',
     },
-    env_file: '/etc/dice/.env',
 
     // Restart strategy
     autorestart: true,
