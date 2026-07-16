@@ -28,6 +28,7 @@ import businessIntelligenceRoutes from './v2/businessIntelligence';
 import configRoutes from './v2/config';
 import standardsRoutes from './v2/standards';
 import consultantsRoutes from './v2/consultants';
+import productsRoutes from './v2/products';
 
 // Stubs removed
 
@@ -43,6 +44,7 @@ const router = Router();
 // ── Core v2 routes (full Mongoose models) ─────────────────────────────────
 router.use('/auth', authRoutes);
 router.use('/applications', applicationsRoutes);
+router.use('/products', productsRoutes);
 router.use('/documents', uploadLimiter, documentsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/workflows', workflowsRoutes);

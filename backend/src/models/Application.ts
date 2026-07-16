@@ -117,9 +117,12 @@ const StatusTransitionSchema = new Schema<IStatusTransition>(
 const ApplicationSchema = new Schema<IApplication>(
   {
     application_number: { type: String, required: true, unique: true, index: true },
-    org_id:             { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    // org_id/workflow_id optional: single-tenant users have no Organization, and the
+    // workflow (fee/duration defaults only; transitions use ALLOWED_TRANSITIONS) is
+    // seeded, not always present. Same optional pattern as Payment/Inspection/Document.
+    org_id:             { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
     product_id:         { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
-    workflow_id:        { type: String, required: true, index: true },
+    workflow_id:        { type: String, index: true },
     cert_type:          { type: String, required: true, index: true },
 
     status: {

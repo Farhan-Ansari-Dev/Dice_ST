@@ -16,6 +16,15 @@ import { notify } from '../../services/notifications';
 const router = Router();
 router.use(authenticate);
 
+// Single-tenant scoping: staff operate platform-wide; other roles are limited to
+// the applications they created. Used for all single-item lookups so an org-less
+// client cannot reach another client's application by id.
+const STAFF_ROLES = ['admin', 'super_admin', 'employee'];
+const scopeById = (req: AuthRequest): any =>
+  STAFF_ROLES.includes(req.user!.role)
+    ? { _id: req.params.id }
+    : { _id: req.params.id, created_by: req.user!._id };
+
 // ═══════════════════════════════════════════════════════════════
 // GET /applications — list with filters + pagination
 // ═══════════════════════════════════════════════════════════════
@@ -25,9 +34,14 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   const limitN = Math.min(parseInt(limit, 10), 100);
   const skip   = (pageN - 1) * limitN;
 
-  const filter: any = {
-    org_id: req.user!.org_id,
-  };
+  // Staff (admin/super_admin/employee) see all applications — this is how mobile-
+  // created applications surface in the admin dashboard. Everyone else sees only
+  // their own. Scope by created_by, not org_id (single-tenant users are org-less,
+  // and { org_id: undefined } would match every org-less application).
+  const filter: any = {};
+  if (!STAFF_ROLES.includes(req.user!.role)) {
+    filter.created_by = req.user!._id;
+  }
   if (status) filter.status = status;
   if (cert_type) filter.cert_type = cert_type;
   if (assignee_to_me === 'true') filter.assignees = req.user!._id;
@@ -59,33 +73,34 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'product_id and cert_type required' });
   }
 
-  // Validate product belongs to org
-  const product = await Product.findOne({ _id: product_id, org_id: req.user!.org_id });
+  // Product is the shared Sanyog-managed catalog (single-tenant, org-optional).
+  const product = await Product.findById(product_id);
   if (!product) return res.status(404).json({ error: 'product_not_found' });
 
-  // Find active workflow for this cert type
+  // Workflow is optional — it supplies fee/duration defaults only (transitions use
+  // ALLOWED_TRANSITIONS). If none is seeded for this cert type we fall back to defaults.
   const workflow = (await Workflow.findOne({ cert_type, active: true }).sort({ version: -1 })) as any;
-  if (!workflow) return res.status(404).json({ error: 'workflow_not_found', cert_type });
 
-  // Generate application number (org-scoped sequence)
-  const count = await Application.countDocuments({ org_id: req.user!.org_id });
+  // Application number sequence (platform-wide in single-tenant).
+  const count = await Application.countDocuments({});
   const appNumber = `APP-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
 
+  const durationDays = workflow?.estimated_duration_days ?? 45;
   const app = await Application.create({
     application_number: appNumber,
     org_id: req.user!.org_id,
     product_id: new Types.ObjectId(product_id),
-    workflow_id: workflow._id,
+    workflow_id: workflow?._id,
     cert_type,
     status: 'draft',
     current_stage: 'draft',
     created_by: req.user!._id,
     assignees: [],
     documents: [],
-    fee: { base_inr: workflow.fee_structure?.application_fee_inr ?? 0, expedited: false, paid: false },
+    fee: { base_inr: workflow?.fee_structure?.application_fee_inr ?? 0, expedited: false, paid: false },
     priority,
     tags: [],
-    estimated_completion_at: new Date(Date.now() + (workflow.estimated_duration_days ?? 45) * 24 * 3600 * 1000),
+    estimated_completion_at: new Date(Date.now() + durationDays * 24 * 3600 * 1000),
   });
 
   await audit({
@@ -105,7 +120,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 // GET /applications/:id
 // ═══════════════════════════════════════════════════════════════
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id })
+  const app = await Application.findOne(scopeById(req))
     .populate('product_id')
     .populate('assignees', 'name email avatar_url role')
     .populate('primary_assignee', 'name email avatar_url')
@@ -121,7 +136,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 router.post('/:id/transition', async (req: AuthRequest, res: Response) => {
   const { to_status, reason, comment } = req.body as { to_status: ApplicationStatus; reason?: string; comment?: string };
-  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
   const oldStatus = app.status;
@@ -180,7 +195,7 @@ router.post('/:id/transition', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 router.post('/:id/assign', requireRole(...ADMIN_ROLES, 'consultant'), async (req: AuthRequest, res: Response) => {
   const { user_ids, primary } = req.body as { user_ids: string[]; primary?: string };
-  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
   const before = [...app.assignees];
@@ -275,7 +290,7 @@ async function issueCertification(app: any, by: Types.ObjectId): Promise<void> {
 // ═══════════════════════════════════════════════════════════════
 router.put('/:id/status', async (req: AuthRequest, res: Response) => {
   const { status, notes } = req.body as { status: string; notes?: string };
-  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
   const oldStatus = app.status;
@@ -309,7 +324,7 @@ router.put('/:id/status', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 router.put('/:id/assign', async (req: AuthRequest, res: Response) => {
   const { assigned_to } = req.body as { assigned_to: string };
-  const app = await Application.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
   app.assignees = [new Types.ObjectId(assigned_to)];
@@ -325,7 +340,7 @@ router.put('/:id/assign', async (req: AuthRequest, res: Response) => {
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const { priority, notes } = req.body;
   const app = await Application.findOneAndUpdate(
-    { _id: req.params.id, org_id: req.user!.org_id },
+    scopeById(req),
     { priority, notes, updated_at: new Date() },
     { new: true }
   );
@@ -338,7 +353,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
   const app = await Application.findOneAndUpdate(
-    { _id: req.params.id, org_id: req.user!.org_id },
+    scopeById(req),
     { deleted_at: new Date(), updated_at: new Date() },
     { new: true }
   );
@@ -353,7 +368,7 @@ router.post('/:id/restore', async (req: AuthRequest, res: Response) => {
   // includeDeleted — the soft-delete pre-find hook would otherwise hide the
   // application being restored.
   const app = await Application.findOneAndUpdate(
-    { _id: req.params.id, org_id: req.user!.org_id },
+    scopeById(req),
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
     { new: true }
   ).setOptions({ includeDeleted: true } as any);

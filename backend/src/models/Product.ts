@@ -38,7 +38,9 @@ export interface IProduct extends Document {
 
 const ProductSchema = new Schema<IProduct>(
   {
-    org_id:       { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
+    // Optional: catalog products are Sanyog-managed at the platform level (single-tenant),
+    // not scoped to a client Organization. Same optional-org pattern as Payment/Inspection/Document.
+    org_id:       { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
     name:         { type: String, required: true, trim: true },
     brand:        { type: String, trim: true },
     model_number: { type: String, trim: true },
