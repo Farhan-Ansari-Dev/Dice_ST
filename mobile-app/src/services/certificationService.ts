@@ -1,55 +1,36 @@
 import api from './api';
 
 export interface Certification {
-  id: string;
-  type: string;
-  name: string;
-  status: 'pending' | 'in_review' | 'approved' | 'rejected' | 'expired' | 'active';
-  applicationId: string;
-  certificateNumber?: string;
-  issuedDate?: string;
-  expiryDate?: string;
-  productName: string;
-  applicantName: string;
-  progress: number;
-  documents: Document[];
-  timeline: TimelineEvent[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Document {
-  id: string;
-  name: string;
-  type: string;
-  url: string;
-  size: number;
-  uploadedAt: string;
-  status: 'pending' | 'approved' | 'rejected';
-}
-
-export interface TimelineEvent {
-  id: string;
-  title: string;
-  description: string;
-  status: 'completed' | 'current' | 'upcoming';
-  date?: string;
+  _id: string;
+  cert_number: string;
+  cert_type: string;
+  status: 'active' | 'expiring_soon' | 'expired' | 'renewed' | 'revoked' | 'suspended';
+  application_id?: string;
+  org_id?: string | { _id: string; name: string };
+  product_id?: string | { _id: string; name: string };
+  issuing_body?: string;
+  scheme?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  scope?: string;
+  notes?: string;
+  tags?: string[];
+  deleted_at?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Application {
-  id: string;
-  applicationNumber: string;
-  certificationType: string;
-  productName: string;
+  _id: string;
+  cert_type: string;
+  product_id?: string | { _id: string; name: string };
   status: string;
-  submittedAt: string;
-  updatedAt: string;
-  assignedTo?: string;
+  priority?: string;
   notes?: string;
-  estimatedCompletion?: string;
-  progress: number;
-  amount: number;
-  paidAmount: number;
+  assigned_to?: string[];
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 const certificationService = {
@@ -72,26 +53,19 @@ const certificationService = {
     api.put<Application>(`/applications/${id}`, data),
 
   uploadDocument: (applicationId: string, formData: FormData, onProgress?: (p: number) => void) =>
-    api.uploadFile<Document>(`/applications/${applicationId}/documents`, formData, onProgress),
+    api.uploadFile<any>(`/applications/${applicationId}/documents`, formData, onProgress),
 
   getDocuments: (applicationId: string) =>
-    api.get<Document[]>(`/applications/${applicationId}/documents`),
+    api.get<any[]>(`/applications/${applicationId}/documents`),
 
   deleteDocument: (applicationId: string, documentId: string) =>
     api.delete(`/applications/${applicationId}/documents/${documentId}`),
 
   downloadCertificate: (certificationId: string) =>
-    api.get<{ downloadUrl: string }>(`/certifications/${certificationId}/download`),
+    api.get<{ data: { url: string; expires_in: number } }>(`/certifications/${certificationId}/download`),
 
   getDashboardStats: () =>
-    api.get<{
-      totalCertifications: number;
-      activeCertifications: number;
-      pendingApplications: number;
-      expiringCertifications: number;
-      totalRevenue: number;
-      monthlyGrowth: number;
-    }>('/dashboard/stats'),
+    api.get<any>('/analytics/dashboard'),
 };
 
 export default certificationService;

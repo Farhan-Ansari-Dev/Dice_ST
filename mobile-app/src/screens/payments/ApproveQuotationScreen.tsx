@@ -39,7 +39,7 @@ const ApproveQuotationScreen: React.FC = () => {
         amount: order.amount,       // already in paise
         currency: order.currency,
         description: 'BIS IS 13252 + WPC Bundle',
-        paymentRecordId: payment.id,
+        paymentRecordId: payment._id,
       });
     } catch (err: any) {
       Alert.alert(

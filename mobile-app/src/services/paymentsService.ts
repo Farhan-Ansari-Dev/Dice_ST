@@ -1,17 +1,17 @@
 import api from './api';
 
 export interface Payment {
-  id: string;
+  _id: string;
   application_id?: string;
-  application_number?: string;
-  amount: number;
-  currency: string;
-  status: 'pending' | 'paid' | 'failed' | 'overdue';
-  payment_method?: string;
-  transaction_id?: string;
-  invoice_number: string;
+  invoice_number?: string;
   description: string;
-  paid_at?: string;
+  total_paise: number;
+  currency: string;
+  status: 'pending' | 'authorized' | 'captured' | 'failed' | 'refunded' | 'partially_refunded';
+  method?: string;
+  razorpay_order_id?: string;
+  razorpay_payment_id?: string;
+  invoice_url?: string;
   created_at: string;
 }
 

@@ -60,10 +60,10 @@ const authService = {
     api.post<{ token: string }>('/auth/refresh', { refreshToken }),
 
   getProfile: () =>
-    api.get<{ success: boolean; data: User }>('/users/me').then((res) => (res.data as any).data),
+    api.get<{ success: boolean; data: User }>('/users/me').then((res) => (res as any).data),
 
   updateProfile: (data: Partial<User>) =>
-    api.put<{ success: boolean; data: User }>('/users/me', data).then((res) => (res.data as any).data),
+    api.put<{ success: boolean; data: User }>('/users/me', data).then((res) => (res as any).data),
 
   logout: () =>
     api.post<{ message: string }>('/auth/logout'),

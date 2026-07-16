@@ -1,15 +1,16 @@
 import api from './api';
 
 export interface Document {
-  id: string;
+  _id: string;
   name: string;
-  file_type: string;
-  file_size: number;
+  doc_type: string;
+  size_bytes: number;
   s3_key: string;
   s3_url?: string;
-  doc_category: string;
+  category?: string;
   application_id?: string;
-  is_verified: boolean;
+  verified?: boolean;
+  uploaded_by?: { _id: string; name: string };
   ocr_text?: string;
   created_at: string;
 }

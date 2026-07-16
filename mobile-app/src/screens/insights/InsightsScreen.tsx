@@ -69,11 +69,11 @@ const InsightsScreen: React.FC = () => {
 
   const CATEGORIES = useMemo(() => [
     { id: 'all', label: 'All', icon: 'apps' as const, color: colors.textSecondary },
-    { id: 'news', label: 'News', icon: 'newspaper-outline' as const, color: colors.primary },
-    { id: 'regulatory', label: 'Regulatory', icon: 'document-text' as const, color: colors.secondary },
-    { id: 'alerts', label: 'Alerts', icon: 'alert-circle-outline' as const, color: colors.error },
-    { id: 'analysis', label: 'Analysis', icon: 'bar-chart-outline' as const, color: colors.success },
-    { id: 'trending', label: 'Trending', icon: 'bonfire-outline' as const, color: colors.warning },
+    { id: 'bis_update', label: 'BIS Updates', icon: 'newspaper-outline' as const, color: colors.primary },
+    { id: 'customs', label: 'Customs', icon: 'document-text' as const, color: colors.secondary },
+    { id: 'export_import', label: 'Export/Import', icon: 'swap-horizontal-outline' as const, color: colors.success },
+    { id: 'certification', label: 'Certification', icon: 'ribbon-outline' as const, color: colors.warning },
+    { id: 'government', label: 'Government', icon: 'business-outline' as const, color: colors.error },
   ], [colors]);
 
   const filteredInsights = INSIGHTS.filter((insight: typeof INSIGHTS[0]) => {
