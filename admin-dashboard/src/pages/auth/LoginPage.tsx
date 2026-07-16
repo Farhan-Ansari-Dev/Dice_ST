@@ -51,6 +51,7 @@ export default function LoginPage() {
         name: data.user.name,
         email: data.user.email,
         role: data.user.role,
+        avatar: data.user.avatar_url,   // backend returns avatar_url; store field is `avatar`
         company: 'Sanyog Conformity Solutions'
       }, data.accessToken)
       navigate('/dashboard')
