@@ -11,12 +11,34 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { authenticate, requireRole, AuthRequest } from '../../middleware/authMongo'
 import { Product } from '../../models/Product'
+import { Application } from '../../models/Application'
 import { sendSuccess, sendError } from '../../utils/response'
 import { stripProtected } from '../../utils/sanitize'
 import { getPaginationData, buildPaginationResponse } from '../../utils/pagination'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
+
+// Terminal application statuses — a product "in use" means it backs an application
+// that isn't finished/closed.
+const ACTIVE_APP_STATUSES = ['draft', 'submitted', 'docs_review', 'docs_required', 'tech_review', 'testing', 'approval_pending', 'approved', 'on_hold']
+
+// Case-insensitive exact-match escape for a user string used in a RegExp.
+const rxExact = (s: string) => new RegExp(`^${String(s ?? '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+
+// A duplicate is the SAME name + brand + model_number + category (case-insensitive),
+// among non-deleted products. Same name with a different brand/model is allowed.
+async function findDuplicate(body: any, excludeId?: string) {
+  const q: any = {
+    deleted_at: null,
+    name: rxExact(body.name),
+    brand: body.brand ? rxExact(body.brand) : { $in: [null, ''] },
+    model_number: body.model_number ? rxExact(body.model_number) : { $in: [null, ''] },
+    category: rxExact(body.category),
+  }
+  if (excludeId) q._id = { $ne: excludeId }
+  return Product.findOne(q as any).lean()
+}
 
 // GET /products — catalog list with search + pagination
 router.get('/', authenticate, wrap(async (req: AuthRequest, res: Response) => {
@@ -49,8 +71,23 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
   return sendSuccess(res, product)
 }))
 
+// GET /products/:id/usage — how many active applications reference this product.
+// Used by the admin UI to confirm before archiving ("used by X active applications").
+router.get('/:id/usage', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const active_application_count = await Application.countDocuments({
+    product_id: req.params.id,
+    status: { $in: ACTIVE_APP_STATUSES },
+    deleted_at: null,
+  } as any)
+  return sendSuccess(res, { active_application_count })
+}))
+
 // POST /products — create (admin/super_admin)
 router.post('/', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  if (!req.body?.name || !req.body?.category) return sendError(res, 'name and category are required', 400)
+  const dup = await findDuplicate(req.body)
+  if (dup) return sendError(res, 'A product with the same name, brand, model and category already exists', 409)
+
   const product = new Product({
     ...stripProtected(req.body),
     created_at: new Date(),
@@ -62,6 +99,13 @@ router.post('/', authenticate, requireRole('admin', 'super_admin'), wrap(async (
 
 // PUT /products/:id — update (admin/super_admin)
 router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  // Re-check duplicates against the resulting identity (merge existing + patch).
+  const existing = await Product.findById(req.params.id).lean()
+  if (!existing) return sendError(res, 'Not found', 404)
+  const merged = { ...existing, ...stripProtected(req.body) }
+  const dup = await findDuplicate(merged, req.params.id)
+  if (dup) return sendError(res, 'A product with the same name, brand, model and category already exists', 409)
+
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { ...stripProtected(req.body), updated_at: new Date() },

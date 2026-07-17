@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { Search, Plus, Package, Trash2, RefreshCcw, Edit2, Filter } from 'lucide-react'
+import { Search, Plus, Package, Trash2, RefreshCcw, Edit2, Filter, AlertTriangle } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Button from '../../components/common/Button'
 import { apiClient } from '../../services/apiClient'
+import { toast } from '../../store/toastStore'
 
 const EMPTY_PRODUCT = { name: '', brand: '', model_number: '', category: 'Electronics', hsn_code: '', description: '', is_imported: false }
 
@@ -15,6 +16,8 @@ export default function ProductsPage() {
   const [isModalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<any>(EMPTY_PRODUCT)
+  const [archiveTarget, setArchiveTarget] = useState<any>(null)
+  const [archiveCount, setArchiveCount] = useState<number | null>(null)
 
   const { data: products, isLoading } = useQuery({
     queryKey: ['products', showDeleted],
@@ -26,25 +29,46 @@ export default function ProductsPage() {
 
   const closeModal = () => { setModalOpen(false); setEditingId(null); setFormData(EMPTY_PRODUCT) }
 
+  const dupMessage = (e: any, fallback: string) =>
+    toast.error(e?.response?.status === 409
+      ? (e?.response?.data?.message || 'A product with the same name, brand, model and category already exists')
+      : (e?.response?.data?.message || fallback))
+
   const createMutation = useMutation({
     mutationFn: (data: any) => apiClient.post('/products', data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); closeModal() }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Product added'); closeModal() },
+    onError: (e: any) => dupMessage(e, 'Failed to add product'),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => apiClient.put(`/products/${id}`, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); closeModal() }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Product updated'); closeModal() },
+    onError: (e: any) => dupMessage(e, 'Failed to update product'),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/products/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] })
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Product archived'); setArchiveTarget(null); setArchiveCount(null) },
+    onError: () => toast.error('Failed to archive product'),
   })
 
   const restoreMutation = useMutation({
     mutationFn: (id: string) => apiClient.post(`/products/${id}/restore`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] })
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); toast.success('Product restored') },
+    onError: () => toast.error('Failed to restore product'),
   })
+
+  // Open the archive confirmation, fetching how many active applications use it first.
+  const requestArchive = async (p: any) => {
+    setArchiveTarget(p)
+    setArchiveCount(null)
+    try {
+      const res = await apiClient.get(`/products/${p._id}/usage`)
+      setArchiveCount(res.data?.data?.active_application_count ?? 0)
+    } catch {
+      setArchiveCount(0)
+    }
+  }
 
   const openEdit = (p: any) => {
     setEditingId(p._id)
@@ -73,6 +97,36 @@ export default function ProductsPage() {
 
   return (
     <div>
+      {/* Archive confirmation */}
+      {archiveTarget && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+          <div style={{ background: 'var(--bg-card)', padding: 24, borderRadius: 'var(--radius-lg)', width: 420, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(255,179,71,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertTriangle size={18} color="#FFB347" /></div>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Archive product?</h3>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, margin: '0 0 8px' }}>
+              You're about to archive <strong style={{ color: 'var(--text-primary)' }}>{archiveTarget.name}</strong>.
+            </p>
+            {archiveCount === null ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 20px' }}>Checking usage…</p>
+            ) : archiveCount > 0 ? (
+              <p style={{ color: '#FFB347', fontSize: 13, margin: '0 0 20px' }}>
+                This product is currently used by <strong>{archiveCount} active application{archiveCount === 1 ? '' : 's'}</strong>. They will keep showing it with an <em>Archived</em> badge, and it will no longer be selectable for new applications.
+              </p>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 20px' }}>No active applications use this product. It will be hidden from the catalog and can be restored later.</p>
+            )}
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <Button type="button" variant="ghost" onClick={() => { setArchiveTarget(null); setArchiveCount(null) }}>Cancel</Button>
+              <Button type="button" onClick={() => deleteMutation.mutate(archiveTarget._id)} disabled={archiveCount === null || deleteMutation.isPending}>
+                {deleteMutation.isPending ? 'Archiving…' : 'Archive'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'var(--bg-card)', padding: 24, borderRadius: 'var(--radius-lg)', width: 480, maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border)' }}>
@@ -178,7 +232,7 @@ export default function ProductsPage() {
                     {p.deleted_at ? (
                       <button onClick={() => restoreMutation.mutate(p._id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-green)' }} title="Restore"><RefreshCcw size={14} /></button>
                     ) : (
-                      <button onClick={() => deleteMutation.mutate(p._id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)' }} title="Delete"><Trash2 size={14} /></button>
+                      <button onClick={() => requestArchive(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)' }} title="Archive"><Trash2 size={14} /></button>
                     )}
                   </div>
                 </td>

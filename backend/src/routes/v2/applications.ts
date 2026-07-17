@@ -52,7 +52,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limitN)
-      .populate('product_id', 'name brand category')
+      // includeDeleted: an archived product must still populate (with its name +
+      // deleted_at) so existing applications never show a blank product.
+      .populate({ path: 'product_id', select: 'name brand category deleted_at', options: { includeDeleted: true } })
       .populate('primary_assignee', 'name email avatar_url')
       .lean(),
     Application.countDocuments(filter),
@@ -121,7 +123,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   const app = await Application.findOne(scopeById(req))
-    .populate('product_id')
+    .populate({ path: 'product_id', options: { includeDeleted: true } })   // archived products still resolve
     .populate('assignees', 'name email avatar_url role')
     .populate('primary_assignee', 'name email avatar_url')
     .populate('created_by', 'name email')

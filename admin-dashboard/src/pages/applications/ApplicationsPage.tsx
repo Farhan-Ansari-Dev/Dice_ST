@@ -59,6 +59,7 @@ export default function ApplicationsPage() {
     client: 'My Organization', // In a multi-tenant admin, this would be populated from org_id
     type: app.cert_type,
     product: app.product_id?.name || 'Unknown Product',
+    productArchived: !!app.product_id?.deleted_at,
     status: app.status,
     priority: app.priority || 'medium',
     date: app.created_at,
@@ -246,7 +247,10 @@ export default function ApplicationsPage() {
                         <span style={{ color: 'var(--accent-purple)', fontSize: 11, fontWeight: 600, textDecoration: app.deleted_at ? 'line-through' : 'none' }}>{app.id}</span>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: PRIORITY_COLOR[app.priority], marginTop: 2, flexShrink: 0 }} />
                       </div>
-                      <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{app.product}</div>
+                      <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {app.product}
+                        {app.productArchived && <span style={{ background: 'rgba(255,179,71,0.15)', color: '#FFB347', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Archived</span>}
+                      </div>
                       <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 10 }}>{app.client} · {app.type}</div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Avatar name={app.assignee} size={20} />
@@ -280,7 +284,10 @@ export default function ApplicationsPage() {
                   <td style={{ padding: '12px 16px', color: 'var(--accent-purple)', fontSize: 12, fontWeight: 600, textDecoration: app.deleted_at ? 'line-through' : 'none' }}>{app.id}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-primary)', fontSize: 13 }}>{app.client}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12 }}>{app.type}</td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12, maxWidth: 200 }}>{app.product}</td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12, maxWidth: 200 }}>
+                    {app.product}
+                    {app.productArchived && <span style={{ marginLeft: 6, background: 'rgba(255,179,71,0.15)', color: '#FFB347', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Archived</span>}
+                  </td>
                   <td style={{ padding: '12px 16px' }}><Badge status={app.status} size="sm" /></td>
                   <td style={{ padding: '12px 16px' }}><span style={{ color: PRIORITY_COLOR[app.priority], fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>{app.priority}</span></td>
                   <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={app.assignee} size={22} /><span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{app.assignee}</span></div></td>
