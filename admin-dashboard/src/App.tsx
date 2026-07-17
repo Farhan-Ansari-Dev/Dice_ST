@@ -12,6 +12,7 @@ const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
 const ClientsPage = lazy(() => import('./pages/clients/ClientsPage'))
 const CertificationsPage = lazy(() => import('./pages/certifications/CertificationsPage'))
 const ApplicationsPage = lazy(() => import('./pages/applications/ApplicationsPage'))
+const ApplicationDetailPage = lazy(() => import('./pages/applications/ApplicationDetailPage'))
 const ProductsPage = lazy(() => import('./pages/products/ProductsPage'))
 const DocumentsPage = lazy(() => import('./pages/documents/DocumentsPage'))
 const InsightsPage = lazy(() => import('./pages/insights/InsightsPage'))
@@ -64,6 +65,7 @@ function ThemedApp() {
             <Route path="clients" element={<ClientsPage />} />
             <Route path="certifications" element={<CertificationsPage />} />
             <Route path="products" element={<ProductsPage />} />
+            <Route path="applications/:id" element={<ApplicationDetailPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="insights" element={<InsightsPage />} />

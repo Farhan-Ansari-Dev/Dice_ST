@@ -9,7 +9,7 @@
  */
 import { Router, Response } from 'express';
 import { Types } from 'mongoose';
-import { Application, ApplicationStatus, Workflow, Product, Certification, audit } from '../../models';
+import { Application, ApplicationStatus, Workflow, Product, Certification, audit, AuditLog } from '../../models';
 import { authenticate, AuthRequest, requireRole, ADMIN_ROLES } from '../../middleware/authMongo';
 import { notify } from '../../services/notifications';
 
@@ -131,6 +131,34 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ data: app });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GET /applications/:id/audit — immutable audit trail for one application
+// ═══════════════════════════════════════════════════════════════
+router.get('/:id/audit', async (req: AuthRequest, res: Response) => {
+  // Confirm the caller may see this application (reuses the same scoping).
+  const app = await Application.findOne(scopeById(req)).select('_id').lean();
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  // AuditLog is a time-series collection — audit fields live under `meta`.
+  const logs = await AuditLog.find({ 'meta.resource_type': 'application', 'meta.resource_id': req.params.id } as any)
+    .sort({ ts: -1 })
+    .limit(200)
+    .populate('meta.actor', 'name email')
+    .lean();
+
+  // Flatten meta so the client gets { action, actor, notes, before, after, ts }.
+  const data = logs.map((l: any) => ({
+    _id: l._id,
+    ts: l.ts,
+    action: l.meta?.action,
+    actor: l.meta?.actor || null,
+    notes: l.meta?.notes,
+    before: l.meta?.before,
+    after: l.meta?.after,
+  }));
+  return res.json({ data });
 });
 
 // ═══════════════════════════════════════════════════════════════

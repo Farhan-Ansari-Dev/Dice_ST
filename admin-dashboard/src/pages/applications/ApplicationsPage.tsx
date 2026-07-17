@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { List, LayoutGrid, Plus, Search, Loader2, Trash2, RefreshCcw } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Badge from '../../components/common/Badge'
@@ -24,6 +25,7 @@ const EMPTY_APP = { product_id: '', cert_type: 'BIS_CRS', priority: 'medium', no
 
 export default function ApplicationsPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [view, setView] = useState<'kanban' | 'list'>('kanban')
   const [search, setSearch] = useState('')
   const [quoteModalVisible, setQuoteModalVisible] = useState(false)
@@ -242,7 +244,7 @@ export default function ApplicationsPage() {
                     <div key={app.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', cursor: 'pointer', transition: 'var(--transition)' }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-light)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'none' }}
-                      onClick={() => { setSelectedApp(app); setQuoteModalVisible(true); }}>
+                      onClick={() => navigate(`/applications/${app._id}`)}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                         <span style={{ color: 'var(--accent-purple)', fontSize: 11, fontWeight: 600, textDecoration: app.deleted_at ? 'line-through' : 'none' }}>{app.id}</span>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: PRIORITY_COLOR[app.priority], marginTop: 2, flexShrink: 0 }} />
@@ -279,6 +281,7 @@ export default function ApplicationsPage() {
             <tbody>
               {filtered.map((app: any) => (
                 <tr key={app._id} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', opacity: app.deleted_at ? 0.5 : 1 }}
+                  onClick={() => navigate(`/applications/${app._id}`)}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ padding: '12px 16px', color: 'var(--accent-purple)', fontSize: 12, fontWeight: 600, textDecoration: app.deleted_at ? 'line-through' : 'none' }}>{app.id}</td>
@@ -293,7 +296,7 @@ export default function ApplicationsPage() {
                   <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={app.assignee} size={22} /><span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{app.assignee}</span></div></td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: 12 }}>{formatDate(app.date)}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>
                       <Button variant="secondary" size="sm" onClick={() => { setSelectedApp(app); setQuoteModalVisible(true) }}>Quote</Button>
                       {app.deleted_at ? (
                          <button onClick={() => restoreMutation.mutate(app._id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-green)', padding: 0 }} title="Restore"><RefreshCcw size={14} /></button>
