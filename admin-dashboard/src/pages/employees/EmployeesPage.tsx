@@ -23,11 +23,14 @@ export default function EmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', role: 'consultant' })
 
+  // Employees = internal staff & partners only. Clients live exclusively in the
+  // Clients module and must never appear here (they are created with role
+  // 'client', which is the only role excluded).
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin_users'],
     queryFn: async () => {
       const res = await apiClient.get('/users')
-      return res.data.data
+      return (res.data.data || []).filter((u: any) => u.role !== 'client')
     }
   })
 
