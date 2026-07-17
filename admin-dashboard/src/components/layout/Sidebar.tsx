@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Award, ClipboardList, FileText, TrendingUp,
   CreditCard, Truck, FlaskConical, Briefcase, Bot, BarChart3, Settings,
   ChevronLeft, ChevronRight, LogOut, Shield, Sliders,
-  Globe2, Building2, CalendarClock,
+  Globe2, Building2, CalendarClock, Package,
 } from 'lucide-react'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
@@ -16,6 +16,7 @@ const NAV = [
   { to: '/clients',                      icon: Users,           label: 'Clients' },
   { to: '/certifications',               icon: Award,           label: 'Certifications' },
   { to: '/applications',                 icon: ClipboardList,   label: 'Applications' },
+  { to: '/products',                     icon: Package,         label: 'Products' },
   { to: '/documents',                    icon: FileText,        label: 'Documents' },
   { to: '/inspections',                  icon: Shield,          label: 'Inspections' },
   { to: '/shipments',                    icon: Truck,           label: 'Shipments' },

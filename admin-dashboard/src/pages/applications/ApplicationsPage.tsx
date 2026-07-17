@@ -19,6 +19,9 @@ const COLS = [
 
 const PRIORITY_COLOR: Record<string, string> = { high: '#FF6B6B', urgent: '#FF6B6B', medium: '#FFB347', low: '#00C896' }
 
+const CERT_TYPES = ['BIS_CRS', 'BIS_ISI', 'FSSAI', 'WPC_ETA', 'EPR', 'TEC', 'LMPC', 'CDSCO']
+const EMPTY_APP = { product_id: '', cert_type: 'BIS_CRS', priority: 'medium', notes: '' }
+
 export default function ApplicationsPage() {
   const queryClient = useQueryClient()
   const [view, setView] = useState<'kanban' | 'list'>('kanban')
@@ -28,6 +31,18 @@ export default function ApplicationsPage() {
   const [govFee, setGovFee] = useState('')
   const [labFee, setLabFee] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newAppVisible, setNewAppVisible] = useState(false)
+  const [newApp, setNewApp] = useState<any>(EMPTY_APP)
+
+  // Catalog products feed the New Application form (loaded only when the modal opens)
+  const { data: products } = useQuery({
+    queryKey: ['products_for_app'],
+    queryFn: async () => {
+      const res = await apiClient.get('/products?limit=100')
+      return res.data.data || []
+    },
+    enabled: newAppVisible,
+  })
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['applications'],
@@ -88,6 +103,17 @@ export default function ApplicationsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['applications'] })
   })
 
+  const createAppMutation = useMutation({
+    mutationFn: (data: any) => apiClient.post('/applications', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
+      toast.success('Application created')
+      setNewAppVisible(false)
+      setNewApp(EMPTY_APP)
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error === 'product_not_found' ? 'Select a valid product' : 'Failed to create application'),
+  })
+
   if (isLoading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}><Loader2 className="animate-spin" size={24} color="var(--text-muted)" /></div>
   if (error) return <div style={{ color: 'var(--accent-coral)' }}>Failed to load applications</div>
 
@@ -124,6 +150,58 @@ export default function ApplicationsPage() {
         </div>
       )}
 
+      {/* New Application Modal */}
+      {newAppVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'var(--bg-card)', padding: 24, borderRadius: 'var(--radius-lg)', width: 460, maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px', color: 'var(--text-primary)' }}>New Application</h3>
+            <form onSubmit={e => { e.preventDefault(); createAppMutation.mutate(newApp) }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Product</label>
+                <select required value={newApp.product_id} onChange={e => setNewApp({ ...newApp, product_id: e.target.value })}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none' }}>
+                  <option value="">Select a product…</option>
+                  {(products || []).map((p: any) => (
+                    <option key={p._id} value={p._id}>{p.name}{p.brand ? ` — ${p.brand}` : ''} ({p.category})</option>
+                  ))}
+                </select>
+                {(products || []).length === 0 && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 11, margin: '6px 0 0' }}>No products yet — add one in the Products catalog first.</p>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Certification Type</label>
+                  <select required value={newApp.cert_type} onChange={e => setNewApp({ ...newApp, cert_type: e.target.value })}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none' }}>
+                    {CERT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Priority</label>
+                  <select value={newApp.priority} onChange={e => setNewApp({ ...newApp, priority: e.target.value })}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none' }}>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Notes</label>
+                <textarea value={newApp.notes} onChange={e => setNewApp({ ...newApp, notes: e.target.value })} rows={3} placeholder="Optional notes"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <Button type="button" variant="ghost" onClick={() => { setNewAppVisible(false); setNewApp(EMPTY_APP) }}>Cancel</Button>
+                <Button type="submit" disabled={createAppMutation.isPending || !newApp.product_id}>{createAppMutation.isPending ? 'Creating...' : 'Create Application'}</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
@@ -135,7 +213,7 @@ export default function ApplicationsPage() {
             <button onClick={() => setView('kanban')} style={{ background: view === 'kanban' ? 'var(--bg-hover)' : 'transparent', color: view === 'kanban' ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}><LayoutGrid size={14} /> Kanban</button>
             <button onClick={() => setView('list')} style={{ background: view === 'list' ? 'var(--bg-hover)' : 'transparent', color: view === 'list' ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}><List size={14} /> List</button>
           </div>
-          <Button icon={<Plus size={14} />} size="sm">New Application</Button>
+          <Button icon={<Plus size={14} />} size="sm" onClick={() => { setNewApp(EMPTY_APP); setNewAppVisible(true) }}>New Application</Button>
         </div>
       </div>
 
