@@ -110,7 +110,6 @@ export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElemen
   labelIcon?: React.ReactNode;
   prefixNode?: React.ReactNode;
 }
-}
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ options, helperText, error, label, labelIcon, prefixNode, style, ...props }, ref) => {
     return (
@@ -160,7 +159,6 @@ export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextArea
   label?: React.ReactNode;
   labelIcon?: React.ReactNode;
   showCount?: boolean;
-}
 }
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ helperText, error, label, labelIcon, showCount, maxLength, value, style, ...props }, ref) => {
