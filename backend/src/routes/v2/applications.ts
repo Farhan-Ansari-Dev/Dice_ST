@@ -318,7 +318,7 @@ async function issueCertification(app: any, by: Types.ObjectId): Promise<void> {
 // ═══════════════════════════════════════════════════════════════
 // PUT /applications/:id/status — mobile compat (maps to transition)
 // ═══════════════════════════════════════════════════════════════
-router.put('/:id/status', async (req: AuthRequest, res: Response) => {
+router.put('/:id/status', requireRole(...ADMIN_ROLES, 'employee', 'consultant'), async (req: AuthRequest, res: Response) => {
   const { status, notes } = req.body as { status: string; notes?: string };
   const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
@@ -352,7 +352,7 @@ router.put('/:id/status', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 // PUT /applications/:id/assign — mobile compat (maps to POST assign)
 // ═══════════════════════════════════════════════════════════════
-router.put('/:id/assign', async (req: AuthRequest, res: Response) => {
+router.put('/:id/assign', requireRole(...ADMIN_ROLES, 'consultant'), async (req: AuthRequest, res: Response) => {
   const { assigned_to } = req.body as { assigned_to: string };
   const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
@@ -381,7 +381,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 // DELETE /applications/:id — soft delete
 // ═══════════════════════════════════════════════════════════════
-router.delete('/:id', async (req: AuthRequest, res: Response) => {
+router.delete('/:id', requireRole(...ADMIN_ROLES), async (req: AuthRequest, res: Response) => {
   const app = await Application.findOneAndUpdate(
     scopeById(req),
     { deleted_at: new Date(), updated_at: new Date() },
@@ -394,7 +394,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════════
 // POST /applications/:id/restore — restore soft deleted application
 // ═══════════════════════════════════════════════════════════════
-router.post('/:id/restore', async (req: AuthRequest, res: Response) => {
+router.post('/:id/restore', requireRole(...ADMIN_ROLES), async (req: AuthRequest, res: Response) => {
   // includeDeleted — the soft-delete pre-find hook would otherwise hide the
   // application being restored.
   const app = await Application.findOneAndUpdate(

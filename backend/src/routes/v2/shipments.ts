@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { Shipment } from '../../models';
 import { authenticate, requireRole, AuthRequest } from '../../middleware/authMongo';
+import { stripProtected } from '../../utils/sanitize';
 
 const router = Router();
 const wrap = (fn: any) => (req: AuthRequest, res: Response, next: any) => fn(req, res, next).catch(next);
@@ -28,7 +29,7 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
 // POST new shipment (Admin only)
 router.post('/', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
   try {
-    const shipment = await Shipment.create(req.body);
+    const shipment = await Shipment.create(stripProtected(req.body));
     return res.status(201).json({ success: true, data: shipment });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error.message });
@@ -40,7 +41,7 @@ router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async
   try {
     const shipment = await Shipment.findOneAndUpdate(
       { _id: req.params.id, deleted_at: null },
-      req.body,
+      stripProtected(req.body),
       { new: true }
     );
     if (!shipment) return res.status(404).json({ success: false, error: 'Not found' });

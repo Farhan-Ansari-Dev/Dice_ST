@@ -99,14 +99,13 @@ router.delete('/:id', requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest,
   return sendSuccess(res, { id: insight._id }, 'Deleted successfully')
 }))
 
-router.post('/ai-summary', wrap(async (req: Request, res: Response) => {
+router.post('/ai-summary', requireRole(...ADMIN_ROLES), wrap(async (req: Request, res: Response) => {
   const { content } = req.body
   const summary = await aiService.generateInsightSummary(content)
   sendSuccess(res, { summary })
 }))
 
-// TRIGGER SCRAPER MANUALLY (For testing pipeline)
-router.post('/trigger-scraper', wrap(async (req: Request, res: Response) => {
+router.post('/trigger-scraper', requireRole(...ADMIN_ROLES), wrap(async (req: Request, res: Response) => {
   const result = await runAxiosCreeper()
   sendSuccess(res, result)
 }))

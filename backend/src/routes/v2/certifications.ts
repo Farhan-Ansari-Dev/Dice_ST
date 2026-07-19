@@ -88,7 +88,7 @@ router.delete('/:id', authenticate, authorize(['admin','super_admin']), wrap(asy
   return sendSuccess(res, cert, 'Deleted successfully')
 }))
 
-router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+router.post('/:id/restore', authenticate, authorize(['admin','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   // includeDeleted — the soft-delete pre-find hook would otherwise hide the
   // certification being restored.
   const cert = await Certification.findOneAndUpdate(

@@ -5,6 +5,7 @@
 import { Router, Response } from 'express';
 import { Workflow } from '../../models';
 import { authenticate, AuthRequest, requireRole } from '../../middleware/authMongo';
+import { stripProtected } from '../../utils/sanitize';
 
 const router = Router();
 router.use(authenticate);
@@ -30,13 +31,14 @@ router.get('/:identifier', async (req: AuthRequest, res: Response) => {
   return res.json({ data: workflow });
 });
 
-// Admin-only: create/update workflows
-router.put('/:id', requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
+// Admin-only: update workflows
+router.put('/:id', requireRole('super_admin', 'admin'), async (req: AuthRequest, res: Response) => {
   const result = await Workflow.findByIdAndUpdate(
     req.params.id,
-    { ...req.body, _id: req.params.id },
-    { upsert: true, new: true }
+    stripProtected(req.body),
+    { new: true, runValidators: true }
   );
+  if (!result) return res.status(404).json({ error: 'not_found' });
   return res.json({ data: result });
 });
 
