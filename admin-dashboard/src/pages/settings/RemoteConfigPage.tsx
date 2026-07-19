@@ -1,285 +1,690 @@
-import React, { useEffect, useState } from 'react';
-import { Settings, Save, AlertCircle } from 'lucide-react';
-import apiClient from '../../services/apiClient';
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
+import {
+  Settings, Rocket, Search, ToggleLeft, ToggleRight, Palette, Type, Hash,
+  Bell, Shield, Smartphone, Zap, Globe, Brain, UserCheck, Eye, Clock,
+  CheckCircle2, AlertTriangle, ChevronRight, Undo2, History, Sparkles,
+} from 'lucide-react'
+import Button from '../../components/common/Button'
+import StatCard from '../../components/common/StatCard'
+import Modal from '../../components/common/Modal'
+import { toast } from '../../store/toastStore'
+import apiClient from '../../services/apiClient'
 
-interface RemoteConfigData {
-  featureFlags: {
-    maintenance_mode: boolean;
-    enable_ai_assistant: boolean;
-    enable_ocr_scanning: boolean;
-    enable_referral_rewards: boolean;
-    enable_promotional_banners: boolean;
-    enable_notifications: boolean;
-  };
-  dynamicConfig: {
-    banner_text: string;
-    banner_color: string;
-    referral_reward_value: number;
-    announcement_title: string;
-    announcement_body: string;
-  };
-  aiSettings: {
-    provider: string;
-    model: string;
-    apiKey: string;
-  };
+// ─── Config Registry ────────────────────────────────────────────────────────
+// Maps each backend field to a rich UI representation
+
+interface ConfigEntry {
+  key: string
+  section: 'featureFlags' | 'dynamicConfig' | 'aiSettings'
+  name: string
+  description: string
+  category: string
+  type: 'boolean' | 'string' | 'number' | 'color' | 'select' | 'textarea' | 'password'
+  options?: { label: string; value: string }[]
+  icon: React.ReactNode
+  environment: 'all' | 'mobile' | 'admin'
 }
 
-export default function RemoteConfigPage() {
-  const [config, setConfig] = useState<RemoteConfigData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const CONFIG_REGISTRY: ConfigEntry[] = [
+  // Feature Flags
+  { key: 'maintenance_mode', section: 'featureFlags', name: 'Maintenance Mode', description: 'Shows maintenance screen to all mobile users. Use during deployments.', category: 'Maintenance', type: 'boolean', icon: <Shield size={16} />, environment: 'mobile' },
+  { key: 'enable_ai_assistant', section: 'featureFlags', name: 'AI Assistant', description: 'Enables the AI-powered compliance assistant in the mobile app.', category: 'AI', type: 'boolean', icon: <Brain size={16} />, environment: 'mobile' },
+  { key: 'enable_ocr_scanning', section: 'featureFlags', name: 'OCR Document Scanning', description: 'Allows users to scan documents using camera OCR.', category: 'Experimental', type: 'boolean', icon: <Eye size={16} />, environment: 'mobile' },
+  { key: 'enable_referral_rewards', section: 'featureFlags', name: 'Referral Rewards', description: 'Enables the referral program with reward credits.', category: 'Payments', type: 'boolean', icon: <Sparkles size={16} />, environment: 'mobile' },
+  { key: 'enable_promotional_banners', section: 'featureFlags', name: 'Promotional Banners', description: 'Shows promotional banners on the home screen.', category: 'Home Screen', type: 'boolean', icon: <Globe size={16} />, environment: 'mobile' },
+  { key: 'enable_notifications', section: 'featureFlags', name: 'Push Notifications', description: 'Enables push notification delivery to mobile devices.', category: 'Notifications', type: 'boolean', icon: <Bell size={16} />, environment: 'mobile' },
+  { key: 'consultant_verification_enabled', section: 'featureFlags', name: 'Consultant Verification', description: 'Allows consultants to submit verification applications.', category: 'Consultant', type: 'boolean', icon: <UserCheck size={16} />, environment: 'mobile' },
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
+  // Dynamic Config
+  { key: 'banner_text', section: 'dynamicConfig', name: 'Home Banner Text', description: 'Text displayed in the promotional banner on the home screen.', category: 'Home Screen', type: 'string', icon: <Type size={16} />, environment: 'mobile' },
+  { key: 'banner_color', section: 'dynamicConfig', name: 'Banner Color', description: 'Background color of the home promotional banner.', category: 'Home Screen', type: 'color', icon: <Palette size={16} />, environment: 'mobile' },
+  { key: 'referral_reward_value', section: 'dynamicConfig', name: 'Referral Reward Amount', description: 'Credit amount (INR) awarded per successful referral.', category: 'Payments', type: 'number', icon: <Hash size={16} />, environment: 'mobile' },
+  { key: 'announcement_title', section: 'dynamicConfig', name: 'Announcement Title', description: 'Title of the in-app announcement popup.', category: 'Home Screen', type: 'string', icon: <Type size={16} />, environment: 'mobile' },
+  { key: 'announcement_body', section: 'dynamicConfig', name: 'Announcement Body', description: 'Full announcement message shown in-app.', category: 'Home Screen', type: 'textarea', icon: <Type size={16} />, environment: 'mobile' },
+
+  // AI Settings
+  { key: 'provider', section: 'aiSettings', name: 'AI Provider', description: 'Backend AI inference provider for the assistant.', category: 'AI', type: 'select', options: [{ label: 'Nvidia NIM (Llama)', value: 'nvidia' }, { label: 'OpenAI (GPT)', value: 'openai' }, { label: 'Google Gemini', value: 'gemini' }, { label: 'GitHub Copilot', value: 'copilot' }], icon: <Brain size={16} />, environment: 'admin' },
+  { key: 'model', section: 'aiSettings', name: 'AI Model', description: 'Specific model identifier used for inference calls.', category: 'AI', type: 'string', icon: <Zap size={16} />, environment: 'admin' },
+  { key: 'apiKey', section: 'aiSettings', name: 'AI API Key', description: 'Secret key for the AI provider. Never exposed to clients.', category: 'AI', type: 'password', icon: <Shield size={16} />, environment: 'admin' },
+]
+
+const CATEGORIES = ['All', 'Home Screen', 'AI', 'Payments', 'Notifications', 'Consultant', 'Maintenance', 'Experimental']
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  'All': <Settings size={14} />,
+  'Home Screen': <Smartphone size={14} />,
+  'AI': <Brain size={14} />,
+  'Payments': <Hash size={14} />,
+  'Notifications': <Bell size={14} />,
+  'Consultant': <UserCheck size={14} />,
+  'Maintenance': <Shield size={14} />,
+  'Experimental': <Zap size={14} />,
+}
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface RemoteConfigData {
+  featureFlags: Record<string, boolean>
+  dynamicConfig: Record<string, any>
+  aiSettings: Record<string, string>
+}
+
+interface Change {
+  entry: ConfigEntry
+  oldValue: any
+  newValue: any
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────
+
+export default function RemoteConfigPage() {
+  const [savedConfig, setSavedConfig] = useState<RemoteConfigData | null>(null)
+  const [draftConfig, setDraftConfig] = useState<RemoteConfigData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [publishing, setPublishing] = useState(false)
+  const [search, setSearch] = useState('')
+  const [activeCategory, setActiveCategory] = useState('All')
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [lastPublished, setLastPublished] = useState<string | null>(null)
+
+  useEffect(() => { fetchConfig() }, [])
 
   const fetchConfig = async () => {
     try {
-      // remote-config is exposed under v2
-      const response = await apiClient.get('/remote-config/admin', { 
-        baseURL: apiClient.defaults.baseURL?.replace('/v1', '/v2') 
-      });
-      setConfig(response.data.data);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch config');
+      const response = await apiClient.get('/remote-config/admin')
+      const data = response.data.data
+      setSavedConfig(JSON.parse(JSON.stringify(data)))
+      setDraftConfig(JSON.parse(JSON.stringify(data)))
+      if (data.updatedAt) setLastPublished(data.updatedAt)
+    } catch {
+      toast.error('Failed to fetch remote config')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const handleSave = async () => {
-    if (!config) return;
-    setSaving(true);
-    setError(null);
+  const getValue = useCallback((entry: ConfigEntry): any => {
+    if (!draftConfig) return ''
+    return (draftConfig[entry.section] as any)?.[entry.key] ?? ''
+  }, [draftConfig])
+
+  const setValue = useCallback((entry: ConfigEntry, value: any) => {
+    setDraftConfig(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        [entry.section]: { ...prev[entry.section], [entry.key]: value }
+      }
+    })
+  }, [])
+
+  const pendingChanges: Change[] = useMemo(() => {
+    if (!savedConfig || !draftConfig) return []
+    const changes: Change[] = []
+    CONFIG_REGISTRY.forEach(entry => {
+      const oldVal = (savedConfig[entry.section] as any)?.[entry.key]
+      const newVal = (draftConfig[entry.section] as any)?.[entry.key]
+      if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+        changes.push({ entry, oldValue: oldVal, newValue: newVal })
+      }
+    })
+    return changes
+  }, [savedConfig, draftConfig])
+
+  const filteredEntries = useMemo(() => {
+    return CONFIG_REGISTRY.filter(entry => {
+      const matchCategory = activeCategory === 'All' || entry.category === activeCategory
+      const matchSearch = !search.trim() || entry.name.toLowerCase().includes(search.toLowerCase()) || entry.key.toLowerCase().includes(search.toLowerCase()) || entry.description.toLowerCase().includes(search.toLowerCase())
+      return matchCategory && matchSearch
+    })
+  }, [activeCategory, search])
+
+  const activeFeatureCount = useMemo(() => {
+    if (!draftConfig) return 0
+    return Object.values(draftConfig.featureFlags).filter(Boolean).length
+  }, [draftConfig])
+
+  const handlePublish = async () => {
+    if (!draftConfig) return
+    setPublishing(true)
     try {
-      await apiClient.put('/remote-config/admin', config, { 
-        baseURL: apiClient.defaults.baseURL?.replace('/v1', '/v2') 
-      });
-      alert('Configuration saved successfully and broadcasted instantly.');
+      await apiClient.put('/remote-config/admin', draftConfig)
+      setSavedConfig(JSON.parse(JSON.stringify(draftConfig)))
+      setLastPublished(new Date().toISOString())
+      setShowPublishModal(false)
+      toast.success('Configuration published successfully')
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save config');
+      toast.error(err.response?.data?.message || 'Failed to publish')
     } finally {
-      setSaving(false);
+      setPublishing(false)
     }
-  };
+  }
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading Configuration...</div>;
-  if (!config) return (
-    <div className="p-8 text-center text-red-500">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-        <AlertCircle className="w-5 h-5" />
-        <span>{error || 'No configuration found.'}</span>
+  const handleDiscard = () => {
+    if (savedConfig) {
+      setDraftConfig(JSON.parse(JSON.stringify(savedConfig)))
+      toast.success('Changes discarded')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid var(--border)', borderTopColor: 'var(--accent-purple)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
+        Loading configuration...
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
-      <button onClick={() => { setLoading(true); setError(null); fetchConfig(); }} style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer' }}>
-        Retry
-      </button>
-    </div>
-  );
+    )
+  }
+
+  if (!draftConfig) {
+    return (
+      <div style={{ padding: 60, textAlign: 'center' }}>
+        <AlertTriangle size={40} color="var(--accent-coral)" style={{ margin: '0 auto 12px' }} />
+        <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: 8 }}>Failed to load configuration</div>
+        <Button onClick={() => { setLoading(true); fetchConfig() }}>Retry</Button>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Remote Configuration</h1>
-          <p className="text-gray-500">Instantly toggle features and update text across the mobile app without app store releases.</p>
+    <div style={{ display: 'flex', gap: 24, maxWidth: 1400 }}>
+      {/* Main Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: 'var(--accent-purple)', fontSize: 11, fontWeight: 800, letterSpacing: 1.5, marginBottom: 4 }}>FEATURE MANAGEMENT</div>
+            <h1 style={{ color: 'var(--text-primary)', fontSize: 26, fontWeight: 800, margin: '0 0 6px', letterSpacing: -0.5 }}>Remote Config</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>Control mobile app features and content without app store releases</p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {pendingChanges.length > 0 && (
+              <Button variant="ghost" onClick={handleDiscard} icon={<Undo2 size={14} />}>Discard</Button>
+            )}
+            <Button variant="secondary" onClick={() => setShowHistoryModal(true)} icon={<History size={14} />}>History</Button>
+            <Button
+              onClick={() => pendingChanges.length > 0 ? setShowPublishModal(true) : null}
+              disabled={pendingChanges.length === 0}
+              icon={<Rocket size={14} />}
+            >
+              Publish{pendingChanges.length > 0 ? ` (${pendingChanges.length})` : ''}
+            </Button>
+          </div>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 disabled:opacity-50"
-        >
-          <Save className="w-4 h-4" />
-          <span>{saving ? 'Saving...' : 'Save Changes'}</span>
-        </button>
+
+        {/* KPI Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
+          <StatCard title="Total Keys" value={CONFIG_REGISTRY.length} icon={<Settings size={18} />} gradient="var(--gradient-purple)" />
+          <StatCard title="Active Features" value={activeFeatureCount} suffix={`/ ${Object.keys(draftConfig.featureFlags).length}`} icon={<ToggleRight size={18} />} gradient="var(--gradient-green)" />
+          <StatCard title="Pending Changes" value={pendingChanges.length} icon={<Clock size={18} />} gradient={pendingChanges.length > 0 ? 'var(--gradient-amber)' : 'var(--gradient-cyan)'} />
+          <StatCard title="Last Published" value={lastPublished ? timeAgo(lastPublished) : 'Never'} icon={<CheckCircle2 size={18} />} gradient="var(--gradient-cyan)" />
+        </div>
+
+        {/* Search & Category Filter */}
+        <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360 }}>
+            <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              placeholder="Search configuration..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px 10px 36px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
+
+        {/* Category Pills */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-full)',
+                border: '1px solid',
+                borderColor: activeCategory === cat ? 'var(--accent-purple)' : 'var(--border)',
+                background: activeCategory === cat ? 'rgba(108,99,255,0.15)' : 'var(--bg-card)',
+                color: activeCategory === cat ? 'var(--accent-purple)' : 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                transition: 'var(--transition)',
+              }}
+            >
+              {CATEGORY_ICONS[cat]}
+              {cat}
+              {cat !== 'All' && (
+                <span style={{ fontSize: 10, opacity: 0.7 }}>
+                  {CONFIG_REGISTRY.filter(e => e.category === cat).length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Config Cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {filteredEntries.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
+              No configuration matches your search
+            </div>
+          ) : (
+            filteredEntries.map(entry => (
+              <ConfigCard
+                key={`${entry.section}.${entry.key}`}
+                entry={entry}
+                value={getValue(entry)}
+                onChange={(val) => setValue(entry, val)}
+                hasChange={pendingChanges.some(c => c.entry.key === entry.key && c.entry.section === entry.section)}
+              />
+            ))
+          )}
+        </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-center space-x-2">
-          <AlertCircle className="w-5 h-5" />
-          <span>{error}</span>
-        </div>
-      )}
+      {/* Mobile Preview Sidebar */}
+      <div style={{ width: 280, flexShrink: 0, position: 'sticky', top: 20, alignSelf: 'flex-start' }} className="hide-mobile">
+        <MobilePreview config={draftConfig} />
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Feature Flags */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
-            <Settings className="w-5 h-5 text-indigo-500" />
-            <span>Feature Flags</span>
-          </h2>
-          
-          <div className="space-y-4">
-            {Object.entries(config.featureFlags).map(([key, value]) => (
-              <div key={key} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div>
-                  <div className="font-medium text-gray-900">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
-                  <div className="text-sm text-gray-500 font-mono text-xs mt-1">{key}</div>
+      {/* Publish Confirmation Modal */}
+      <Modal
+        isOpen={showPublishModal}
+        onClose={() => setShowPublishModal(false)}
+        title="Publish Configuration"
+        subtitle={`${pendingChanges.length} change${pendingChanges.length !== 1 ? 's' : ''} will go live immediately`}
+        icon={<Rocket size={18} />}
+        maxWidth={640}
+        footer={
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button variant="ghost" onClick={() => setShowPublishModal(false)}>Cancel</Button>
+            <Button onClick={handlePublish} disabled={publishing} icon={<Rocket size={14} />}>
+              {publishing ? 'Publishing...' : 'Publish Configuration'}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+          These changes will be pushed to all mobile app users instantly via cache bust.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {pendingChanges.map(change => (
+            <div key={`${change.entry.section}.${change.entry.key}`} style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>{change.entry.name}</span>
+                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'rgba(108,99,255,0.12)', color: 'var(--accent-purple)', fontWeight: 700 }}>{change.entry.category}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Before</div>
+                  <div style={{ color: 'var(--accent-coral)', fontFamily: 'var(--font-mono)', padding: '4px 8px', background: 'rgba(255,107,107,0.08)', borderRadius: 4, wordBreak: 'break-all' }}>
+                    {formatValue(change.oldValue)}
+                  </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={value}
-                    onChange={(e) => setConfig({
-                      ...config,
-                      featureFlags: { ...config.featureFlags, [key]: e.target.checked }
-                    })}
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }}>
+                  <ChevronRight size={14} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>After</div>
+                  <div style={{ color: 'var(--accent-green)', fontFamily: 'var(--font-mono)', padding: '4px 8px', background: 'rgba(0,200,150,0.08)', borderRadius: 4, wordBreak: 'break-all' }}>
+                    {formatValue(change.newValue)}
+                  </div>
+                </div>
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* History Modal */}
+      <Modal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        title="Version History"
+        subtitle="Configuration change log"
+        icon={<History size={18} />}
+        maxWidth={500}
+      >
+        <div style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+          <Clock size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
+          Version history is tracked via audit logs.<br />
+          View detailed change history in the Audit Logs section.
+        </div>
+      </Modal>
+
+      <style>{`
+        @media (max-width: 1100px) {
+          .hide-mobile { display: none !important; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+// ─── Config Card Component ──────────────────────────────────────────────────
+
+function ConfigCard({ entry, value, onChange, hasChange }: { entry: ConfigEntry; value: any; onChange: (v: any) => void; hasChange: boolean }) {
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      border: `1px solid ${hasChange ? 'var(--accent-purple)' : 'var(--border)'}`,
+      borderRadius: 'var(--radius)',
+      padding: '16px 20px',
+      transition: 'var(--transition)',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {hasChange && (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: 'var(--accent-purple)', borderRadius: '0 4px 4px 0' }} />
+      )}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        {/* Icon */}
+        <div style={{
+          width: 36, height: 36, borderRadius: 10,
+          background: entry.type === 'boolean' && value ? 'rgba(0,200,150,0.12)' : 'var(--bg-hover)',
+          border: `1px solid ${entry.type === 'boolean' && value ? 'rgba(0,200,150,0.2)' : 'var(--border)'}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: entry.type === 'boolean' && value ? 'var(--accent-green)' : 'var(--text-muted)',
+          flexShrink: 0,
+        }}>
+          {entry.icon}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 14 }}>{entry.name}</span>
+            {hasChange && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 'var(--radius-full)', background: 'rgba(108,99,255,0.15)', color: 'var(--accent-purple)', fontWeight: 800 }}>MODIFIED</span>}
+            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 'var(--radius-full)', background: entry.environment === 'mobile' ? 'rgba(0,212,255,0.1)' : 'rgba(255,179,71,0.1)', color: entry.environment === 'mobile' ? 'var(--accent-cyan)' : 'var(--accent-amber)', fontWeight: 700, marginLeft: 'auto', flexShrink: 0 }}>
+              {entry.environment === 'mobile' ? 'MOBILE' : 'BACKEND'}
+            </span>
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 10, lineHeight: 1.4 }}>{entry.description}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{entry.section}.{entry.key}</span>
           </div>
         </div>
 
-        {/* Dynamic Config */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
-            <Settings className="w-5 h-5 text-purple-500" />
-            <span>Dynamic Content</span>
-          </h2>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Banner Text</label>
-              <input
-                type="text"
-                value={config.dynamicConfig.banner_text}
-                onChange={(e) => setConfig({
-                  ...config,
-                  dynamicConfig: { ...config.dynamicConfig, banner_text: e.target.value }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Banner Color (Hex)</label>
-              <div className="flex space-x-2">
-                <input
-                  type="color"
-                  value={config.dynamicConfig.banner_color}
-                  onChange={(e) => setConfig({
-                    ...config,
-                    dynamicConfig: { ...config.dynamicConfig, banner_color: e.target.value }
-                  })}
-                  className="h-10 w-10 rounded cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={config.dynamicConfig.banner_color}
-                  onChange={(e) => setConfig({
-                    ...config,
-                    dynamicConfig: { ...config.dynamicConfig, banner_color: e.target.value }
-                  })}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Referral Reward Value (₹)</label>
-              <input
-                type="number"
-                value={config.dynamicConfig.referral_reward_value}
-                onChange={(e) => setConfig({
-                  ...config,
-                  dynamicConfig: { ...config.dynamicConfig, referral_reward_value: Number(e.target.value) }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Announcement Title</label>
-              <input
-                type="text"
-                value={config.dynamicConfig.announcement_title}
-                onChange={(e) => setConfig({
-                  ...config,
-                  dynamicConfig: { ...config.dynamicConfig, announcement_title: e.target.value }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Announcement Body</label>
-              <textarea
-                value={config.dynamicConfig.announcement_body}
-                onChange={(e) => setConfig({
-                  ...config,
-                  dynamicConfig: { ...config.dynamicConfig, announcement_body: e.target.value }
-                })}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* AI Configuration */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 lg:col-span-2">
-          <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
-            <Settings className="w-5 h-5 text-green-500" />
-            <span>AI Configuration</span>
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-              <select
-                value={config.aiSettings?.provider || 'nvidia'}
-                onChange={(e) => setConfig({
-                  ...config,
-                  aiSettings: { ...config.aiSettings, provider: e.target.value }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="nvidia">Nvidia NIM (Llama)</option>
-                <option value="openai">OpenAI (ChatGPT)</option>
-                <option value="copilot">GitHub Copilot</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="kimo">Kimo</option>
-                <option value="kiro">Kiro</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
-              <input
-                type="text"
-                placeholder="e.g. meta/llama-3.3-70b-instruct or gpt-4o"
-                value={config.aiSettings?.model || ''}
-                onChange={(e) => setConfig({
-                  ...config,
-                  aiSettings: { ...config.aiSettings, model: e.target.value }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-              <input
-                type="password"
-                placeholder="Leave blank to use environment default"
-                value={config.aiSettings?.apiKey || ''}
-                onChange={(e) => setConfig({
-                  ...config,
-                  aiSettings: { ...config.aiSettings, apiKey: e.target.value }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-4">
-            * Security Note: This API Key is NEVER sent to client devices. It remains strictly on the backend.
-          </p>
+        {/* Editor */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+          <ConfigEditor entry={entry} value={value} onChange={onChange} />
         </div>
       </div>
     </div>
-  );
+  )
+}
+
+// ─── Type-Specific Editors ──────────────────────────────────────────────────
+
+function ConfigEditor({ entry, value, onChange }: { entry: ConfigEntry; value: any; onChange: (v: any) => void }) {
+  switch (entry.type) {
+    case 'boolean':
+      return (
+        <button
+          onClick={() => onChange(!value)}
+          style={{
+            width: 48, height: 26, borderRadius: 13, border: 'none',
+            background: value ? 'var(--accent-green)' : 'var(--bg-hover)',
+            position: 'relative', cursor: 'pointer', transition: 'var(--transition)',
+            boxShadow: value ? '0 2px 8px rgba(0,200,150,0.3)' : 'inset 0 1px 3px rgba(0,0,0,0.2)',
+          }}
+        >
+          <div style={{
+            width: 20, height: 20, borderRadius: '50%', background: '#fff',
+            position: 'absolute', top: 3, left: value ? 25 : 3,
+            transition: 'left 0.2s ease',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+          }} />
+        </button>
+      )
+
+    case 'number':
+      return (
+        <input
+          type="number"
+          value={value}
+          onChange={e => onChange(Number(e.target.value) || 0)}
+          style={{
+            width: 100, padding: '7px 10px', background: 'var(--bg-input)',
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-mono)',
+            textAlign: 'right', outline: 'none',
+          }}
+        />
+      )
+
+    case 'color':
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="color"
+            value={value || '#6C63FF'}
+            onChange={e => onChange(e.target.value)}
+            style={{ width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer', background: 'none' }}
+          />
+          <input
+            type="text"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            style={{
+              width: 90, padding: '7px 10px', background: 'var(--bg-input)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-mono)',
+              outline: 'none',
+            }}
+          />
+        </div>
+      )
+
+    case 'select':
+      return (
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{
+            padding: '7px 28px 7px 10px', background: 'var(--bg-input)',
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)', fontSize: 13, outline: 'none',
+            appearance: 'none',
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238B92A5' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 8px center',
+          }}
+        >
+          {entry.options?.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      )
+
+    case 'textarea':
+      return (
+        <textarea
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          rows={2}
+          style={{
+            width: 220, padding: '7px 10px', background: 'var(--bg-input)',
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)', fontSize: 13, outline: 'none', resize: 'vertical',
+            fontFamily: 'var(--font-family)',
+          }}
+        />
+      )
+
+    case 'password':
+      return (
+        <input
+          type="password"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="••••••••"
+          style={{
+            width: 160, padding: '7px 10px', background: 'var(--bg-input)',
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)', fontSize: 13, fontFamily: 'var(--font-mono)',
+            outline: 'none',
+          }}
+        />
+      )
+
+    default:
+      return (
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{
+            width: 200, padding: '7px 10px', background: 'var(--bg-input)',
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)', fontSize: 13, outline: 'none',
+          }}
+        />
+      )
+  }
+}
+
+// ─── Mobile Preview ─────────────────────────────────────────────────────────
+
+function MobilePreview({ config }: { config: RemoteConfigData }) {
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-lg)',
+      overflow: 'hidden',
+    }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Smartphone size={14} color="var(--accent-cyan)" />
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Mobile Preview</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--accent-green)', fontWeight: 600 }}>LIVE</span>
+      </div>
+
+      {/* Phone Frame */}
+      <div style={{ padding: 16 }}>
+        <div style={{
+          width: '100%', aspectRatio: '9/16', maxHeight: 420,
+          background: '#0A0B0F', borderRadius: 24, border: '3px solid #2A2D3E',
+          overflow: 'hidden', position: 'relative',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Status Bar */}
+          <div style={{ height: 28, background: '#12141A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 60, height: 4, borderRadius: 2, background: '#2A2D3E' }} />
+          </div>
+
+          {/* Maintenance Overlay */}
+          {config.featureFlags.maintenance_mode && (
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,11,15,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+              <Shield size={28} color="#FF6B6B" />
+              <div style={{ color: '#fff', fontSize: 12, fontWeight: 700, marginTop: 8 }}>Maintenance Mode</div>
+              <div style={{ color: '#8B92A5', fontSize: 9, marginTop: 4 }}>App is temporarily unavailable</div>
+            </div>
+          )}
+
+          {/* Banner */}
+          {config.featureFlags.enable_promotional_banners && config.dynamicConfig.banner_text && (
+            <div style={{
+              padding: '6px 10px', fontSize: 8, fontWeight: 600,
+              background: config.dynamicConfig.banner_color || '#6C63FF',
+              color: '#fff', textAlign: 'center', letterSpacing: 0.3,
+            }}>
+              {config.dynamicConfig.banner_text}
+            </div>
+          )}
+
+          {/* App Content */}
+          <div style={{ flex: 1, padding: 10, overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>DICE</div>
+                <div style={{ color: '#8B92A5', fontSize: 7 }}>by Sanyog</div>
+              </div>
+              {config.featureFlags.enable_notifications && (
+                <div style={{ width: 18, height: 18, borderRadius: 5, background: '#1A1D2E', display: 'grid', placeItems: 'center' }}>
+                  <Bell size={9} color="#6C63FF" />
+                </div>
+              )}
+            </div>
+
+            {/* Announcement */}
+            {config.dynamicConfig.announcement_title && (
+              <div style={{ padding: '6px 8px', background: 'rgba(108,99,255,0.1)', border: '1px solid rgba(108,99,255,0.2)', borderRadius: 6, marginBottom: 8 }}>
+                <div style={{ color: '#fff', fontSize: 8, fontWeight: 700 }}>{config.dynamicConfig.announcement_title}</div>
+                {config.dynamicConfig.announcement_body && (
+                  <div style={{ color: '#8B92A5', fontSize: 7, marginTop: 2, lineHeight: 1.3 }}>
+                    {config.dynamicConfig.announcement_body.slice(0, 60)}{config.dynamicConfig.announcement_body.length > 60 ? '...' : ''}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Feature Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {config.featureFlags.enable_ai_assistant && (
+                <MiniFeatureCard icon={<Brain size={9} />} label="AI Assistant" color="#6C63FF" />
+              )}
+              {config.featureFlags.enable_ocr_scanning && (
+                <MiniFeatureCard icon={<Eye size={9} />} label="OCR Scan" color="#00D4FF" />
+              )}
+              {config.featureFlags.enable_referral_rewards && (
+                <MiniFeatureCard icon={<Sparkles size={9} />} label={`Refer ₹${config.dynamicConfig.referral_reward_value}`} color="#FFB347" />
+              )}
+              {config.featureFlags.consultant_verification_enabled && (
+                <MiniFeatureCard icon={<UserCheck size={9} />} label="Verification" color="#00C896" />
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Nav */}
+          <div style={{ height: 32, background: '#12141A', borderTop: '1px solid #2A2D3E', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '0 10px' }}>
+            <div style={{ width: 4, height: 4, borderRadius: 2, background: '#6C63FF' }} />
+            <div style={{ width: 4, height: 4, borderRadius: 2, background: '#3A3D4E' }} />
+            <div style={{ width: 4, height: 4, borderRadius: 2, background: '#3A3D4E' }} />
+            <div style={{ width: 4, height: 4, borderRadius: 2, background: '#3A3D4E' }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        Preview updates live as you change config values above.
+      </div>
+    </div>
+  )
+}
+
+function MiniFeatureCard({ icon, label, color }: { icon: React.ReactNode; label: string; color: string }) {
+  return (
+    <div style={{ padding: '6px 8px', background: `${color}12`, border: `1px solid ${color}30`, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ color }}>{icon}</span>
+      <span style={{ color: '#fff', fontSize: 7, fontWeight: 600 }}>{label}</span>
+    </div>
+  )
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function formatValue(val: any): string {
+  if (val === true) return 'ON'
+  if (val === false) return 'OFF'
+  if (val === '' || val === undefined || val === null) return '(empty)'
+  return String(val)
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
