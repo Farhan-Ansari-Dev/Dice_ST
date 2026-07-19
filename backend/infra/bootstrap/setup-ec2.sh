@@ -154,9 +154,13 @@ AWS_SECRET_ACCESS_KEY=
 AWS_REGION=ap-south-1
 AWS_S3_BUCKET=sanyog-conformity-docs
 
-# Razorpay (live keys)
+# Razorpay (live keys — rzp_live_* required; rzp_test_* is rejected at startup)
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+
+# Redis (rate-limiting + cache; omit to use in-memory fallback — NOT recommended for cluster mode)
+REDIS_URL=redis://127.0.0.1:6379
 
 # OpenAI
 OPENAI_API_KEY=

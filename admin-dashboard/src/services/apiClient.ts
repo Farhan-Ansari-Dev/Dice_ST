@@ -8,7 +8,6 @@ export const apiClient = axios.create({
   },
 });
 
-// Add request interceptor to inject auth token
 apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token && config.headers) {
@@ -17,12 +16,38 @@ apiClient.interceptors.request.use((config) => {
   return config;
 }, (error) => Promise.reject(error));
 
-// Add response interceptor to handle 401s
+let refreshPromise: Promise<any> | null = null;
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
+  async (error) => {
+    const original = error.config;
+    if (error.response?.status === 401 && !original._retry) {
+      original._retry = true;
+      const { refreshToken, setTokens, logout } = useAuthStore.getState();
+
+      if (!refreshToken) {
+        logout();
+        return Promise.reject(error);
+      }
+
+      if (!refreshPromise) {
+        refreshPromise = axios.post(
+          `${apiClient.defaults.baseURL}/auth/refresh`,
+          { refreshToken }
+        ).finally(() => { refreshPromise = null; });
+      }
+
+      try {
+        const res = await refreshPromise;
+        const { accessToken, refreshToken: newRefresh } = res.data;
+        setTokens(accessToken, newRefresh);
+        original.headers.Authorization = `Bearer ${accessToken}`;
+        return apiClient(original);
+      } catch {
+        logout();
+        return Promise.reject(error);
+      }
     }
     return Promise.reject(error);
   }

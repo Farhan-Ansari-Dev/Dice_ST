@@ -30,7 +30,7 @@ export default function SupportTicketsPage() {
   const { data: tickets = [], isLoading } = useQuery({
     queryKey: ['support_tickets'],
     queryFn: async () => {
-      const res = await apiClient.get('/support-tickets/mine')
+      const res = await apiClient.get('/support-tickets')
       return res.data.data || []
     },
   })

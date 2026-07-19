@@ -51,9 +51,9 @@ export default function LoginPage() {
         name: data.user.name,
         email: data.user.email,
         role: data.user.role,
-        avatar: data.user.avatar_url,   // backend returns avatar_url; store field is `avatar`
+        avatar: data.user.avatar_url,
         company: 'Sanyog Conformity Solutions'
-      }, data.accessToken)
+      }, data.accessToken, data.refreshToken)
       navigate('/dashboard')
     } catch (e) {
       alert('Invalid OTP')

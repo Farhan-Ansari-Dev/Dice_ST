@@ -16,7 +16,7 @@ module.exports = {
   apps: [{
     name: 'dice-api',
     script: './dist/index.js',           // built TypeScript output
-    cwd: '/opt/dice/backend',
+    cwd: '/opt/dice/current',
     instances: 2,                         // match t4g.small vCPU count
     exec_mode: 'cluster',                 // enable load balancing across workers
 
