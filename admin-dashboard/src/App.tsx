@@ -26,6 +26,10 @@ const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'))
 const RemoteConfigPage = lazy(() => import('./pages/settings/RemoteConfigPage'))
 const InspectionsPage = lazy(() => import('./pages/inspections/InspectionsPage'))
 const MeetingAvailabilityPage = lazy(() => import('./pages/consultants/MeetingAvailabilityPage'))
+const ConsultantVerificationPage = lazy(() => import('./pages/consultants/ConsultantVerificationPage'))
+const StandardsPage = lazy(() => import('./pages/standards/StandardsPage'))
+const SupportTicketsPage = lazy(() => import('./pages/support-tickets/SupportTicketsPage'))
+const WorkflowsPage = lazy(() => import('./pages/workflows/WorkflowsPage'))
 const CountriesPage = lazy(() => import('./pages/market-access/CountriesPage'))
 const OpportunitiesPage = lazy(() => import('./pages/market-access/OpportunitiesPage'))
 
@@ -81,6 +85,10 @@ function ThemedApp() {
             <Route path="market-access/countries" element={<CountriesPage />} />
             <Route path="market-access/opportunities" element={<OpportunitiesPage />} />
             <Route path="consultants/meetings" element={<MeetingAvailabilityPage />} />
+            <Route path="consultants/verification" element={<ConsultantVerificationPage />} />
+            <Route path="standards" element={<StandardsPage />} />
+            <Route path="support-tickets" element={<SupportTicketsPage />} />
+            <Route path="workflows" element={<WorkflowsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
