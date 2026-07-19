@@ -5,7 +5,9 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,42 +15,82 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import Badge, { getStatusVariant } from '../../components/common/Badge';
-import Timeline from '../../components/common/Timeline';
 import ProgressBar from '../../components/common/ProgressBar';
-import Button from '../../components/common/Button';
 import { formatDate, formatCurrency } from '../../utils/formatters';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../services/api';
 
-const TEAM_MEMBERS: string[] = [];
-
-const MOCK_TASKS: any[] = [];
-
-const MOCK_APP: any = {
-  id: '',
-  appNo: '',
-  certType: '',
-  product: '',
-  status: '',
-  progress: 0,
-  submittedDate: '',
-  updatedDate: '',
-  assignedTo: '',
-  estimatedCompletion: '',
-  amount: 0,
-  paidAmount: 0,
-  labName: '',
-  timeline: [],
-  documents: [],
-  notes: [],
+const STATUS_PROGRESS: Record<string, number> = {
+  draft: 5,
+  submitted: 15,
+  docs_review: 30,
+  docs_required: 25,
+  tech_review: 50,
+  testing: 65,
+  approval_pending: 80,
+  approved: 95,
+  cert_issued: 100,
+  rejected: 100,
+  on_hold: 0,
+  cancelled: 0,
 };
 
 const ApplicationDetailScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'timeline' | 'notes' | 'tasks'>('overview');
-  const [tasks, setTasks] = useState(MOCK_TASKS);
+  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'timeline' | 'notes'>('overview');
+
+  const appId = route.params?.id;
+
+  const { data: appData, isLoading, error } = useQuery({
+    queryKey: ['application', appId],
+    queryFn: async () => {
+      const res = await api.get(`/applications/${appId}`) as any;
+      return res?.data;
+    },
+    enabled: !!appId,
+  });
+
+  const { data: docsData } = useQuery({
+    queryKey: ['application-docs', appId],
+    queryFn: async () => {
+      const res = await api.get(`/documents?application_id=${appId}`) as any;
+      return res?.data || [];
+    },
+    enabled: !!appId,
+  });
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Loading application...</Text>
+      </View>
+    );
+  }
+
+  if (error || !appData) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+        <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={styles.errorText}>Failed to load application</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.retryBtn}>
+          <Text style={styles.retryText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const app = appData;
+  const product = app.product_id;
+  const progress = STATUS_PROGRESS[app.status] ?? 0;
+  const statusHistory = (app.status_history || []).slice().reverse();
+  const documents = app.documents || [];
+  const assignee = app.primary_assignee || (app.assignees && app.assignees[0]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -62,31 +104,32 @@ const ApplicationDetailScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{MOCK_APP.appNo}</Text>
-          <Text style={styles.headerSub}>{MOCK_APP.certType}</Text>
+          <Text style={styles.headerTitle}>{app.application_number}</Text>
+          <Text style={styles.headerSub}>{app.cert_type?.replace(/_/g, ' ')}</Text>
         </View>
-        <Badge label={MOCK_APP.status.replace(/_/g, ' ')} variant={getStatusVariant(MOCK_APP.status)} size="sm" dot />
+        <Badge label={app.status.replace(/_/g, ' ')} variant={getStatusVariant(app.status)} size="sm" dot />
       </View>
 
-      {/* Progress Hero */}
       <LinearGradient
         colors={['rgba(108,99,255,0.3)', 'rgba(0,212,255,0.15)']}
         style={styles.progressHero}
       >
         <View style={styles.progressHeroLeft}>
-          <Text style={styles.progressHeroProduct}>{MOCK_APP.product}</Text>
-          <Text style={styles.progressHeroMeta}>Updated {formatDate(MOCK_APP.updatedDate)}</Text>
+          <Text style={styles.progressHeroProduct}>
+            {product?.name || app.cert_type}
+            {product?.deleted_at ? ' (Archived)' : ''}
+          </Text>
+          <Text style={styles.progressHeroMeta}>Updated {formatDate(app.updated_at || app.updatedAt)}</Text>
         </View>
         <View style={styles.progressCircle}>
-          <Text style={styles.progressPercent}>{MOCK_APP.progress}%</Text>
+          <Text style={styles.progressPercent}>{progress}%</Text>
           <Text style={styles.progressLabel}>Complete</Text>
         </View>
       </LinearGradient>
-      <ProgressBar progress={MOCK_APP.progress} height={6} color={colors.primary} style={{ marginHorizontal: 20, marginBottom: 16 }} />
+      <ProgressBar progress={progress} height={6} color={colors.primary} style={{ marginHorizontal: 20, marginBottom: 16 }} />
 
-      {/* Tab bar */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabRow}>
-        {(['overview', 'documents', 'timeline', 'notes', 'tasks'] as const).map((tab) => (
+        {(['overview', 'documents', 'timeline', 'notes'] as const).map((tab) => (
           <TouchableOpacity
             key={tab}
             onPress={() => setActiveTab(tab)}
@@ -109,45 +152,47 @@ const ApplicationDetailScreen: React.FC = () => {
               >
                 <Text style={styles.cardTitle}>Application Details</Text>
                 {[
-                  { label: 'Application No', value: MOCK_APP.appNo },
-                  { label: 'Product', value: MOCK_APP.product },
-                  { label: 'Certification Type', value: MOCK_APP.certType },
-                  { label: 'Testing Lab', value: MOCK_APP.labName },
-                  { label: 'Assigned To', value: MOCK_APP.assignedTo },
-                  { label: 'Submitted', value: formatDate(MOCK_APP.submittedDate) },
-                  { label: 'Est. Completion', value: formatDate(MOCK_APP.estimatedCompletion) },
+                  { label: 'Application No', value: app.application_number },
+                  { label: 'Product', value: product?.name || '—' },
+                  { label: 'Brand', value: product?.brand || '—' },
+                  { label: 'Certification Type', value: app.cert_type?.replace(/_/g, ' ') },
+                  { label: 'Priority', value: app.priority?.charAt(0).toUpperCase() + (app.priority?.slice(1) || '') },
+                  { label: 'Assigned To', value: assignee?.name || 'Unassigned' },
+                  { label: 'Created By', value: app.created_by?.name || '—' },
+                  { label: 'Submitted', value: formatDate(app.submitted_at || app.created_at || app.createdAt) },
+                  { label: 'Est. Completion', value: formatDate(app.estimated_completion_at) },
                 ].map((item, i) => (
                   <View key={i} style={styles.detailRow}>
                     <Text style={styles.detailLabel}>{item.label}</Text>
-                    <Text style={styles.detailValue}>{item.value}</Text>
+                    <Text style={styles.detailValue}>{item.value || '—'}</Text>
                   </View>
                 ))}
               </LinearGradient>
             </View>
-            <View style={[styles.card, Shadows.sm]}>
-              <LinearGradient
-                colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
-                style={styles.cardInner}
-              >
-                <Text style={styles.cardTitle}>Payment Summary</Text>
-                <View style={styles.paymentRow}>
-                  <View style={styles.paymentItem}>
-                    <Text style={styles.paymentAmount}>{formatCurrency(MOCK_APP.amount)}</Text>
-                    <Text style={styles.paymentLabel}>Total Amount</Text>
+
+            {app.fee && (
+              <View style={[styles.card, Shadows.sm]}>
+                <LinearGradient
+                  colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
+                  style={styles.cardInner}
+                >
+                  <Text style={styles.cardTitle}>Fee Summary</Text>
+                  <View style={styles.paymentRow}>
+                    <View style={styles.paymentItem}>
+                      <Text style={styles.paymentAmount}>{formatCurrency(app.fee.base_inr || 0)}</Text>
+                      <Text style={styles.paymentLabel}>Base Fee</Text>
+                    </View>
+                    <View style={styles.paymentDivider} />
+                    <View style={styles.paymentItem}>
+                      <Text style={[styles.paymentAmount, { color: app.fee.paid ? colors.success : colors.warning }]}>
+                        {app.fee.paid ? 'Paid' : 'Unpaid'}
+                      </Text>
+                      <Text style={styles.paymentLabel}>Status</Text>
+                    </View>
                   </View>
-                  <View style={styles.paymentDivider} />
-                  <View style={styles.paymentItem}>
-                    <Text style={[styles.paymentAmount, { color: colors.success }]}>{formatCurrency(MOCK_APP.paidAmount)}</Text>
-                    <Text style={styles.paymentLabel}>Amount Paid</Text>
-                  </View>
-                  <View style={styles.paymentDivider} />
-                  <View style={styles.paymentItem}>
-                    <Text style={[styles.paymentAmount, { color: colors.warning }]}>{formatCurrency(MOCK_APP.amount - MOCK_APP.paidAmount)}</Text>
-                    <Text style={styles.paymentLabel}>Balance</Text>
-                  </View>
-                </View>
-              </LinearGradient>
-            </View>
+                </LinearGradient>
+              </View>
+            )}
           </>
         )}
 
@@ -159,26 +204,54 @@ const ApplicationDetailScreen: React.FC = () => {
             >
               <View style={styles.cardTitleRow}>
                 <Text style={styles.cardTitle}>Documents</Text>
-                <TouchableOpacity style={styles.uploadBtn} onPress={() => Alert.alert('Upload', 'Document picker.')}>
+                <TouchableOpacity
+                  style={styles.uploadBtn}
+                  onPress={() => navigation.navigate('UploadAdditionalDocuments', { applicationId: appId })}
+                >
                   <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
                   <Text style={styles.uploadBtnText}>Upload</Text>
                 </TouchableOpacity>
               </View>
-              {MOCK_APP.documents.map((doc: any) => (
-                <View key={doc.id} style={styles.docRow}>
+              {(docsData && docsData.length > 0) ? docsData.map((doc: any) => (
+                <View key={doc._id} style={styles.docRow}>
                   <View style={styles.docIcon}>
                     <Ionicons name="document-text" size={20} color={colors.primary} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.docName}>{doc.name}</Text>
-                    <Text style={styles.docSize}>{doc.size}</Text>
+                    <Text style={styles.docName}>{doc.name || doc.filename}</Text>
+                    <Text style={styles.docSize}>{doc.doc_type || 'Document'}</Text>
                   </View>
-                  <Badge label={doc.status} variant={getStatusVariant(doc.status)} size="sm" />
-                  <TouchableOpacity style={styles.docDownload}>
+                  <TouchableOpacity
+                    style={styles.docDownload}
+                    onPress={async () => {
+                      try {
+                        const res = await api.get(`/documents/${doc._id}/download`) as any;
+                        if (res?.data?.url) Linking.openURL(res.data.url);
+                      } catch {
+                        Alert.alert('Error', 'Could not download document');
+                      }
+                    }}
+                  >
                     <Ionicons name="download-outline" size={18} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
-              ))}
+              )) : documents.length > 0 ? documents.map((docRef: any, i: number) => (
+                <View key={docRef.document_id?._id || i} style={styles.docRow}>
+                  <View style={styles.docIcon}>
+                    <Ionicons name="document-text" size={20} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.docName}>{docRef.label || docRef.document_id?.name || 'Document'}</Text>
+                    <Text style={styles.docSize}>{docRef.required_for_stage || ''}</Text>
+                  </View>
+                </View>
+              )) : (
+                <View style={styles.emptyTab}>
+                  <Ionicons name="folder-open-outline" size={40} color={colors.textTertiary} />
+                  <Text style={styles.emptyTabText}>No documents uploaded yet</Text>
+                  <Text style={styles.emptyTabSub}>Upload documents to support your application</Text>
+                </View>
+              )}
             </LinearGradient>
           </View>
         )}
@@ -189,8 +262,45 @@ const ApplicationDetailScreen: React.FC = () => {
               colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
               style={styles.cardInner}
             >
-              <Text style={styles.cardTitle}>Application Timeline</Text>
-              <Timeline items={MOCK_APP.timeline} />
+              <Text style={styles.cardTitle}>Status Timeline</Text>
+              {statusHistory.length > 0 ? statusHistory.map((entry: any, idx: number) => {
+                const isFirst = idx === 0;
+                const isLast = idx === statusHistory.length - 1;
+                return (
+                  <View key={idx} style={styles.tlRow}>
+                    <View style={styles.tlLeft}>
+                      <View style={[
+                        styles.tlDot,
+                        isFirst
+                          ? { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
+                          : { backgroundColor: `${colors.success}20`, borderColor: colors.success },
+                      ]}>
+                        <Ionicons
+                          name={isFirst ? 'radio-button-on' : 'checkmark'}
+                          size={12}
+                          color={isFirst ? colors.primary : colors.success}
+                        />
+                      </View>
+                      {!isLast && (
+                        <View style={[styles.tlLine, { backgroundColor: colors.success }]} />
+                      )}
+                    </View>
+                    <View style={styles.tlContent}>
+                      <Text style={styles.tlEvent}>
+                        {entry.from?.replace(/_/g, ' ')} → {entry.to?.replace(/_/g, ' ')}
+                      </Text>
+                      <Text style={styles.tlTime}>{formatDate(entry.at)}</Text>
+                      {entry.reason && <Text style={styles.tlNote}>{entry.reason}</Text>}
+                    </View>
+                  </View>
+                );
+              }) : (
+                <View style={styles.emptyTab}>
+                  <Ionicons name="time-outline" size={40} color={colors.textTertiary} />
+                  <Text style={styles.emptyTabText}>No status changes yet</Text>
+                  <Text style={styles.emptyTabSub}>Timeline updates will appear as your application progresses</Text>
+                </View>
+              )}
             </LinearGradient>
           </View>
         )}
@@ -201,128 +311,19 @@ const ApplicationDetailScreen: React.FC = () => {
               colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
               style={styles.cardInner}
             >
-              <Text style={styles.cardTitle}>Updates & Notes</Text>
-              {MOCK_APP.notes.map((note: any) => (
-                <View key={note.id} style={styles.noteItem}>
-                  <View style={styles.noteDot} />
-                  <View style={styles.noteContent}>
-                    <Text style={styles.noteText}>{note.text}</Text>
-                    <View style={styles.noteMeta}>
-                      <Text style={styles.noteAuthor}>{note.author}</Text>
-                      <Text style={styles.noteDate}>{formatDate(note.date)}</Text>
-                    </View>
-                  </View>
+              <Text style={styles.cardTitle}>Notes</Text>
+              {app.notes ? (
+                <Text style={styles.notesText}>{app.notes}</Text>
+              ) : (
+                <View style={styles.emptyTab}>
+                  <Ionicons name="chatbubble-outline" size={40} color={colors.textTertiary} />
+                  <Text style={styles.emptyTabText}>No notes</Text>
                 </View>
-              ))}
+              )}
             </LinearGradient>
           </View>
         )}
 
-        {activeTab === 'tasks' && (
-          <View style={[styles.card, Shadows.sm]}>
-            <LinearGradient
-              colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
-              style={styles.cardInner}
-            >
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.cardTitle}>Team Tasks</Text>
-                <TouchableOpacity
-                  style={styles.uploadBtn}
-                  onPress={() => {
-                    Alert.alert(
-                      'Assign Task',
-                      'Select team member to assign a new task:',
-                      [
-                        ...TEAM_MEMBERS.map((member) => ({
-                          text: member,
-                          onPress: () =>
-                            Alert.alert('Task Assigned', `New task assigned to ${member}`),
-                        })),
-                        { text: 'Cancel', style: 'cancel' },
-                      ]
-                    );
-                  }}
-                >
-                  <Ionicons name="person-add-outline" size={14} color={colors.primary} />
-                  <Text style={styles.uploadBtnText}>Assign Task</Text>
-                </TouchableOpacity>
-              </View>
-              {tasks.map((task) => {
-                const statusColor =
-                  task.status === 'completed'
-                    ? colors.success
-                    : task.status === 'in_progress'
-                    ? colors.primary
-                    : colors.warning;
-                const statusLabel =
-                  task.status === 'completed'
-                    ? 'Done'
-                    : task.status === 'in_progress'
-                    ? 'In Progress'
-                    : 'Pending';
-                return (
-                  <View key={task.id} style={styles.taskRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.taskCheckbox,
-                        task.status === 'completed' && { backgroundColor: colors.success, borderColor: colors.success },
-                      ]}
-                      onPress={() =>
-                        setTasks((prev) =>
-                          prev.map((t) =>
-                            t.id === task.id
-                              ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' }
-                              : t
-                          )
-                        )
-                      }
-                    >
-                      {task.status === 'completed' && (
-                        <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                      )}
-                    </TouchableOpacity>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          styles.taskName,
-                          task.status === 'completed' && styles.taskNameDone,
-                        ]}
-                      >
-                        {task.name}
-                      </Text>
-                      <View style={styles.taskMeta}>
-                        <Ionicons name="person-outline" size={11} color={colors.textTertiary} />
-                        <Text style={styles.taskMetaText}>{task.assignedTo}</Text>
-                        <Ionicons name="calendar-outline" size={11} color={colors.textTertiary} />
-                        <Text style={styles.taskMetaText}>{formatDate(task.dueDate)}</Text>
-                      </View>
-                    </View>
-                    <View style={[styles.taskStatusChip, { backgroundColor: `${statusColor}20` }]}>
-                      <Text style={[styles.taskStatusText, { color: statusColor }]}>{statusLabel}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </LinearGradient>
-          </View>
-        )}
-
-        <Button
-          title="Technical Review"
-          onPress={() => navigation.navigate('TechnicalReview', { appId: MOCK_APP.id })}
-          variant="primary"
-          fullWidth
-          icon={<Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" />}
-          style={{ marginTop: 8 }}
-        />
-        <Button
-          title="Contact Support"
-          onPress={() => navigation.navigate('Communication')}
-          variant="outline"
-          fullWidth
-          icon={<Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primary} />}
-          style={{ marginTop: 8 }}
-        />
         <View style={{ height: 100 }} />
       </ScrollView>
     </View>
@@ -332,6 +333,12 @@ const ApplicationDetailScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    center: { alignItems: 'center', justifyContent: 'center' },
+    loadingText: { fontSize: 14, color: colors.textSecondary },
+    errorText: { fontSize: 16, color: colors.error, fontWeight: '600', marginTop: 12 },
+    retryBtn: { marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: BorderRadius.md, backgroundColor: `${colors.primary}20` },
+    retryText: { color: colors.primary, fontWeight: '600' },
+
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -439,41 +446,20 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     docName: { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
     docSize: { fontSize: 11, color: colors.textTertiary, marginTop: 2 },
     docDownload: { padding: 4 },
-    noteItem: { flexDirection: 'row', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : colors.border },
-    noteDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 5 },
-    noteContent: { flex: 1 },
-    noteText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
-    noteMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-    noteAuthor: { fontSize: 11, color: colors.primary, fontWeight: '600' },
-    noteDate: { fontSize: 11, color: colors.textTertiary },
-    taskRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 12,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : colors.border,
-    },
-    taskCheckbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 6,
-      borderWidth: 2,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: 1,
-    },
-    taskName: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 4 },
-    taskNameDone: { textDecorationLine: 'line-through', color: colors.textTertiary },
-    taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    taskMetaText: { fontSize: 11, color: colors.textTertiary, marginRight: 4 },
-    taskStatusChip: {
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: BorderRadius.full,
-    },
-    taskStatusText: { fontSize: 11, fontWeight: '600' },
+    notesText: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
+
+    tlRow: { flexDirection: 'row', gap: 12, marginBottom: 4 },
+    tlLeft: { alignItems: 'center', width: 28 },
+    tlDot: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+    tlLine: { width: 2, height: 24, marginTop: 4 },
+    tlContent: { flex: 1, paddingBottom: 12 },
+    tlEvent: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+    tlTime: { fontSize: 11, color: colors.textTertiary, marginTop: 2 },
+    tlNote: { fontSize: 12, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
+
+    emptyTab: { alignItems: 'center', paddingVertical: 30, gap: 8 },
+    emptyTabText: { fontSize: 14, fontWeight: '600', color: colors.textTertiary },
+    emptyTabSub: { fontSize: 12, color: colors.textTertiary, textAlign: 'center' },
   });
 
 export default ApplicationDetailScreen;

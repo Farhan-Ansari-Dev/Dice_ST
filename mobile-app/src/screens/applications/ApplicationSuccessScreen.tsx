@@ -2,21 +2,24 @@ import React, { useMemo } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 
 const ApplicationSuccessScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  const applicationId = route.params?.applicationId;
+  const applicationNumber = route.params?.applicationNumber || 'APP-XXXX';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <LinearGradient colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#E8ECF4']} style={StyleSheet.absoluteFill} />
       <View style={styles.content}>
-        {/* Success Animation Area */}
         <View style={styles.successArea}>
           <View style={styles.outerRing} />
           <View style={styles.innerRing} />
@@ -31,7 +34,7 @@ const ApplicationSuccessScreen: React.FC = () => {
         <View style={[styles.appIdCard, Shadows.md]}>
           <LinearGradient colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']} style={styles.appIdCardInner}>
             <Text style={styles.appIdLabel}>APPLICATION ID</Text>
-            <Text style={styles.appIdValue}>SCS-2024-0068</Text>
+            <Text style={styles.appIdValue}>{applicationNumber}</Text>
             <Text style={styles.appIdNote}>Save this ID for tracking your application</Text>
           </LinearGradient>
         </View>
@@ -57,7 +60,13 @@ const ApplicationSuccessScreen: React.FC = () => {
 
         <TouchableOpacity
           style={[styles.viewBtn, Shadows.md]}
-          onPress={() => navigation.navigate('ApplicationDetail', { id: 'new' })}
+          onPress={() => {
+            if (applicationId) {
+              navigation.replace('ApplicationDetail', { id: applicationId });
+            } else {
+              navigation.navigate('ApplicationsList');
+            }
+          }}
           activeOpacity={0.85}
         >
           <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.viewBtnGradient}>
@@ -66,8 +75,8 @@ const ApplicationSuccessScreen: React.FC = () => {
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.homeBtn} onPress={() => navigation.goBack()}>
-          <Text style={[styles.homeBtnText, { color: colors.primary }]}>Go back</Text>
+        <TouchableOpacity style={styles.homeBtn} onPress={() => navigation.navigate('ApplicationsList')}>
+          <Text style={[styles.homeBtnText, { color: colors.primary }]}>Back to Applications</Text>
         </TouchableOpacity>
       </View>
     </View>

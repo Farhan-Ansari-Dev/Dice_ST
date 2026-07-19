@@ -52,6 +52,12 @@ const ApplicationsScreen: React.FC = () => {
     }
   });
 
+  const STATUS_PROGRESS: Record<string, number> = {
+    draft: 5, submitted: 15, docs_review: 30, docs_required: 25,
+    tech_review: 50, testing: 65, approval_pending: 80,
+    approved: 95, cert_issued: 100, rejected: 100, on_hold: 0, cancelled: 0,
+  };
+
   const APPLICATIONS = useMemo(() => {
     if (!applicationsData) return [];
     return applicationsData.map((a: any) => ({
@@ -61,9 +67,9 @@ const ApplicationsScreen: React.FC = () => {
       certType: a.cert_type,
       status: a.status,
       category: a.category || 'Certifications',
-      progress: a.status === 'approved' ? 100 : (a.status === 'in_review' ? 70 : 30),
-      submittedDate: a.createdAt,
-      assignedTo: a.assigned_to?.name,
+      progress: STATUS_PROGRESS[a.status] ?? 30,
+      submittedDate: a.created_at || a.createdAt,
+      assignedTo: a.primary_assignee?.name || a.assigned_to?.name,
     }));
   }, [applicationsData]);
 

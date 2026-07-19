@@ -1,45 +1,52 @@
 import api from './api';
 
 export interface Application {
-  id: string;
+  _id: string;
   application_number: string;
   cert_type: string;
-  product_name: string;
-  product_category: string;
   status: string;
-  assigned_to?: string;
-  assignee_name?: string;
-  client_name?: string;
-  company_name?: string;
   priority: string;
-  estimated_completion?: string;
+  product_id?: {
+    _id: string;
+    name: string;
+    brand?: string;
+    category?: string;
+    deleted_at?: string;
+  };
+  created_by?: { _id: string; name: string; email: string };
+  assignees?: Array<{ _id: string; name: string; email: string; role: string }>;
+  primary_assignee?: { _id: string; name: string; email: string };
+  fee?: { base_inr: number; expedited: boolean; paid: boolean };
   notes?: string;
-  progress?: number;
-  amount?: number;
+  status_history?: Array<{
+    from: string;
+    to: string;
+    by: string;
+    at: string;
+    reason?: string;
+  }>;
+  documents?: Array<{
+    document_id: string;
+    required_for_stage: string;
+    label: string;
+    added_at: string;
+  }>;
+  estimated_completion_at?: string;
+  submitted_at?: string;
   created_at: string;
   updated_at: string;
-  timeline?: ApplicationEvent[];
-}
-
-export interface ApplicationEvent {
-  id: string;
-  event_type: string;
-  description: string;
-  actor_name?: string;
-  created_at: string;
 }
 
 export interface CreateApplicationRequest {
+  product_id: string;
   cert_type: string;
-  product_name: string;
-  product_category?: string;
-  notes?: string;
   priority?: 'low' | 'medium' | 'high';
+  notes?: string;
 }
 
 export interface ApplicationsResponse {
   data: Application[];
-  pagination: { total: number; page: number; limit: number; pages: number };
+  pagination: { total: number; page: number; limit: number; total_pages: number };
 }
 
 const applicationsService = {
@@ -55,11 +62,17 @@ const applicationsService = {
   updateStatus: (id: string, status: string, notes?: string) =>
     api.put<{ data: Application }>(`/applications/${id}/status`, { status, notes }),
 
+  transition: (id: string, to_status: string, reason?: string) =>
+    api.post<{ data: Application }>(`/applications/${id}/transition`, { to_status, reason }),
+
   uploadDocument: (id: string, formData: FormData, onProgress?: (p: number) => void) =>
     api.uploadFile<{ data: any }>(`/applications/${id}/documents`, formData, onProgress),
 
   getTimeline: (id: string) =>
-    api.get<{ data: ApplicationEvent[] }>(`/applications/${id}/timeline`),
+    api.get<{ data: Application }>(`/applications/${id}`),
+
+  getAudit: (id: string) =>
+    api.get<{ data: any[] }>(`/applications/${id}/audit`),
 
   assignTo: (id: string, userId: string) =>
     api.put<{ data: Application }>(`/applications/${id}/assign`, { assigned_to: userId }),
