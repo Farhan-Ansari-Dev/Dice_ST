@@ -109,7 +109,7 @@ export default function CountriesPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => openEdit(country)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-blue)' }}><Edit2 size={16}/></button>
-                      <button onClick={() => handleDelete(country._id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)' }}><Trash2 size={16}/></button>
+                      <button onClick={() => handleDelete(country._id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)' }}><Trash2 size={16}/></button>
                     </div>
                   </td>
                 </tr>
@@ -120,7 +120,7 @@ export default function CountriesPage() {
       </div>
 
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
           <div className="glass" style={{ padding: 24, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-lg)' }}>
             <h3 style={{ marginTop: 0, color: 'var(--text-primary)' }}>{editingId ? 'Edit Country' : 'Add Country'}</h3>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

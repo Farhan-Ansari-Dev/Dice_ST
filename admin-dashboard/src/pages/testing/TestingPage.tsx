@@ -22,7 +22,12 @@ export default function TestingPage() {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {isLoading ? (
-          <p style={{ color: 'var(--text-muted)' }}>Loading tests...</p>
+          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40 }}>Loading tests...</p>
+        ) : tests.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center' }}>
+            <FlaskConical size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+            <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>No tests found</div>
+          </div>
         ) : tests.map((t: any) => (
           <div key={t._id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>

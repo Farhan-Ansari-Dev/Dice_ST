@@ -82,7 +82,12 @@ export default function OpportunitiesPage() {
       </div>
 
       <div className="glass" style={{ borderRadius: 'var(--radius-lg)', padding: 16 }}>
-        {loading ? <p>Loading...</p> : (
+        {loading ? <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20 }}>Loading...</p> : opportunities.length === 0 ? (
+          <div style={{ padding: 60, textAlign: 'center' }}>
+            <Globe2 size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+            <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>No opportunities yet. Add one to get started.</div>
+          </div>
+        ) : (
           <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
@@ -107,7 +112,7 @@ export default function OpportunitiesPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => openEdit(opp)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-blue)' }}><Edit2 size={16}/></button>
-                      <button onClick={() => handleDelete(opp._id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error)' }}><Trash2 size={16}/></button>
+                      <button onClick={() => handleDelete(opp._id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-coral)' }}><Trash2 size={16}/></button>
                     </div>
                   </td>
                 </tr>
@@ -118,15 +123,15 @@ export default function OpportunitiesPage() {
       </div>
 
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
           <div className="glass" style={{ padding: 24, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-lg)' }}>
             <h3>{editingId ? 'Edit Opportunity' : 'Create Opportunity'}</h3>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <input placeholder="Title / Name" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value, slug: e.target.value.toLowerCase().replace(/ /g, '-')})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
-              <input placeholder="Industry (Tag)" required value={formData.industry} onChange={e => setFormData({...formData, industry: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
-              <input placeholder="Country" required value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
-              
-              <textarea placeholder="Description / Overview" required rows={3} value={formData.overview} onChange={e => setFormData({...formData, overview: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
+              <input placeholder="Title / Name" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value, slug: e.target.value.toLowerCase().replace(/ /g, '-')})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
+              <input placeholder="Industry (Tag)" required value={formData.industry} onChange={e => setFormData({...formData, industry: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
+              <input placeholder="Country" required value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
+
+              <textarea placeholder="Description / Overview" required rows={3} value={formData.overview} onChange={e => setFormData({...formData, overview: e.target.value})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
               
               <div style={{ display: 'flex', gap: 16 }}>
                 <div style={{ flex: 1 }}>
@@ -137,11 +142,11 @@ export default function OpportunitiesPage() {
                       const parsed = parseInt(e.target.value, 10)
                       setFormData({ ...formData, investment: Number.isNaN(parsed) ? 0 : Math.max(0, parsed) })
                     }}
-                    style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} />
+                    style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Market Demand</label>
-                  <select value={formData.demand} onChange={e => setFormData({...formData, demand: e.target.value})} style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }}>
+                  <select value={formData.demand} onChange={e => setFormData({...formData, demand: e.target.value})} style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}>
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
                     <option value="High">High</option>
@@ -152,11 +157,11 @@ export default function OpportunitiesPage() {
 
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Required Certifications (comma separated)</label>
-                <input 
-                  placeholder="e.g. BIS, CE, RoHS" 
-                  value={(formData as any).requiredCertifications?.join(', ') || ''} 
-                  onChange={e => setFormData({...formData, requiredCertifications: e.target.value.split(',').map(s => s.trim()).filter(Boolean)} as any)} 
-                  style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-body)', color: 'white' }} 
+                <input
+                  placeholder="e.g. BIS, CE, RoHS"
+                  value={(formData as any).requiredCertifications?.join(', ') || ''}
+                  onChange={e => setFormData({...formData, requiredCertifications: e.target.value.split(',').map(s => s.trim()).filter(Boolean)} as any)}
+                  style={{ width: '100%', padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
                 />
               </div>
               

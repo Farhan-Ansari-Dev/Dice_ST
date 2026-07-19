@@ -4,6 +4,7 @@ import { Shield, Mail, ArrowRight, Eye, EyeOff, Sun, Moon } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useUIStore } from '../../store/uiStore'
 import Button from '../../components/common/Button'
+import { toast } from '../../store/toastStore'
 import apiClient from '../../services/apiClient'
 
 import logoUrl from '../../assets/logo.png'
@@ -25,9 +26,9 @@ export default function LoginPage() {
       setStep('otp')
     } catch (e: any) {
       if (e.response?.status === 404 || e.response?.status === 403) {
-        alert(e.response?.data?.message || 'No account found or unauthorized.')
+        toast.error(e.response?.data?.message || 'No account found or unauthorized.')
       } else {
-        alert('Failed to send OTP')
+        toast.error('Failed to send OTP')
       }
     } finally {
       setLoading(false)
@@ -42,7 +43,7 @@ export default function LoginPage() {
       
       const allowedRoles = ['admin', 'super_admin', 'cb', 'employee', 'consultant', 'lab', 'ib']
       if (!allowedRoles.includes(data.user.role)) {
-        alert('Unauthorized: Admin or Partner access required.')
+        toast.error('Unauthorized: Admin or Partner access required.')
         return
       }
 
@@ -56,7 +57,7 @@ export default function LoginPage() {
       }, data.accessToken, data.refreshToken)
       navigate('/dashboard')
     } catch (e) {
-      alert('Invalid OTP')
+      toast.error('Invalid OTP')
     } finally {
       setLoading(false)
     }

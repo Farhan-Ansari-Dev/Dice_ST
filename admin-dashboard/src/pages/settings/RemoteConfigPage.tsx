@@ -195,7 +195,7 @@ export default function RemoteConfigPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
           <div>
             <div style={{ color: 'var(--accent-purple)', fontSize: 11, fontWeight: 800, letterSpacing: 1.5, marginBottom: 4 }}>FEATURE MANAGEMENT</div>
-            <h1 style={{ color: 'var(--text-primary)', fontSize: 26, fontWeight: 800, margin: '0 0 6px', letterSpacing: -0.5 }}>Remote Config</h1>
+            <h2 style={{ color: 'var(--text-primary)', fontSize: 24, fontWeight: 800, margin: '0 0 6px', letterSpacing: -0.5 }}>Remote Config</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>Control mobile app features and content without app store releases</p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
