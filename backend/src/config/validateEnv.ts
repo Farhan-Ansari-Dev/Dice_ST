@@ -13,6 +13,9 @@ const REQUIRED_IN_PROD = [
   'RAZORPAY_KEY_ID',
   'RAZORPAY_KEY_SECRET',
   'RAZORPAY_WEBHOOK_SECRET',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'REDIS_URL',
 ];
 
 export function validateEnv(): void {

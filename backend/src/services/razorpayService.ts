@@ -165,11 +165,6 @@ export const razorpayService = {
   async handleWebhook(payload: string, signature: string): Promise<boolean> {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET ?? ''
     if (!webhookSecret || !signature) return false
-    try {
-      Razorpay.validateWebhookSignature(payload, signature, webhookSecret)
-      return true
-    } catch {
-      return false
-    }
+    return Razorpay.validateWebhookSignature(payload, signature, webhookSecret) === true
   },
 }

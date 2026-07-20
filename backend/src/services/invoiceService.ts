@@ -22,7 +22,7 @@ export const generateInvoicePDF = async (payment: IPayment, user: IUser): Promis
         const pdfBuffer = Buffer.concat(buffers);
         
         // Upload to S3
-        const bucketName = process.env.S3_UPLOAD_BUCKET || 'sanyog-admin-prod-panel-9x2b';
+        const bucketName = process.env.AWS_S3_BUCKET || 'sanyog-conformity-docs';
         const fileName = `invoices/${payment._id}_${Date.now()}.pdf`;
         
         try {
@@ -31,11 +31,10 @@ export const generateInvoicePDF = async (payment: IPayment, user: IUser): Promis
             Key: fileName,
             Body: pdfBuffer,
             ContentType: 'application/pdf',
-            ACL: 'public-read' // Make it accessible so user can download
+            ServerSideEncryption: 'AES256',
           }));
-          
-          const url = `https://${bucketName}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileName}`;
-          resolve(url);
+
+          resolve(`s3://${bucketName}/${fileName}`);
         } catch (uploadError) {
           reject(uploadError);
         }

@@ -6,6 +6,8 @@ import { User } from '../../models/User'
 import { razorpayService } from '../../services/razorpayService'
 import { sendSuccess } from '../../utils/response'
 import { calculateQuotation } from '../../services/paymentService'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -175,7 +177,18 @@ router.get('/:id/invoice', authenticate, authorize(PAYMENT_READERS), wrap(async 
     payment.invoice_url = url
     await payment.save()
   }
-  return res.json({ success: true, invoice_url: payment.invoice_url })
+  let downloadUrl = payment.invoice_url
+  if (downloadUrl.startsWith('s3://')) {
+    const parts = downloadUrl.replace('s3://', '').split('/')
+    const bucket = parts.shift()!
+    const key = parts.join('/')
+    const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'ap-south-1' })
+    downloadUrl = await getSignedUrl(s3, new GetObjectCommand({
+      Bucket: bucket, Key: key,
+      ResponseContentDisposition: 'attachment; filename="invoice.pdf"',
+    }), { expiresIn: 900 })
+  }
+  return res.json({ success: true, invoice_url: downloadUrl })
 }))
 
 export default router

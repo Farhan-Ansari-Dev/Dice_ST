@@ -276,11 +276,11 @@ async function issueCertification(app: any, by: Types.ObjectId): Promise<void> {
   const cert = await Certification.create({
     cert_number: certNumber,
     cert_type: app.cert_type,
-    org_id: app.org_id,
+    org_id: app.org_id ?? app.created_by,
     product_id: app.product_id,
     application_id: app._id,
     issuing_body: workflow?.issuing_body ?? 'TBD',
-    scheme: workflow?.cert_type ?? '',
+    scheme: workflow?.cert_type || app.cert_type,
     issue_date: issueDate,
     expiry_date: expiryDate,
     validity_period_months: validity,
