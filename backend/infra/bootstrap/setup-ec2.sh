@@ -91,6 +91,21 @@ $DOMAIN {
         -Server
     }
 
+    # CORS — handle preflight at the edge so Caddy-level errors still carry
+    # the correct headers (Node's cors middleware handles the normal path).
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        @admin_origin header Origin https://admin.sanyogconformity.com
+        @s3_origin   header Origin http://sanyog-admin-prod-panel-9x2b.s3-website.ap-south-1.amazonaws.com
+        header @admin_origin Access-Control-Allow-Origin "https://admin.sanyogconformity.com"
+        header @s3_origin    Access-Control-Allow-Origin "http://sanyog-admin-prod-panel-9x2b.s3-website.ap-south-1.amazonaws.com"
+        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Allow-Credentials "true"
+        header Access-Control-Max-Age "86400"
+        respond 204
+    }
+
     # Reverse proxy to Node.js on :5000
     reverse_proxy localhost:5000 {
         header_up X-Real-IP {remote_host}
