@@ -124,7 +124,7 @@ export default function OpportunitiesPage() {
 
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
-          <div className="glass" style={{ padding: 24, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-lg)' }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', padding: 24, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-lg)' }}>
             <h3>{editingId ? 'Edit Opportunity' : 'Create Opportunity'}</h3>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <input placeholder="Title / Name" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value, slug: e.target.value.toLowerCase().replace(/ /g, '-')})} style={{ padding: 10, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }} />

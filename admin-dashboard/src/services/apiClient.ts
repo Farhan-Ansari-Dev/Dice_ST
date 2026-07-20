@@ -22,7 +22,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && !original._retry) {
+    if (error.response?.status === 401 && original && !original._retry) {
       original._retry = true;
       const { refreshToken, setTokens, logout } = useAuthStore.getState();
 
@@ -32,10 +32,9 @@ apiClient.interceptors.response.use(
       }
 
       if (!refreshPromise) {
-        refreshPromise = axios.post(
-          `${apiClient.defaults.baseURL}/auth/refresh`,
-          { refreshToken }
-        ).finally(() => { refreshPromise = null; });
+        refreshPromise = axios
+          .post(`${apiClient.defaults.baseURL}/auth/refresh`, { refreshToken })
+          .finally(() => { refreshPromise = null; });
       }
 
       try {
