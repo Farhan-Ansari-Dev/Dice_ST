@@ -53,7 +53,14 @@ export default function DocumentsPage() {
       const { url, s3_key } = presignRes.data.data
 
       // Plain fetch — presigned S3 URLs must not carry our Authorization header
-      const s3Res = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      const s3Res = await fetch(url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-amz-server-side-encryption': 'AES256',
+        },
+      })
       if (!s3Res.ok) throw new Error(`S3 upload failed (${s3Res.status})`)
 
       await apiClient.post('/documents/finalize', {
@@ -123,36 +130,36 @@ export default function DocumentsPage() {
       ) : filtered.length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>No documents found. Upload one to get started.</p>
       ) : (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-        {filtered.map((doc: any) => (
-          <div key={doc.id || doc._id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px', transition: 'var(--transition)' }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-light)'}
-            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: (CAT_COLORS[doc.category] ?? '#6C63FF') + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <FileText size={18} color={CAT_COLORS[doc.category] ?? '#6C63FF'} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+          {filtered.map((doc: any) => (
+            <div key={doc.id || doc._id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px', transition: 'var(--transition)' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-light)'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: (CAT_COLORS[doc.category] ?? '#6C63FF') + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <FileText size={18} color={CAT_COLORS[doc.category] ?? '#6C63FF'} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name || 'Document'}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{formatFileSize(doc.size_bytes || doc.size || 0)} · {doc.org_id?.name || 'Unknown'}</div>
+                </div>
+                <button onClick={() => { if (window.confirm(`Delete "${doc.name}"?`)) deleteMutation.mutate(doc._id) }} title="Delete"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
+                  <Trash2 size={14} />
+                </button>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name || 'Document'}</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{formatFileSize(doc.size_bytes || doc.size || 0)} · {doc.org_id?.name || 'Unknown'}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ background: (CAT_COLORS[doc.category] ?? '#6C63FF') + '18', color: CAT_COLORS[doc.category] ?? '#6C63FF', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{doc.doc_type || doc.category || 'General'}</span>
+                {doc.verified ? <span style={{ color: '#00C896', fontSize: 11 }}>✓ Verified</span> : <span style={{ color: '#FFB347', fontSize: 11 }}>⏳ Pending</span>}
               </div>
-              <button onClick={() => { if (window.confirm(`Delete "${doc.name}"?`)) deleteMutation.mutate(doc._id) }} title="Delete"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
-                <Trash2 size={14} />
-              </button>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 12 }}>{doc.created_at ? formatDate(doc.created_at) : 'Just now'} · by {doc.uploaded_by?.name || 'Unknown'}</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => openDocument(doc, false)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Eye size={12} /> Preview</button>
+                <button onClick={() => openDocument(doc, true)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Download size={12} /> Download</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ background: (CAT_COLORS[doc.category] ?? '#6C63FF') + '18', color: CAT_COLORS[doc.category] ?? '#6C63FF', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{doc.doc_type || doc.category || 'General'}</span>
-              {doc.verified ? <span style={{ color: '#00C896', fontSize: 11 }}>✓ Verified</span> : <span style={{ color: '#FFB347', fontSize: 11 }}>⏳ Pending</span>}
-            </div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 12 }}>{doc.created_at ? formatDate(doc.created_at) : 'Just now'} · by {doc.uploaded_by?.name || 'Unknown'}</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => openDocument(doc, false)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Eye size={12} /> Preview</button>
-              <button onClick={() => openDocument(doc, true)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Download size={12} /> Download</button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
       )}
     </div>
   )
