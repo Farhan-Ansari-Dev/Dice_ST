@@ -20,7 +20,7 @@ router.put('/:id/status', authenticate, requireRole(...ADMIN_ROLES), wrap(async 
   const ticket = await SupportTicket.findByIdAndUpdate(
     req.params.id,
     { status, updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.' });
   return res.json({ success: true, data: ticket });

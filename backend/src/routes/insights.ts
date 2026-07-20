@@ -86,7 +86,7 @@ router.put('/:id', requireRole(...ADMIN_ROLES), wrap(async (req: AuthRequest, re
   for (const k of allowed) {
     if (req.body[k] !== undefined) update[k] = req.body[k]
   }
-  const insight = await Insight.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true })
+  const insight = await Insight.findByIdAndUpdate(req.params.id, update, { returnDocument: 'after', runValidators: true })
   if (!insight) return sendError(res, 'Not found', 404)
   await bumpCacheVersion()
   return sendSuccess(res, insight, 'Updated successfully')

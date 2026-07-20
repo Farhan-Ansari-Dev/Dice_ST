@@ -109,7 +109,7 @@ router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { ...stripProtected(req.body), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   )
   if (!product) return sendError(res, 'Not found', 404)
   return sendSuccess(res, product, 'Updated successfully')
@@ -120,7 +120,7 @@ router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(as
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { deleted_at: new Date(), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   )
   if (!product) return sendError(res, 'Not found', 404)
   return sendSuccess(res, product, 'Deleted successfully')
@@ -132,7 +132,7 @@ router.post('/:id/restore', authenticate, requireRole('admin', 'super_admin'), w
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { deleted_at: null, updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).setOptions({ includeDeleted: true } as any)
   if (!product) return sendError(res, 'Not found', 404)
   return sendSuccess(res, product, 'Restored successfully')

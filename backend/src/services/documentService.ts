@@ -131,7 +131,7 @@ export const documentService = {
           $set: { current_version_id: version._id },
           $inc: { version_count: 1 },
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
       await audit({
         actor: input.user_id,

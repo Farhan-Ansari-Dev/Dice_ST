@@ -30,7 +30,7 @@ router.post('/', authenticate, authorize(['admin', 'super_admin']), wrap(async (
 }));
 
 router.patch('/:id', authenticate, authorize(['admin', 'super_admin']), wrap(async (req: AuthRequest, res: Response) => {
-  const slot = await MeetingSlot.findByIdAndUpdate(req.params.id, { $set: { is_available: Boolean(req.body.is_available) } }, { new: true }).lean();
+  const slot = await MeetingSlot.findByIdAndUpdate(req.params.id, { $set: { is_available: Boolean(req.body.is_available) } }, { returnDocument: 'after' }).lean();
   if (!slot) return res.status(404).json({ success: false, message: 'Slot not found.' });
   return res.json({ success: true, data: slot });
 }));

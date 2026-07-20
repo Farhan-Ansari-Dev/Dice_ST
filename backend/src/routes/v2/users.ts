@@ -47,7 +47,7 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
     const updated = await User.findByIdAndUpdate(
       req.user!._id,
       { $set: update },
-      { new: true, runValidators: false }
+      { returnDocument: 'after', runValidators: false }
     ).select('-password_hash -otp_hash -totp_secret');
 
     if (!updated) {
@@ -139,7 +139,7 @@ router.put('/:id', authenticate, authorize(['admin','employee','super_admin'], {
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { ...updateData, updated_at: new Date() },
-    { new: true, runValidators: true }
+    { returnDocument: 'after', runValidators: true }
   ).select('-password_hash -otp_hash -totp_secret')
 
   if (!user) return sendError(res, 'Not found', 404)
@@ -150,7 +150,7 @@ router.delete('/:id', authenticate, authorize(['admin','super_admin']), wrap(asy
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { deleted_at: new Date(), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).select('-password_hash -otp_hash -totp_secret')
 
   if (!user) return sendError(res, 'Not found', 404)
@@ -167,7 +167,7 @@ router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Res
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).setOptions({ includeDeleted: true } as any).select('-password_hash -otp_hash -totp_secret')
 
   if (!user) return sendError(res, 'Not found', 404)

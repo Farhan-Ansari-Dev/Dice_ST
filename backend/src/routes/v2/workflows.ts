@@ -36,7 +36,7 @@ router.put('/:id', requireRole('super_admin', 'admin'), async (req: AuthRequest,
   const result = await Workflow.findByIdAndUpdate(
     req.params.id,
     stripProtected(req.body),
-    { new: true, runValidators: true }
+    { returnDocument: 'after', runValidators: true }
   );
   if (!result) return res.status(404).json({ error: 'not_found' });
   return res.json({ data: result });

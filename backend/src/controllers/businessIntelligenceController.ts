@@ -23,11 +23,11 @@ export const createCountry = wrap(async (req: Request, res: Response) => {
   sendSuccess(res, country);
 });
 export const updateCountry = wrap(async (req: Request, res: Response) => {
-  const country = await Country.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const country = await Country.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
   sendSuccess(res, country);
 });
 export const deleteCountry = wrap(async (req: Request, res: Response) => {
-  const country = await Country.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { new: true });
+  const country = await Country.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { returnDocument: 'after' });
   sendSuccess(res, country);
 });
 
@@ -51,11 +51,11 @@ export const createOpportunity = wrap(async (req: Request, res: Response) => {
   sendSuccess(res, opp);
 });
 export const updateOpportunity = wrap(async (req: Request, res: Response) => {
-  const opp = await BusinessOpportunity.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const opp = await BusinessOpportunity.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
   sendSuccess(res, opp);
 });
 export const deleteOpportunity = wrap(async (req: Request, res: Response) => {
-  const opp = await BusinessOpportunity.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { new: true });
+  const opp = await BusinessOpportunity.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { returnDocument: 'after' });
   sendSuccess(res, opp);
 });
 
@@ -73,11 +73,11 @@ export const createGuide = wrap(async (req: Request, res: Response) => {
   sendSuccess(res, guide);
 });
 export const updateGuide = wrap(async (req: Request, res: Response) => {
-  const guide = await BusinessGuide.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const guide = await BusinessGuide.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
   sendSuccess(res, guide);
 });
 export const deleteGuide = wrap(async (req: Request, res: Response) => {
-  const guide = await BusinessGuide.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { new: true });
+  const guide = await BusinessGuide.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { returnDocument: 'after' });
   sendSuccess(res, guide);
 });
 
@@ -91,11 +91,11 @@ export const createMarketTrend = wrap(async (req: Request, res: Response) => {
   sendSuccess(res, trend);
 });
 export const updateMarketTrend = wrap(async (req: Request, res: Response) => {
-  const trend = await MarketTrend.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const trend = await MarketTrend.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
   sendSuccess(res, trend);
 });
 export const deleteMarketTrend = wrap(async (req: Request, res: Response) => {
-  const trend = await MarketTrend.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { new: true });
+  const trend = await MarketTrend.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { returnDocument: 'after' });
   sendSuccess(res, trend);
 });
 
@@ -109,10 +109,10 @@ export const createGovernmentScheme = wrap(async (req: Request, res: Response) =
   sendSuccess(res, scheme);
 });
 export const updateGovernmentScheme = wrap(async (req: Request, res: Response) => {
-  const scheme = await GovernmentScheme.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const scheme = await GovernmentScheme.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
   sendSuccess(res, scheme);
 });
 export const deleteGovernmentScheme = wrap(async (req: Request, res: Response) => {
-  const scheme = await GovernmentScheme.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { new: true });
+  const scheme = await GovernmentScheme.findByIdAndUpdate(req.params.id, { active: false, deletedAt: new Date() }, { returnDocument: 'after' });
   sendSuccess(res, scheme);
 });

@@ -42,7 +42,7 @@ router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async
     const shipment = await Shipment.findOneAndUpdate(
       { _id: req.params.id, deleted_at: null },
       stripProtected(req.body),
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!shipment) return res.status(404).json({ success: false, error: 'Not found' });
     return res.json({ success: true, data: shipment });
@@ -56,7 +56,7 @@ router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(as
   const shipment = await Shipment.findOneAndUpdate(
     { _id: req.params.id },
     { deleted_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!shipment) return res.status(404).json({ success: false, error: 'Not found' });
   return res.json({ success: true, data: shipment });

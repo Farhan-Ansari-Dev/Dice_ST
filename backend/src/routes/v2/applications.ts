@@ -372,7 +372,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   const app = await Application.findOneAndUpdate(
     scopeById(req),
     { priority, notes, updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ success: true, data: app });
@@ -385,7 +385,7 @@ router.delete('/:id', requireRole(...ADMIN_ROLES), async (req: AuthRequest, res:
   const app = await Application.findOneAndUpdate(
     scopeById(req),
     { deleted_at: new Date(), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ success: true, data: app });
@@ -400,7 +400,7 @@ router.post('/:id/restore', requireRole(...ADMIN_ROLES), async (req: AuthRequest
   const app = await Application.findOneAndUpdate(
     scopeById(req),
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).setOptions({ includeDeleted: true } as any);
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ success: true, data: app });

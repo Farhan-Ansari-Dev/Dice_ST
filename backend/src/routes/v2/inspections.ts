@@ -78,7 +78,7 @@ router.put('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(async
     const inspection = await Inspection.findOneAndUpdate(
       { _id: req.params.id, deleted_at: null },
       { ...stripProtected(req.body), updated_at: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!inspection) return res.status(404).json({ success: false, error: 'Not found' });
     return res.json({ success: true, data: inspection });
@@ -92,7 +92,7 @@ router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), wrap(as
   const inspection = await Inspection.findOneAndUpdate(
     { _id: req.params.id },
     { deleted_at: new Date(), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!inspection) return res.status(404).json({ success: false, error: 'Not found' });
   return res.json({ success: true, data: inspection });

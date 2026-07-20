@@ -72,7 +72,7 @@ router.put('/:id', authenticate, authorize(['admin','employee','super_admin']), 
   const cert = await Certification.findOneAndUpdate(
     certScope(req),
     { ...stripProtected(req.body), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   )
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert, 'Updated successfully')
@@ -82,7 +82,7 @@ router.delete('/:id', authenticate, authorize(['admin','super_admin']), wrap(asy
   const cert = await Certification.findOneAndUpdate(
     certScope(req),
     { deleted_at: new Date(), updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   )
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert, 'Deleted successfully')
@@ -94,7 +94,7 @@ router.post('/:id/restore', authenticate, authorize(['admin','super_admin']), wr
   const cert = await Certification.findOneAndUpdate(
     certScope(req),
     { $unset: { deleted_at: 1 }, updated_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   ).setOptions({ includeDeleted: true } as any)
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert, 'Restored successfully')

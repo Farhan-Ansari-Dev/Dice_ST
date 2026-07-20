@@ -91,7 +91,7 @@ router.put('/:id', authenticate, requireRole(['admin', 'super_admin']), async (r
     const updatedStandard = await CertificationStandard.findByIdAndUpdate(
       id,
       { ...validatedData, updated_by: req.user!._id },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
     if (!updatedStandard) {
       return handleAppError(res, 'Standard not found.', 404);

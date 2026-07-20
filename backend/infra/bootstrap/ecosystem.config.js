@@ -12,11 +12,14 @@
  *   - 50 MB in-memory cache
  *   - ~1 GB free for OS + Caddy + buffers
  */
+const path = require('path');
+const APP_ROOT = path.resolve(__dirname, '../..');
+
 module.exports = {
   apps: [{
     name: 'dice-api',
-    script: './dist/index.js',           // built TypeScript output
-    cwd: '/opt/dice/current',
+    script: './dist/index.js',
+    cwd: APP_ROOT,
     instances: 2,                         // match t4g.small vCPU count
     exec_mode: 'cluster',                 // enable load balancing across workers
 

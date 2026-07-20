@@ -130,7 +130,7 @@ router.delete('/:id', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthR
   const doc = await Document.findOneAndUpdate(
     filter,
     { deleted_at: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!doc) return res.status(404).json({ error: 'not_found' });
   return res.json({ data: { id: doc._id }, message: 'Deleted successfully' });

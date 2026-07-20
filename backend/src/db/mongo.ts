@@ -20,16 +20,21 @@ export async function connectMongo(): Promise<typeof mongoose> {
 
   let uri = process.env.MONGODB_URI || process.env.DATABASE_URL;
 
-  // If no MongoDB URI or it's a PostgreSQL URL, use in-memory MongoDB
   if (!uri || uri.startsWith('postgresql://') || uri.startsWith('postgres://')) {
-    logger.info('🧪 No MongoDB URI found — starting in-memory MongoDB for development...');
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        '[mongo] MONGODB_URI / DATABASE_URL is missing or invalid — refusing to start in production. ' +
+        'Check that /etc/dice/.env is loaded (DOTENV_CONFIG_PATH) and contains MONGODB_URI.'
+      );
+    }
+    logger.info('No MongoDB URI found — starting in-memory MongoDB for development...');
     try {
       const { MongoMemoryServer } = await import('mongodb-memory-server');
       memoryServer = await MongoMemoryServer.create({
         instance: { dbName: 'sanyog_conformity' },
       });
       uri = memoryServer.getUri();
-      logger.info(`✅ In-memory MongoDB started at ${uri}`);
+      logger.info(`In-memory MongoDB started at ${uri}`);
     } catch (err) {
       logger.error('Failed to start in-memory MongoDB. Install it: npm i -D mongodb-memory-server', err);
       throw err;
