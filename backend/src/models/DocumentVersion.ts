@@ -109,15 +109,17 @@ DocumentVersionSchema.index({ sha256: 1 });
 DocumentVersionSchema.index({ ocr_text: 'text', 'ai_extracted.summary': 'text' });
 
 // IMMUTABILITY GUARDS
-(DocumentVersionSchema as any).pre("save", function (this: any, next: any) {
-  if (!this.isNew) {
-    // Allow only specific async-processing fields to be updated
-    const allowedUpdates = ['ocr_text', 'ai_extracted', 'thumbnail_s3_key', 'virus_scan', 'signature'];
-    const modified = this.modifiedPaths();
-    const forbidden = modified.filter((p: string) => !allowedUpdates.some(a => p.startsWith(a)));
-    if (forbidden.length) {
-      return next(new Error(`DocumentVersion is immutable. Forbidden modifications: ${forbidden.join(',')}`));
-    }
+// Synchronous hook (Mongoose 9 idiom): throwing rejects the save. A stale `next`
+// callback signature is not passed by Mongoose 9, so a throw is the correct way
+// to surface the intended error instead of a `next is not a function` TypeError.
+(DocumentVersionSchema as any).pre("save", function (this: any) {
+  if (this.isNew) return;
+  // After creation, allow only specific async-processing fields to be updated.
+  const allowedUpdates = ['ocr_text', 'ai_extracted', 'thumbnail_s3_key', 'virus_scan', 'signature'];
+  const modified = this.modifiedPaths();
+  const forbidden = modified.filter((p: string) => !allowedUpdates.some(a => p.startsWith(a)));
+  if (forbidden.length) {
+    throw new Error(`DocumentVersion is immutable. Forbidden modifications: ${forbidden.join(',')}`);
   }
   });
 

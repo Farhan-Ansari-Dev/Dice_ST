@@ -1,0 +1,99 @@
+/**
+ * Route-level reproduction of POST /api/v2/documents/finalize.
+ *
+ * Mirrors the admin dashboard exactly: an admin user WITH NO org_id uploads a
+ * brand-new document (no document_id). Exercises both S3 HeadObject outcomes to
+ * pinpoint which step yields the observed HTTP 400.
+ */
+import express from 'express';
+import request from 'supertest';
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import jwt from 'jsonwebtoken';
+
+// Controllable S3 mock — flip headObjectFails to simulate the server-side
+// HeadObject succeeding (object present) or failing (perm/region/missing).
+let headObjectFails = false;
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockImplementation(async () => {
+      if (headObjectFails) {
+        const e: any = new Error('Forbidden');
+        e.name = 'AccessDenied';
+        throw e;
+      }
+      return {};
+    }),
+  })),
+  PutObjectCommand: jest.fn(),
+  GetObjectCommand: jest.fn(),
+  HeadObjectCommand: jest.fn(),
+}));
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockResolvedValue('https://s3.example/signed'),
+}));
+
+const JWT_SECRET = 'test-jwt-secret-for-unit-tests';
+let mongoServer: MongoMemoryServer;
+let app: express.Application;
+let adminId: string;
+
+beforeAll(async () => {
+  process.env.JWT_SECRET = JWT_SECRET;
+  process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-for-unit-tests';
+  process.env.NODE_ENV = 'test';
+
+  mongoServer = await MongoMemoryServer.create();
+  await mongoose.connect(mongoServer.getUri());
+
+  const { User } = await import('../models/User');
+  // Admin/staff user — deliberately NO org_id (real admin dashboard scenario)
+  const admin = await User.create({ email: 'admin@sanyog.test', name: 'Admin', role: 'admin', otp_attempts: 0 });
+  adminId = (admin._id as any).toString();
+
+  app = express();
+  app.use(express.json());
+  const routes = (await import('../routes/index')).default;
+  app.use('/api/v2', routes);
+});
+
+afterAll(async () => {
+  await mongoose.connection.dropDatabase();
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
+
+function adminToken() {
+  return jwt.sign({ sub: adminId, role: 'admin', jti: 'test-' + Date.now() }, JWT_SECRET, { expiresIn: '15m' });
+}
+
+const finalizeBody = {
+  s3_key: 'orgs/platform/docs/new-x/v1-report.pdf',
+  name: 'report.pdf',
+  doc_type: 'general',
+  mime_type: 'application/pdf',
+  size_bytes: 12345,
+  sha256: 'a'.repeat(64),
+};
+
+it('S3 HeadObject SUCCESS → 201 (new doc, admin with no org_id)', async () => {
+  headObjectFails = false;
+  const res = await request(app)
+    .post('/api/v2/documents/finalize')
+    .set('Authorization', `Bearer ${adminToken()}`)
+    .send(finalizeBody);
+  // eslint-disable-next-line no-console
+  console.log('[repro:success] status', res.status, 'body', JSON.stringify(res.body).slice(0, 300));
+  expect(res.status).toBe(201);
+});
+
+it('S3 HeadObject FAILURE → 400 (reproduces the reported symptom)', async () => {
+  headObjectFails = true;
+  const res = await request(app)
+    .post('/api/v2/documents/finalize')
+    .set('Authorization', `Bearer ${adminToken()}`)
+    .send({ ...finalizeBody, s3_key: 'orgs/platform/docs/new-y/v1-report.pdf' });
+  // eslint-disable-next-line no-console
+  console.log('[repro:failure] status', res.status, 'body', JSON.stringify(res.body).slice(0, 300));
+  expect(res.status).toBe(400);
+});

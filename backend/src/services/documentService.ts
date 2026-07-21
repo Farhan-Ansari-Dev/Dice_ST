@@ -20,7 +20,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Document, DocumentVersion, audit } from '../models';
 import { logger } from '../utils/logger';
 
-const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'ap-south-1' });
+const s3 = new S3Client({
+  region: process.env.AWS_REGION ?? 'ap-south-1',
+  requestChecksumCalculation: "WHEN_REQUIRED",
+});
 const BUCKET = process.env.AWS_S3_BUCKET ?? 'sanyog-conformity-docs';
 const PRESIGN_TTL = parseInt(process.env.AWS_S3_PRESIGNED_URL_EXPIRES ?? '900', 10); // 15 min
 
