@@ -88,3 +88,34 @@ describe('GET /documents server-side search', () => {
     expect(res.body.pagination.total).toBe(0);
   });
 });
+
+describe('GET /documents server-side pagination', () => {
+  beforeAll(async () => {
+    // Reset to a known set (search tests above have already run).
+    const { Document, DocumentVersion } = await import('../models');
+    await Document.deleteMany({});
+    await DocumentVersion.deleteMany({});
+    const uid = new Types.ObjectId(adminId);
+    for (let i = 1; i <= 15; i++) await seedDoc(uid, `Doc ${String(i).padStart(2, '0')}`);
+  });
+
+  it('limits results and reports the true total', async () => {
+    const res = await request(app).get('/api/v2/documents?page=1&limit=10').set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBe(10);
+    expect(res.body.pagination).toMatchObject({ page: 1, limit: 10, total: 15 });
+  });
+
+  it('returns the remainder on the next page', async () => {
+    const res = await request(app).get('/api/v2/documents?page=2&limit=10').set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBe(5);
+    expect(res.body.pagination.page).toBe(2);
+  });
+
+  it('caps limit at 100', async () => {
+    const res = await request(app).get('/api/v2/documents?page=1&limit=1000').set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(200);
+    expect(res.body.pagination.limit).toBe(100);
+  });
+});

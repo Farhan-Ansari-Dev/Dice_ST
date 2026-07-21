@@ -19,8 +19,10 @@ async function sha256Hex(file: File): Promise<string> {
 
 export default function DocumentsPage() {
   const queryClient = useQueryClient()
+  const PAGE_SIZE = 12
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -30,19 +32,27 @@ export default function DocumentsPage() {
     return () => clearTimeout(t)
   }, [search])
 
+  // A new search resets to the first page.
+  useEffect(() => { setPage(1) }, [debouncedSearch])
+
   const { data: result, isLoading } = useQuery({
-    queryKey: ['documents', { q: debouncedSearch }],
+    queryKey: ['documents', { q: debouncedSearch, page }],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (debouncedSearch) params.set('q', debouncedSearch)
-      const qs = params.toString()
-      const res = await apiClient.get(`/documents${qs ? `?${qs}` : ''}`)
+      params.set('page', String(page))
+      params.set('limit', String(PAGE_SIZE))
+      const res = await apiClient.get(`/documents?${params.toString()}`)
       return res.data as { data: any[]; pagination?: { page: number; limit: number; total: number } }
     },
-    placeholderData: (prev) => prev,   // keep results visible while typing
+    placeholderData: (prev) => prev,   // keep the current page visible while the next loads
   })
   const docs: any[] = result?.data || []
   const total = result?.pagination?.total ?? docs.length
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // Clamp if the current page falls out of range (e.g. after deletes).
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/documents/${id}`),
@@ -195,6 +205,16 @@ export default function DocumentsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {!isLoading && totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 22 }}>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 14px', fontSize: 12, cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.5 : 1 }}>Previous</button>
+          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Page {page} of {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 14px', fontSize: 12, cursor: page >= totalPages ? 'default' : 'pointer', opacity: page >= totalPages ? 0.5 : 1 }}>Next</button>
         </div>
       )}
 
