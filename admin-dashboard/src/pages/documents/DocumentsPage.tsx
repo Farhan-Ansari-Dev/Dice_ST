@@ -6,16 +6,10 @@ import { currentVersion, statusOf } from '../../components/documents/docHelpers'
 import DocumentDrawer from '../../components/documents/DocumentDrawer'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '../../services/apiClient'
+import { documentService } from '../../services/documentService'
 import { toast } from '../../store/toastStore'
 
 const CAT_COLORS: Record<string, string> = { 'Test Report': '#6C63FF', Inspection: '#00D4FF', Declaration: '#00C896', 'Audit Report': '#FFB347', Manual: '#FF6B9D', License: '#FF6B6B' }
-
-async function sha256Hex(file: File): Promise<string> {
-  const buf = await file.arrayBuffer()
-  const digest = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
 
 export default function DocumentsPage() {
   const queryClient = useQueryClient()
@@ -37,14 +31,7 @@ export default function DocumentsPage() {
 
   const { data: result, isLoading } = useQuery({
     queryKey: ['documents', { q: debouncedSearch, page }],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (debouncedSearch) params.set('q', debouncedSearch)
-      params.set('page', String(page))
-      params.set('limit', String(PAGE_SIZE))
-      const res = await apiClient.get(`/documents?${params.toString()}`)
-      return res.data as { data: any[]; pagination?: { page: number; limit: number; total: number } }
-    },
+    queryFn: () => documentService.list({ q: debouncedSearch || undefined, page, limit: PAGE_SIZE }),
     placeholderData: (prev) => prev,   // keep the current page visible while the next loads
   })
   const docs: any[] = result?.data || []
@@ -55,7 +42,7 @@ export default function DocumentsPage() {
   useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/documents/${id}`),
+    mutationFn: (id: string) => documentService.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       toast.success('Document deleted')
@@ -63,32 +50,10 @@ export default function DocumentsPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Delete failed')
   })
 
-  // Full S3 flow: presign → direct browser PUT to S3 → finalize metadata.
-  // Same flow for a brand-new document and for a new version — the only
-  // difference is passing document_id (which the backend already supports).
-  const uploadFile = async (file: File, opts?: { documentId?: string; docType?: string }) => {
-    const sha256 = await sha256Hex(file)
-    const mime = file.type || 'application/octet-stream'
-    const docType = opts?.docType || 'general'
-    const presignRes = await apiClient.post('/documents/presign', {
-      filename: file.name, mime_type: mime, size_bytes: file.size, sha256, doc_type: docType,
-      ...(opts?.documentId ? { document_id: opts.documentId } : {}),
-    })
-    const { url, s3_key } = presignRes.data.data
-    // Plain fetch — presigned S3 URLs must not carry our Authorization header
-    const s3Res = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } })
-    if (!s3Res.ok) throw new Error(`S3 upload failed (${s3Res.status})`)
-    const finRes = await apiClient.post('/documents/finalize', {
-      s3_key, name: file.name, doc_type: docType, mime_type: mime, size_bytes: file.size, sha256,
-      ...(opts?.documentId ? { document_id: opts.documentId } : {}),
-    })
-    return finRes.data.data as { document: any; version: any }
-  }
-
   const handleUpload = async (file: File) => {
     setUploading(true)
     try {
-      await uploadFile(file)
+      await documentService.upload(file)
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       toast.success('Document uploaded')
     } catch (err: any) {
@@ -105,7 +70,7 @@ export default function DocumentsPage() {
   // Replace Version: upload a new immutable version of an existing document.
   const handleReplace = async (doc: any, file: File) => {
     try {
-      const { version } = await uploadFile(file, { documentId: doc._id, docType: doc.doc_type })
+      const { version } = await documentService.upload(file, { documentId: doc._id, docType: doc.doc_type })
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       // Reflect the new current version immediately in the open drawer.
       setDrawer(d => (d && d.doc._id === doc._id)
@@ -119,10 +84,9 @@ export default function DocumentsPage() {
 
   const downloadDocument = async (doc: any, versionNumber?: number) => {
     try {
-      const q = versionNumber ? `?version=${versionNumber}` : ''
-      const res = await apiClient.get(`/documents/${doc._id}/download${q}`)
+      const url = await documentService.downloadUrl(doc._id, versionNumber)
       const link = document.createElement('a')
-      link.href = res.data.data.url
+      link.href = url
       link.setAttribute('download', doc.name || 'document')
       document.body.appendChild(link)
       link.click()
@@ -142,8 +106,7 @@ export default function DocumentsPage() {
     setVersions([])
     setHistoryLoading(true)
     try {
-      const res = await apiClient.get(`/documents/${doc._id}/versions`)
-      setVersions(res.data.data || [])
+      setVersions(await documentService.versions(doc._id))
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Could not load version history')
     } finally {

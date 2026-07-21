@@ -3,7 +3,7 @@ import { Download, FileText, AlertCircle, Loader } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 // Vite resolves this to a bundled asset URL for the PDF.js worker.
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { apiClient } from '../../services/apiClient'
+import { documentService } from '../../services/documentService'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker
 
@@ -53,9 +53,8 @@ export default function DocumentPreview({
     setUrl(null); setErrorMsg(''); setStatus('loading')
     ;(async () => {
       try {
-        const q = versionNumber ? `?version=${versionNumber}` : ''
-        const res = await apiClient.get(`/documents/${docId}/preview${q}`, { signal: controller.signal })
-        if (active) setUrl(res.data.data.url)
+        const previewUrl = await documentService.previewUrl(docId, versionNumber, { signal: controller.signal })
+        if (active) setUrl(previewUrl)
       } catch (e: any) {
         if (!active || isAbort(e)) return
         setErrorMsg('Could not load the preview link.')
