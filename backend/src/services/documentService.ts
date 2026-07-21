@@ -18,6 +18,7 @@ import { Types } from 'mongoose';
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Document, DocumentVersion, audit } from '../models';
+import { logger } from '../utils/logger';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'ap-south-1' });
 const BUCKET = process.env.AWS_S3_BUCKET ?? 'sanyog-conformity-docs';
@@ -50,12 +51,13 @@ export const documentService = {
     const orgSegment = input.org_id ? input.org_id.toString() : 'platform';
     const s3_key = `orgs/${orgSegment}/docs/${input.document_id ?? 'new-' + crypto.randomUUID()}/v${versionNum}-${safeName}`;
 
+    // Phase 1: drop ContentLength + ServerSideEncryption only. Both become signed
+    // request headers that a plain browser fetch(PUT) omits → SignatureDoesNotMatch
+    // (403). ContentType and Metadata are retained.
     const cmd = new PutObjectCommand({
       Bucket: BUCKET,
       Key: s3_key,
       ContentType: input.mime_type,
-      ContentLength: input.size_bytes,
-      ServerSideEncryption: 'AES256',
       Metadata: {
         sha256: input.sha256,
         org_id: orgSegment,
@@ -87,26 +89,38 @@ export const documentService = {
     ip?: string;
     user_agent?: string;
   }) {
-    // Verify file actually exists in S3
+    // Verify file actually exists in S3. Surface the underlying AWS error
+    // (AccessDenied / NoSuchKey / region mismatch) — swallowing it here hid the
+    // real cause of finalize failures behind a generic "not found" message.
     try {
       await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: input.s3_key }));
-    } catch {
+    } catch (e: any) {
+      logger.error(
+        `[documents.finalize] HeadObject failed ` +
+        `name=${e?.name} code=${e?.Code ?? e?.code} httpStatusCode=${e?.$metadata?.httpStatusCode} ` +
+        `bucket=${BUCKET} key=${input.s3_key} region=${process.env.AWS_REGION ?? 'ap-south-1'} ` +
+        `message=${e?.message}`
+      );
       throw new Error('S3 object not found — did client complete the upload?');
     }
 
-    // Determine version number
-    let documentId = input.document_id;
+    // Determine version number. For a brand-new logical document, generate its
+    // _id up front so the version is created with its FINAL document_id in one
+    // shot — no post-creation repointing (which the immutability guard correctly
+    // forbids). document_id is thus assigned exactly once, at creation.
+    const isNewDocument = !input.document_id;
+    const documentId = input.document_id ?? new Types.ObjectId();
     let versionNumber = 1;
 
-    if (documentId) {
+    if (!isNewDocument) {
       const existing = await Document.findOne({ _id: documentId, org_id: input.org_id });
       if (!existing) throw new Error('Document not found or access denied');
       versionNumber = existing.version_count + 1;
     }
 
-    // Create immutable version first
+    // Create immutable version first, already pointing at its final document_id.
     const version = await DocumentVersion.create({
-      document_id: documentId ?? new Types.ObjectId(),  // temporary if new doc
+      document_id: documentId,
       version_number: versionNumber,
       s3_bucket: BUCKET,
       s3_key: input.s3_key,
@@ -123,7 +137,7 @@ export const documentService = {
     });
 
     let doc;
-    if (documentId) {
+    if (!isNewDocument) {
       // Update existing document — point at new version
       doc = await Document.findByIdAndUpdate(
         documentId,
@@ -144,8 +158,10 @@ export const documentService = {
         user_agent: input.user_agent,
       });
     } else {
-      // Create new document with version pointer
+      // Create the logical document with the pre-generated _id so it matches the
+      // version's document_id. No repointing → the immutability guard is never hit.
       doc = await Document.create({
+        _id: documentId,
         org_id: input.org_id,
         uploaded_by: input.user_id,
         name: input.name,
@@ -156,9 +172,6 @@ export const documentService = {
         tags: input.tags ?? [],
         description: input.description,
       });
-      // Repoint the version at the actual document id
-      version.document_id = doc._id as Types.ObjectId;
-      await version.save();
 
       await audit({
         actor: input.user_id,
