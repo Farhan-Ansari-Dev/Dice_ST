@@ -14,7 +14,7 @@ let mongoServer: MongoMemoryServer;
 let app: express.Application;
 let adminId: string;
 
-async function seedDoc(userId: Types.ObjectId, name: string, docType = 'general') {
+async function seedDoc(userId: Types.ObjectId, name: string, docType = 'general', orgId?: Types.ObjectId) {
   const { Document, DocumentVersion } = await import('../models');
   const docId = new Types.ObjectId();
   const version = await DocumentVersion.create({
@@ -24,7 +24,7 @@ async function seedDoc(userId: Types.ObjectId, name: string, docType = 'general'
     size_bytes: 1000, sha256: 'a'.repeat(64), uploaded_by: userId, uploaded_at: new Date(),
   });
   await Document.create({
-    _id: docId, uploaded_by: userId, name, doc_type: docType,
+    _id: docId, org_id: orgId, uploaded_by: userId, name, doc_type: docType,
     application_ids: [], current_version_id: version._id, version_count: 1, tags: [],
   });
   return docId;
@@ -117,5 +117,38 @@ describe('GET /documents server-side pagination', () => {
     const res = await request(app).get('/api/v2/documents?page=1&limit=1000').set('Authorization', `Bearer ${token()}`);
     expect(res.status).toBe(200);
     expect(res.body.pagination.limit).toBe(100);
+  });
+});
+
+describe('GET /documents tenancy scoping', () => {
+  let clientToken: string;
+  let foreignDocId: Types.ObjectId;
+
+  beforeAll(async () => {
+    const { User, Document, DocumentVersion } = await import('../models');
+    await Document.deleteMany({});
+    await DocumentVersion.deleteMany({});
+    const orgA = new Types.ObjectId();
+    const client = await User.create({ email: 'client@t.com', name: 'Client', role: 'client', org_id: orgA, otp_attempts: 0 });
+    clientToken = jwt.sign({ sub: String(client._id), role: 'client', jti: 'c-' + Date.now() }, JWT_SECRET, { expiresIn: '15m' });
+    await seedDoc(client._id as any, 'Client Doc', 'general', orgA);
+    foreignDocId = await seedDoc(new Types.ObjectId(), 'Foreign Doc', 'general', new Types.ObjectId());
+  });
+
+  it('a client sees only their own org documents', async () => {
+    const res = await request(app).get('/api/v2/documents').set('Authorization', `Bearer ${clientToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((d: any) => d.name)).toEqual(['Client Doc']);
+    expect(res.body.pagination.total).toBe(1);
+  });
+
+  it("a client cannot access another org's document (404)", async () => {
+    const res = await request(app).get(`/api/v2/documents/${foreignDocId}/download`).set('Authorization', `Bearer ${clientToken}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('an admin (no org) sees all documents', async () => {
+    const res = await request(app).get('/api/v2/documents').set('Authorization', `Bearer ${token()}`);
+    expect(res.body.pagination.total).toBe(2);
   });
 });

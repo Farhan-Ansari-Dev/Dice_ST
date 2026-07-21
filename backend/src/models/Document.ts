@@ -81,7 +81,7 @@ const DocumentSchema = new Schema<IDocument>(
 // Indexes
 DocumentSchema.index({ org_id: 1, doc_type: 1, created_at: -1 });
 DocumentSchema.index({ org_id: 1, created_at: -1 });
-DocumentSchema.index({ application_ids: 1 });
+// application_ids is already indexed via `index: true` on the field above.
 DocumentSchema.index({ name: 'text', description: 'text', tags: 'text' });
 
 // Prevent deletion when legal-hold or retention-locked

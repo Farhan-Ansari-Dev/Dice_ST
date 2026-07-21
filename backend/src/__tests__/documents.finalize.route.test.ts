@@ -103,6 +103,15 @@ it('S3 HeadObject FAILURE → 400 (reproduces the reported symptom)', async () =
   expect(res.status).toBe(400);
 });
 
+it('rejects an invalid finalize body with 400 validation_error (server-side validation)', async () => {
+  const res = await request(app)
+    .post('/api/v2/documents/finalize')
+    .set('Authorization', `Bearer ${adminToken()}`)
+    .send({ s3_key: 'only-this-field' });   // missing name/doc_type/mime_type/size_bytes/sha256
+  expect(res.status).toBe(400);
+  expect(res.body.error).toBe('validation_error');
+});
+
 it('Replace Version: finalize with document_id creates v2 and repoints current_version_id', async () => {
   headObjectFails = false;
   // v1 — new document

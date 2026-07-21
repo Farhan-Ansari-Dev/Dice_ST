@@ -121,6 +121,24 @@ describe('documentService.finalizeUpload', () => {
     expect(args.ResponseContentType).toBe('application/pdf');
   });
 
+  it('sanitizes the Content-Disposition filename (no header injection)', async () => {
+    const { documentService } = await import('../services/documentService');
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const evil = 'evil".pdf\r\nX-Injected: 1';
+    const { document } = await documentService.finalizeUpload({
+      org_id: orgId, user_id: userId, s3_key: 'orgs/x/evil.pdf',
+      name: evil, doc_type: 'test_report', mime_type: 'application/pdf',
+      size_bytes: 1, sha256: 'd'.repeat(64),
+    });
+    (GetObjectCommand as unknown as jest.Mock).mockClear();
+    await documentService.getDownloadUrl((document as any)._id, undefined, userId);
+    const cd: string = (GetObjectCommand as unknown as jest.Mock).mock.calls[0][0].ResponseContentDisposition;
+    expect(cd).not.toContain('\r');
+    expect(cd).not.toContain('\n');
+    expect((cd.match(/"/g) || []).length).toBe(2);   // only the wrapping quotes survive
+    expect(cd).toContain("filename*=UTF-8''");
+  });
+
   it('still forbids mutating document_id after creation', async () => {
     const { DocumentVersion } = await import('../models');
     const v = await DocumentVersion.findOne({ document_id: createdDocId, version_number: 1 });

@@ -116,8 +116,7 @@ const DocumentVersionSchema = new Schema<IDocumentVersion>(
 
 // Unique version per document
 DocumentVersionSchema.index({ document_id: 1, version_number: -1 }, { unique: true });
-// Dedupe / integrity lookup
-DocumentVersionSchema.index({ sha256: 1 });
+// sha256 is already indexed via `index: true` on the field above (dedupe/integrity).
 // Full-text search on OCR'd content
 DocumentVersionSchema.index({ ocr_text: 'text', 'ai_extracted.summary': 'text' });
 

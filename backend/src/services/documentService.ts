@@ -27,6 +27,16 @@ const s3 = new S3Client({
 const BUCKET = process.env.AWS_S3_BUCKET ?? 'sanyog-conformity-docs';
 const PRESIGN_TTL = parseInt(process.env.AWS_S3_PRESIGNED_URL_EXPIRES ?? '900', 10); // 15 min
 
+// Build a safe Content-Disposition. The filename is client-supplied, so strip
+// CR/LF/quotes/non-ASCII for the fallback (prevents header injection) and add an
+// RFC 5987 UTF-8 form so non-ASCII names still render correctly.
+function contentDisposition(disposition: 'inline' | 'attachment', filename: string): string {
+  const fallback = (filename || 'download').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  const encoded = encodeURIComponent(filename || 'download')
+    .replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export interface PresignUploadInput {
   org_id: Types.ObjectId;
   user_id: Types.ObjectId;
@@ -247,7 +257,7 @@ export const documentService = {
       Bucket: version.s3_bucket,
       Key: version.s3_key,
       ResponseContentType: version.mime_type,
-      ResponseContentDisposition: `${disposition}; filename="${version.original_filename}"`,
+      ResponseContentDisposition: contentDisposition(disposition, version.original_filename),
     });
     return getSignedUrl(s3, cmd, { expiresIn: PRESIGN_TTL });
   },

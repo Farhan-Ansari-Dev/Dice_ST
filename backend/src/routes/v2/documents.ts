@@ -3,12 +3,52 @@
  */
 import { Router, Response } from 'express';
 import { Types } from 'mongoose';
+import { z } from 'zod';
 import { Document, DocumentVersion } from '../../models';
 import { documentService } from '../../services/documentService';
+import { validate } from '../../middleware/validate';
 import { authenticate, requireRole, ADMIN_ROLES, AuthRequest } from '../../middleware/authMongo';
 
 const router = Router();
 router.use(authenticate);
+
+// Explicit tenancy scoping: admins/staff see all documents; everyone else is
+// restricted to their own org. A non-admin without an org sees NOTHING — rather
+// than relying on Mongoose silently dropping an `undefined` filter (→ all docs).
+function orgScope(req: AuthRequest): Record<string, any> {
+  if (ADMIN_ROLES.includes(req.user!.role as any)) return {};
+  const org = req.user!.org_id;
+  return org ? { org_id: org } : { _id: null };
+}
+
+// Server-side validation (never trust client input). Valid requests pass
+// through unchanged; passthrough keeps any additional fields the handler reads.
+const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'invalid id');
+const presignSchema = {
+  body: z.object({
+    filename: z.string().min(1).max(512),
+    mime_type: z.string().min(1).max(255),
+    size_bytes: z.number().int().nonnegative(),
+    sha256: z.string().min(1).max(128),
+    doc_type: z.string().min(1).max(64),
+    document_id: objectId.optional(),
+  }).passthrough(),
+};
+const finalizeSchema = {
+  body: z.object({
+    s3_key: z.string().min(1).max(1024),
+    name: z.string().min(1).max(512),
+    doc_type: z.string().min(1).max(64),
+    mime_type: z.string().min(1).max(255),
+    size_bytes: z.number().int().nonnegative(),
+    sha256: z.string().min(1).max(128),
+    document_id: objectId.optional(),
+    application_id: objectId.optional(),
+    change_reason: z.string().max(1000).optional(),
+    description: z.string().max(4000).optional(),
+    tags: z.array(z.string().max(64)).optional(),
+  }).passthrough(),
+};
 
 // Step 1: Get presigned URL for direct browser-to-S3 upload
 router.post('/presigned-url', async (req: AuthRequest, res: Response) => {
@@ -35,11 +75,8 @@ router.post('/presigned-url', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/presign', async (req: AuthRequest, res: Response) => {
+router.post('/presign', validate(presignSchema), async (req: AuthRequest, res: Response) => {
   const { filename, mime_type, size_bytes, sha256, doc_type, document_id } = req.body;
-  if (!filename || !mime_type || !size_bytes || !sha256 || !doc_type) {
-    return res.status(400).json({ error: 'missing_fields' });
-  }
 
   try {
     const result = await documentService.presignUpload({
@@ -59,7 +96,7 @@ router.post('/presign', async (req: AuthRequest, res: Response) => {
 });
 
 // Step 2: After client uploads to S3, finalize the metadata
-router.post('/finalize', async (req: AuthRequest, res: Response) => {
+router.post('/finalize', validate(finalizeSchema), async (req: AuthRequest, res: Response) => {
   const { s3_key, name, doc_type, mime_type, size_bytes, sha256, document_id, application_id, change_reason, description, tags } = req.body;
 
   try {
@@ -82,7 +119,7 @@ router.post('/finalize', async (req: AuthRequest, res: Response) => {
 // List documents
 router.get('/', async (req: AuthRequest, res: Response) => {
   const { application_id, doc_type, q, page = '1', limit = '20' } = req.query as Record<string, string>;
-  const filter: any = { org_id: req.user!.org_id };
+  const filter: any = { ...orgScope(req) };
   if (application_id) filter.application_ids = application_id;
   if (doc_type) filter.doc_type = doc_type;
   if (q) filter.$text = { $search: q };
@@ -110,7 +147,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 // Get a download URL (presigned, short-lived)
 router.get('/:id/download', async (req: AuthRequest, res: Response) => {
   const { version } = req.query;
-  const doc = await Document.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const doc = await Document.findOne({ _id: req.params.id, ...orgScope(req) });
   if (!doc) return res.status(404).json({ error: 'not_found' });
 
   const url = await documentService.getDownloadUrl(
@@ -125,7 +162,7 @@ router.get('/:id/download', async (req: AuthRequest, res: Response) => {
 // the browser renders PDFs/images in-tab instead of forcing a file download.
 router.get('/:id/preview', async (req: AuthRequest, res: Response) => {
   const { version } = req.query;
-  const doc = await Document.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const doc = await Document.findOne({ _id: req.params.id, ...orgScope(req) });
   if (!doc) return res.status(404).json({ error: 'not_found' });
 
   const url = await documentService.getDownloadUrl(
@@ -139,10 +176,7 @@ router.get('/:id/preview', async (req: AuthRequest, res: Response) => {
 
 // Soft-delete a document (S3 objects retained for audit/versioning immutability)
 router.delete('/:id', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthRequest, res: Response) => {
-  const filter: any = { _id: req.params.id };
-  if (!ADMIN_ROLES.includes(req.user!.role as any)) {
-    filter.org_id = req.user!.org_id;
-  }
+  const filter: any = { _id: req.params.id, ...orgScope(req) };
   const doc = await Document.findOneAndUpdate(
     filter,
     { deleted_at: new Date() },
