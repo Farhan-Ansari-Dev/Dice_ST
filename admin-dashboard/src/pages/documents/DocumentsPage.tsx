@@ -2,17 +2,8 @@ import React, { useState, useRef } from 'react'
 import { FileText, Upload, Download, Trash2, Search, Eye, History, X } from 'lucide-react'
 import Button from '../../components/common/Button'
 import { formatDate, formatFileSize } from '../../utils/formatters'
-
-// Single source of truth: file metadata lives on the current DocumentVersion.
-const currentVersion = (doc: any) =>
-  (doc?.current_version_id && typeof doc.current_version_id === 'object') ? doc.current_version_id : null
-
-const STATUS_STYLE: Record<string, { label: string; color: string }> = {
-  processing: { label: 'Processing', color: '#FFB347' },
-  ready:      { label: 'Ready',      color: '#00C896' },
-  failed:     { label: 'Failed',     color: '#FF6B6B' },
-}
-const statusOf = (v: any) => STATUS_STYLE[v?.processing_status] ?? STATUS_STYLE.ready
+import { currentVersion, statusOf } from '../../components/documents/docHelpers'
+import DocumentDrawer from '../../components/documents/DocumentDrawer'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../services/apiClient'
@@ -91,23 +82,21 @@ export default function DocumentsPage() {
     }
   }
 
-  const openDocument = async (doc: any, mode: 'preview' | 'download', versionNumber?: number) => {
+  // Preview now happens INLINE in the drawer (no new browser tab).
+  const [drawer, setDrawer] = useState<{ doc: any; version?: any } | null>(null)
+
+  const downloadDocument = async (doc: any, versionNumber?: number) => {
     try {
       const q = versionNumber ? `?version=${versionNumber}` : ''
-      const res = await apiClient.get(`/documents/${doc._id}/${mode}${q}`)
-      const url = res.data.data.url
-      if (mode === 'download') {
-        const link = document.createElement('a')
-        link.href = url
-        link.setAttribute('download', doc.name || 'document')
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      } else {
-        window.open(url, '_blank', 'noopener,noreferrer')
-      }
+      const res = await apiClient.get(`/documents/${doc._id}/download${q}`)
+      const link = document.createElement('a')
+      link.href = res.data.data.url
+      link.setAttribute('download', doc.name || 'document')
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
     } catch (err: any) {
-      toast.error(err.response?.data?.error || `Could not fetch ${mode} link`)
+      toast.error(err.response?.data?.error || 'Could not fetch download link')
     }
   }
 
@@ -184,8 +173,8 @@ export default function DocumentsPage() {
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 12 }}>{doc.created_at ? formatDate(doc.created_at) : 'Just now'} · by {doc.uploaded_by?.name || 'Unknown'}</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => openDocument(doc, 'preview')} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Eye size={12} /> Preview</button>
-                <button onClick={() => openDocument(doc, 'download')} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Download size={12} /> Download</button>
+                <button onClick={() => setDrawer({ doc })} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Eye size={12} /> Preview</button>
+                <button onClick={() => downloadDocument(doc)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Download size={12} /> Download</button>
                 <button onClick={() => openHistory(doc)} title="Version history" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 10px', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><History size={12} /></button>
               </div>
             </div>
@@ -214,14 +203,23 @@ export default function DocumentsPage() {
                       <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{v.size_bytes != null ? formatFileSize(v.size_bytes) : 'Unknown'} · <span style={{ color: statusOf(v).color }}>{statusOf(v).label}</span></div>
                       <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{v.mime_type || 'Unknown'} · {v.uploaded_at ? formatDate(v.uploaded_at) : 'Unknown'} · by {v.uploaded_by?.name || 'Unknown'}</div>
                     </div>
-                    <button onClick={() => openDocument(historyDoc, 'preview', v.version_number)} title="Preview" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', padding: '5px 8px', cursor: 'pointer' }}><Eye size={13} /></button>
-                    <button onClick={() => openDocument(historyDoc, 'download', v.version_number)} title="Download" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', padding: '5px 8px', cursor: 'pointer' }}><Download size={13} /></button>
+                    <button onClick={() => { const d = historyDoc; setHistoryDoc(null); setDrawer({ doc: d, version: v }) }} title="Preview" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', padding: '5px 8px', cursor: 'pointer' }}><Eye size={13} /></button>
+                    <button onClick={() => downloadDocument(historyDoc, v.version_number)} title="Download" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', padding: '5px 8px', cursor: 'pointer' }}><Download size={13} /></button>
                   </div>
                 ))}
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {drawer && (
+        <DocumentDrawer
+          doc={drawer.doc}
+          version={drawer.version}
+          onClose={() => setDrawer(null)}
+          onDownload={(d: any) => downloadDocument(d, drawer.version?.version_number)}
+        />
       )}
     </div>
   )
