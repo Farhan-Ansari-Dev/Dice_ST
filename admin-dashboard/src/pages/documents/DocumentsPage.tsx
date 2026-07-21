@@ -58,7 +58,6 @@ export default function DocumentsPage() {
         body: file,
         headers: {
           'Content-Type': file.type || 'application/octet-stream',
-          'x-amz-server-side-encryption': 'AES256',
         },
       })
       if (!s3Res.ok) throw new Error(`S3 upload failed (${s3Res.status})`)
