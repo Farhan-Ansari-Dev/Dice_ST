@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { FileText, Upload, Download, Trash2, Search, Eye, History, X } from 'lucide-react'
 import Button from '../../components/common/Button'
 import { formatDate, formatFileSize } from '../../utils/formatters'
@@ -20,16 +20,29 @@ async function sha256Hex(file: File): Promise<string> {
 export default function DocumentsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { data: docs, isLoading } = useQuery({
-    queryKey: ['documents'],
+  // Debounce the search box → server-side search (MongoDB text index on name/description/tags).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const { data: result, isLoading } = useQuery({
+    queryKey: ['documents', { q: debouncedSearch }],
     queryFn: async () => {
-      const res = await apiClient.get('/documents')
-      return res.data.data || []
-    }
+      const params = new URLSearchParams()
+      if (debouncedSearch) params.set('q', debouncedSearch)
+      const qs = params.toString()
+      const res = await apiClient.get(`/documents${qs ? `?${qs}` : ''}`)
+      return res.data as { data: any[]; pagination?: { page: number; limit: number; total: number } }
+    },
+    placeholderData: (prev) => prev,   // keep results visible while typing
   })
+  const docs: any[] = result?.data || []
+  const total = result?.pagination?.total ?? docs.length
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/documents/${id}`),
@@ -128,18 +141,12 @@ export default function DocumentsPage() {
     }
   }
 
-  const filtered = (docs || []).filter((d: any) =>
-    (d.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (d.org_id?.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (d.doc_type || d.category || '').toLowerCase().includes(search.toLowerCase())
-  )
-
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)', fontSize: 20, fontWeight: 700, margin: 0 }}>Documents</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>{filtered.length} documents · Powered by AWS S3</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>{total} documents · Powered by AWS S3</p>
         </div>
         <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
         <Button icon={<Upload size={14} />} size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
@@ -155,11 +162,11 @@ export default function DocumentsPage() {
 
       {isLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading documents...</p>
-      ) : filtered.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)' }}>No documents found. Upload one to get started.</p>
+      ) : docs.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)' }}>{debouncedSearch ? 'No documents match your search.' : 'No documents found. Upload one to get started.'}</p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-          {filtered.map((doc: any) => (
+          {docs.map((doc: any) => (
             <div key={doc.id || doc._id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px', transition: 'var(--transition)' }}
               onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-light)'}
               onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
