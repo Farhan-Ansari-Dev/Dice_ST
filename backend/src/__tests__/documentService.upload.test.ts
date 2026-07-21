@@ -147,6 +147,37 @@ describe('documentService.finalizeUpload', () => {
     await expect(v!.save()).rejects.toThrow(/immutable.*document_id/i);
   });
 
+  // Regression: legacy documents migrated from the previous backend have NO
+  // DocumentVersion — the S3 reference lives on the Document (storageKey/mimeType/
+  // originalName). getDownloadUrl must fall back to it, not throw "Version not found".
+  it('falls back to legacy Document S3 fields when there is no DocumentVersion', async () => {
+    const mongoose = (await import('mongoose')).default;
+    const { documentService } = await import('../services/documentService');
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+
+    const legacyId = new Types.ObjectId();
+    await mongoose.connection.db!.collection('documents').insertOne({
+      _id: legacyId,
+      storageProvider: 's3',
+      storageKey: 'legacy/orgs/x/old-report.pdf',
+      mimeType: 'application/pdf',
+      originalName: 'Old Report.pdf',
+      sizeBytes: 5000,
+      publicUrl: 'https://s3.example/old-report.pdf',
+      applicationId: new Types.ObjectId(),
+      uploadedByEmail: 'x@t.com',
+      createdAt: new Date(),
+    } as any);
+
+    (GetObjectCommand as unknown as jest.Mock).mockClear();
+    const url = await documentService.getDownloadUrl(legacyId, undefined, userId, 'inline');
+    expect(url).toBe('https://s3.example/signed-url');   // did not throw
+    const args = (GetObjectCommand as unknown as jest.Mock).mock.calls[0][0];
+    expect(args.Key).toBe('legacy/orgs/x/old-report.pdf');   // uses the legacy storageKey
+    expect(args.ResponseContentType).toBe('application/pdf');
+    expect(args.ResponseContentDisposition).toMatch(/^inline;/);
+  });
+
   it('still allows async-processing fields (ocr_text) to be updated', async () => {
     const { DocumentVersion } = await import('../models');
     const v = await DocumentVersion.findOne({ document_id: createdDocId, version_number: 2 });

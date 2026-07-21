@@ -234,10 +234,38 @@ export const documentService = {
     let version;
     if (versionNumber) {
       version = await DocumentVersion.findOne({ document_id: documentId, version_number: versionNumber });
-    } else {
+    } else if (doc.current_version_id) {
       version = await DocumentVersion.findById(doc.current_version_id);
     }
-    if (!version) throw new Error('Version not found');
+
+    // ── Backward compatibility ───────────────────────────────────────────────
+    // Documents migrated from the previous backend have NO DocumentVersion — the
+    // S3 reference lives directly on the Document (storageKey / mimeType /
+    // originalName). Fall back to it so preview and download keep working for
+    // pre-existing production documents instead of throwing "Version not found".
+    if (!version) {
+      const legacy = (await Document.findById(documentId).lean()) as any;
+      const key: string | undefined = legacy?.storageKey ?? legacy?.s3_key;
+      if (!key) throw new Error('Version not found');
+      if (requesterId) {
+        await audit({
+          actor: requesterId,
+          org_id: doc.org_id,
+          resource_type: 'document',
+          resource_id: doc._id as Types.ObjectId,
+          action: disposition === 'inline' ? 'viewed' : 'downloaded',
+          after: { legacy: true },
+        });
+      }
+      const legacyMime: string | undefined = legacy?.mimeType ?? legacy?.mime_type;
+      const legacyCmd = new GetObjectCommand({
+        Bucket: legacy?.s3_bucket ?? legacy?.storageBucket ?? BUCKET,
+        Key: key,
+        ...(legacyMime ? { ResponseContentType: legacyMime } : {}),
+        ResponseContentDisposition: contentDisposition(disposition, legacy?.originalName ?? legacy?.name ?? 'document'),
+      });
+      return getSignedUrl(s3, legacyCmd, { expiresIn: PRESIGN_TTL });
+    }
 
     if (requesterId) {
       await audit({

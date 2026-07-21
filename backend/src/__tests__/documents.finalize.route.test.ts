@@ -148,3 +148,31 @@ it('Replace Version: finalize with document_id creates v2 and repoints current_v
   expect(dl.body.data.url).toBeTruthy();
   expect(v1VersionId).toBeTruthy();
 });
+
+// Regression for the production 500: legacy documents (previous backend) have no
+// DocumentVersion — preview/download must fall back to the Document's own S3 ref,
+// returning 200 instead of throwing "Version not found" (→ 500).
+it('previews a legacy document (no DocumentVersion) without a 500', async () => {
+  const legacyId = new mongoose.Types.ObjectId();
+  await mongoose.connection.db!.collection('documents').insertOne({
+    _id: legacyId,
+    storageProvider: 's3',
+    storageKey: 'legacy/k/old-report.pdf',
+    mimeType: 'application/pdf',
+    originalName: 'Old Report.pdf',
+    sizeBytes: 10,
+    createdAt: new Date(),
+  } as any);
+
+  const preview = await request(app)
+    .get(`/api/v2/documents/${legacyId}/preview`)
+    .set('Authorization', `Bearer ${adminToken()}`);
+  expect(preview.status).toBe(200);
+  expect(preview.body.data.url).toBeTruthy();
+
+  const download = await request(app)
+    .get(`/api/v2/documents/${legacyId}/download`)
+    .set('Authorization', `Bearer ${adminToken()}`);
+  expect(download.status).toBe(200);
+  expect(download.body.data.url).toBeTruthy();
+});
