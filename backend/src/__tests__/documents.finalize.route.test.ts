@@ -102,3 +102,40 @@ it('S3 HeadObject FAILURE → 400 (reproduces the reported symptom)', async () =
   console.log('[repro:failure] status', res.status, 'body', JSON.stringify(res.body).slice(0, 300));
   expect(res.status).toBe(400);
 });
+
+it('Replace Version: finalize with document_id creates v2 and repoints current_version_id', async () => {
+  headObjectFails = false;
+  // v1 — new document
+  const v1 = await request(app)
+    .post('/api/v2/documents/finalize')
+    .set('Authorization', `Bearer ${adminToken()}`)
+    .send({ ...finalizeBody, s3_key: 'orgs/platform/docs/replace/v1.pdf' });
+  expect(v1.status).toBe(201);
+  const docId = v1.body.data.document._id;
+  const v1VersionId = v1.body.data.version._id;
+
+  // v2 — replacement of the same document
+  const v2 = await request(app)
+    .post('/api/v2/documents/finalize')
+    .set('Authorization', `Bearer ${adminToken()}`)
+    .send({ ...finalizeBody, s3_key: 'orgs/platform/docs/replace/v2.pdf', document_id: docId, change_reason: 'replaced' });
+  expect(v2.status).toBe(201);
+  expect(v2.body.data.version.version_number).toBe(2);
+  // Document now points at v2 with an incremented count.
+  expect(v2.body.data.document.version_count).toBe(2);
+  expect(String(v2.body.data.document.current_version_id)).toBe(String(v2.body.data.version._id));
+
+  // Full history preserved; v1 remains immutable and downloadable.
+  const hist = await request(app)
+    .get(`/api/v2/documents/${docId}/versions`)
+    .set('Authorization', `Bearer ${adminToken()}`);
+  expect(hist.status).toBe(200);
+  expect(hist.body.data.map((x: any) => x.version_number).sort()).toEqual([1, 2]);
+
+  const dl = await request(app)
+    .get(`/api/v2/documents/${docId}/download?version=1`)
+    .set('Authorization', `Bearer ${adminToken()}`);
+  expect(dl.status).toBe(200);
+  expect(dl.body.data.url).toBeTruthy();
+  expect(v1VersionId).toBeTruthy();
+});

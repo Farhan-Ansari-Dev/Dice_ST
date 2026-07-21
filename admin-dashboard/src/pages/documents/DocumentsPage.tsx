@@ -40,38 +40,32 @@ export default function DocumentsPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Delete failed')
   })
 
-  // Full S3 flow: presign → direct browser PUT to S3 → finalize metadata
+  // Full S3 flow: presign → direct browser PUT to S3 → finalize metadata.
+  // Same flow for a brand-new document and for a new version — the only
+  // difference is passing document_id (which the backend already supports).
+  const uploadFile = async (file: File, opts?: { documentId?: string; docType?: string }) => {
+    const sha256 = await sha256Hex(file)
+    const mime = file.type || 'application/octet-stream'
+    const docType = opts?.docType || 'general'
+    const presignRes = await apiClient.post('/documents/presign', {
+      filename: file.name, mime_type: mime, size_bytes: file.size, sha256, doc_type: docType,
+      ...(opts?.documentId ? { document_id: opts.documentId } : {}),
+    })
+    const { url, s3_key } = presignRes.data.data
+    // Plain fetch — presigned S3 URLs must not carry our Authorization header
+    const s3Res = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': mime } })
+    if (!s3Res.ok) throw new Error(`S3 upload failed (${s3Res.status})`)
+    const finRes = await apiClient.post('/documents/finalize', {
+      s3_key, name: file.name, doc_type: docType, mime_type: mime, size_bytes: file.size, sha256,
+      ...(opts?.documentId ? { document_id: opts.documentId } : {}),
+    })
+    return finRes.data.data as { document: any; version: any }
+  }
+
   const handleUpload = async (file: File) => {
     setUploading(true)
     try {
-      const sha256 = await sha256Hex(file)
-      const presignRes = await apiClient.post('/documents/presign', {
-        filename: file.name,
-        mime_type: file.type || 'application/octet-stream',
-        size_bytes: file.size,
-        sha256,
-        doc_type: 'general',
-      })
-      const { url, s3_key } = presignRes.data.data
-
-      // Plain fetch — presigned S3 URLs must not carry our Authorization header
-      const s3Res = await fetch(url, {
-        method: 'PUT',
-        body: file,
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-        },
-      })
-      if (!s3Res.ok) throw new Error(`S3 upload failed (${s3Res.status})`)
-
-      await apiClient.post('/documents/finalize', {
-        s3_key,
-        name: file.name,
-        doc_type: 'general',
-        mime_type: file.type || 'application/octet-stream',
-        size_bytes: file.size,
-        sha256,
-      })
+      await uploadFile(file)
       queryClient.invalidateQueries({ queryKey: ['documents'] })
       toast.success('Document uploaded')
     } catch (err: any) {
@@ -84,6 +78,21 @@ export default function DocumentsPage() {
 
   // Preview now happens INLINE in the drawer (no new browser tab).
   const [drawer, setDrawer] = useState<{ doc: any; version?: any } | null>(null)
+
+  // Replace Version: upload a new immutable version of an existing document.
+  const handleReplace = async (doc: any, file: File) => {
+    try {
+      const { version } = await uploadFile(file, { documentId: doc._id, docType: doc.doc_type })
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
+      // Reflect the new current version immediately in the open drawer.
+      setDrawer(d => (d && d.doc._id === doc._id)
+        ? { doc: { ...d.doc, current_version_id: version, version_count: (d.doc.version_count || 1) + 1 } }
+        : d)
+      toast.success(`New version uploaded (v${version.version_number})`)
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Replace failed')
+    }
+  }
 
   const downloadDocument = async (doc: any, versionNumber?: number) => {
     try {
@@ -219,6 +228,7 @@ export default function DocumentsPage() {
           version={drawer.version}
           onClose={() => setDrawer(null)}
           onDownload={(d: any) => downloadDocument(d, drawer.version?.version_number)}
+          onReplace={handleReplace}
         />
       )}
     </div>

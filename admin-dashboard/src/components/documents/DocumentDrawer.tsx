@@ -1,4 +1,5 @@
-import { X, Download } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { X, Download, Upload } from 'lucide-react'
 import { formatDate, formatFileSize } from '../../utils/formatters'
 import { currentVersion, statusOf } from './docHelpers'
 import DocumentPreview from './DocumentPreview'
@@ -8,15 +9,27 @@ import DocumentPreview from './DocumentPreview'
  * version's metadata. The user never leaves the dashboard (Drive/Dropbox-style).
  */
 export default function DocumentDrawer({
-  doc, version, onClose, onDownload,
+  doc, version, onClose, onDownload, onReplace,
 }: {
   doc: any
   version?: any            // specific version to preview (from history); defaults to current
   onClose: () => void
   onDownload: (doc: any) => void
+  onReplace?: (doc: any, file: File) => Promise<void> | void
 }) {
   const v = version ?? currentVersion(doc)
   const st = statusOf(v)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [replacing, setReplacing] = useState(false)
+
+  const pickReplacement = async (file: File) => {
+    if (!onReplace) return
+    setReplacing(true)
+    try { await onReplace(doc, file) } finally {
+      setReplacing(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
 
   const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
@@ -34,7 +47,13 @@ export default function DocumentDrawer({
             <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name || 'Document'}</div>
             <div style={{ color: st.color, fontSize: 11, fontWeight: 600, marginTop: 2 }}>{st.label}</div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+            {onReplace && (
+              <>
+                <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) pickReplacement(f) }} />
+                <button onClick={() => fileRef.current?.click()} disabled={replacing} title="Upload a new version" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 12px', cursor: replacing ? 'default' : 'pointer', fontSize: 12, opacity: replacing ? 0.6 : 1 }}><Upload size={13} /> {replacing ? 'Uploading…' : 'Replace'}</button>
+              </>
+            )}
             <button onClick={() => onDownload(doc)} title="Download" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}><Download size={13} /> Download</button>
             <button onClick={onClose} title="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
           </div>
@@ -44,7 +63,7 @@ export default function DocumentDrawer({
         <div style={{ flex: 1, minHeight: 0, padding: 16 }}>
           <DocumentPreview
             docId={doc._id}
-            versionNumber={version?.version_number}
+            versionNumber={v?.version_number}
             mimeType={v?.mime_type || ''}
             onDownload={() => onDownload(doc)}
           />
