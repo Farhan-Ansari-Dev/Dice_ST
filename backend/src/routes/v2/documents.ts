@@ -7,18 +7,21 @@ import { z } from 'zod';
 import { Document, DocumentVersion } from '../../models';
 import { documentService } from '../../services/documentService';
 import { validate } from '../../middleware/validate';
-import { authenticate, requireRole, ADMIN_ROLES, AuthRequest } from '../../middleware/authMongo';
+import { authenticate, requireRole, ADMIN_ROLES, STAFF_ROLES, AuthRequest } from '../../middleware/authMongo';
 
 const router = Router();
 router.use(authenticate);
 
-// Explicit tenancy scoping: admins/staff see all documents; everyone else is
-// restricted to their own org. A non-admin without an org sees NOTHING — rather
-// than relying on Mongoose silently dropping an `undefined` filter (→ all docs).
+// Explicit tenancy scoping — mirrors the established pattern in applications.ts:
+//   • staff (admin / super_admin / employee) → all documents
+//   • users with an org                        → their organization's documents
+//   • org-less users                           → only documents they uploaded
+// Avoids the previous footgun where an `undefined` org filter was silently dropped
+// by Mongoose (→ every document across all tenants).
 function orgScope(req: AuthRequest): Record<string, any> {
-  if (ADMIN_ROLES.includes(req.user!.role as any)) return {};
+  if (STAFF_ROLES.includes(req.user!.role as any)) return {};
   const org = req.user!.org_id;
-  return org ? { org_id: org } : { _id: null };
+  return org ? { org_id: org } : { uploaded_by: req.user!._id };
 }
 
 // Server-side validation (never trust client input). Valid requests pass
@@ -118,14 +121,21 @@ router.post('/finalize', validate(finalizeSchema), async (req: AuthRequest, res:
 
 // List documents
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const { application_id, doc_type, q, page = '1', limit = '20' } = req.query as Record<string, string>;
+  // Coerce to strings: Express's qs parser turns `?doc_type[$ne]=x` into an
+  // object, which would inject Mongo operators into the filter. Only accept
+  // plain string values.
+  const asStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  const application_id = asStr(req.query.application_id);
+  const doc_type = asStr(req.query.doc_type);
+  const q = asStr(req.query.q);
+
   const filter: any = { ...orgScope(req) };
   if (application_id) filter.application_ids = application_id;
   if (doc_type) filter.doc_type = doc_type;
   if (q) filter.$text = { $search: q };
 
-  const pageN = parseInt(page, 10);
-  const limitN = Math.min(parseInt(limit, 10), 100);
+  const pageN = Math.max(1, parseInt(asStr(req.query.page) ?? '1', 10) || 1);
+  const limitN = Math.min(Math.max(1, parseInt(asStr(req.query.limit) ?? '20', 10) || 20), 100);
 
   const [items, total] = await Promise.all([
     Document.find(filter)
@@ -188,7 +198,7 @@ router.delete('/:id', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthR
 
 // List all versions of a document
 router.get('/:id/versions', async (req: AuthRequest, res: Response) => {
-  const doc = await Document.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  const doc = await Document.findOne({ _id: req.params.id, ...orgScope(req) });
   if (!doc) return res.status(404).json({ error: 'not_found' });
 
   const versions = await documentService.listVersions(doc._id as any);

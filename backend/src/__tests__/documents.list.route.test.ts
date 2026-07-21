@@ -152,3 +152,31 @@ describe('GET /documents tenancy scoping', () => {
     expect(res.body.pagination.total).toBe(2);
   });
 });
+
+describe('GET /documents scoping for org-less clients (mobile default)', () => {
+  let soloToken: string;
+  let othersDocId: Types.ObjectId;
+
+  beforeAll(async () => {
+    const { User, Document, DocumentVersion } = await import('../models');
+    await Document.deleteMany({});
+    await DocumentVersion.deleteMany({});
+    // Client with NO org_id — the default for a freshly signed-up mobile user.
+    const solo = await User.create({ email: 'solo@t.com', name: 'Solo', role: 'client', otp_attempts: 0 });
+    soloToken = jwt.sign({ sub: String(solo._id), role: 'client', jti: 's-' + Date.now() }, JWT_SECRET, { expiresIn: '15m' });
+    await seedDoc(solo._id as any, 'My Own Doc');                        // uploaded_by = solo, no org
+    othersDocId = await seedDoc(new Types.ObjectId(), 'Someone Else Doc'); // different uploader, no org
+  });
+
+  it('sees ONLY their own uploads — not every other org-less document', async () => {
+    const res = await request(app).get('/api/v2/documents').set('Authorization', `Bearer ${soloToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((d: any) => d.name)).toEqual(['My Own Doc']);
+    expect(res.body.pagination.total).toBe(1);
+  });
+
+  it("cannot read another user's document versions (404)", async () => {
+    const res = await request(app).get(`/api/v2/documents/${othersDocId}/versions`).set('Authorization', `Bearer ${soloToken}`);
+    expect(res.status).toBe(404);
+  });
+});

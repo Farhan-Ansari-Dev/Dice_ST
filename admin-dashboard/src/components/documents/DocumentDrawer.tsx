@@ -4,6 +4,16 @@ import { formatDate, formatFileSize } from '../../utils/formatters'
 import { currentVersion, statusOf } from './docHelpers'
 import DocumentPreview from './DocumentPreview'
 
+// Hoisted so it isn't redefined on every drawer render (which would remount rows).
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: 'var(--text-primary)', textAlign: 'right', wordBreak: 'break-all' }}>{value ?? 'Unknown'}</span>
+    </div>
+  )
+}
+
 /**
  * Document Details Drawer — inline preview (PDF.js / image / fallback) plus the
  * version's metadata. The user never leaves the dashboard (Drive/Dropbox-style).
@@ -30,13 +40,6 @@ export default function DocumentDrawer({
       if (fileRef.current) fileRef.current.value = ''
     }
   }
-
-  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}</span>
-      <span style={{ color: 'var(--text-primary)', textAlign: 'right', wordBreak: 'break-all' }}>{value ?? 'Unknown'}</span>
-    </div>
-  )
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }}>
