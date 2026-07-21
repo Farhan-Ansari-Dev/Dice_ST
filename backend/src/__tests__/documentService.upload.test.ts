@@ -10,10 +10,13 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
 // ── Mock AWS S3 so no network/credentials are needed ─────────────────────────
+// HeadObject returns authoritative metadata that DIFFERS from the client input,
+// so we can prove finalize uses S3's values, not the client's.
+const S3_HEAD = { ContentLength: 4242, ContentType: 'application/pdf', ETag: '"etag-xyz"' };
 jest.mock('@aws-sdk/client-s3', () => {
   return {
     S3Client: jest.fn().mockImplementation(() => ({
-      send: jest.fn().mockResolvedValue({}), // HeadObject → object "exists"
+      send: jest.fn().mockResolvedValue({ ContentLength: 4242, ContentType: 'application/pdf', ETag: '"etag-xyz"' }),
     })),
     PutObjectCommand: jest.fn(),
     GetObjectCommand: jest.fn(),
@@ -60,7 +63,20 @@ describe('documentService.finalizeUpload', () => {
     expect(version.version_number).toBe(1);
     // version points at the real document, not a throwaway id
     expect(version.document_id.toString()).toBe((document as any)._id.toString());
+    // Phase 1: metadata comes from S3 HeadObject, NOT the client input (1234).
+    expect(version.size_bytes).toBe(S3_HEAD.ContentLength);
+    expect(version.mime_type).toBe(S3_HEAD.ContentType);
+    // Phase 1: finalized version is 'ready' (no async pipeline yet).
+    expect(version.processing_status).toBe('ready');
     createdDocId = (document as any)._id;
+  });
+
+  it('stores the S3 ETag as a backend-only field (select:false)', async () => {
+    const { DocumentVersion } = await import('../models');
+    const withoutEtag = await DocumentVersion.findOne({ document_id: createdDocId, version_number: 1 });
+    expect((withoutEtag as any).etag).toBeUndefined();          // not returned by default
+    const withEtag = await DocumentVersion.findOne({ document_id: createdDocId, version_number: 1 }).select('+etag');
+    expect((withEtag as any).etag).toBe(S3_HEAD.ETag);          // present when explicitly selected
   });
 
   it('records v2 for the same document (version history)', async () => {
@@ -84,10 +100,25 @@ describe('documentService.finalizeUpload', () => {
     expect(versions.map(v => v.version_number).sort()).toEqual([1, 2]);
   });
 
-  it('returns a signed download URL for the current version', async () => {
+  it('returns a signed download URL for the current version (attachment by default)', async () => {
     const { documentService } = await import('../services/documentService');
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    (GetObjectCommand as unknown as jest.Mock).mockClear();
     const url = await documentService.getDownloadUrl(createdDocId, undefined, userId);
     expect(url).toBe('https://s3.example/signed-url');
+    const args = (GetObjectCommand as unknown as jest.Mock).mock.calls[0][0];
+    expect(args.ResponseContentDisposition).toMatch(/^attachment;/);
+    expect(args.ResponseContentType).toBe('application/pdf');
+  });
+
+  it('preview requests an inline disposition', async () => {
+    const { documentService } = await import('../services/documentService');
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    (GetObjectCommand as unknown as jest.Mock).mockClear();
+    await documentService.getDownloadUrl(createdDocId, undefined, userId, 'inline');
+    const args = (GetObjectCommand as unknown as jest.Mock).mock.calls[0][0];
+    expect(args.ResponseContentDisposition).toMatch(/^inline;/);
+    expect(args.ResponseContentType).toBe('application/pdf');
   });
 
   it('still forbids mutating document_id after creation', async () => {

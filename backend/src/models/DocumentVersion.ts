@@ -17,6 +17,7 @@ export interface IDocumentVersion extends MongooseDoc {
   s3_bucket: string;
   s3_key: string;                         // e.g. orgs/{org_id}/docs/{doc_id}/v{n}-{filename}
   s3_region: string;
+  etag?: string;                          // S3 object ETag (backend-only, select:false)
 
   // Content metadata
   original_filename: string;
@@ -24,6 +25,10 @@ export interface IDocumentVersion extends MongooseDoc {
   size_bytes: number;
   sha256: string;                         // integrity + dedupe key
   page_count?: number;                    // for PDFs
+
+  // Processing lifecycle — one field drives status (no boolean flags).
+  // Phase 1 has no async pipeline, so a finalized version is 'ready'.
+  processing_status: 'processing' | 'ready' | 'failed';
 
   // Capture context
   uploaded_by: Types.ObjectId;
@@ -64,12 +69,20 @@ const DocumentVersionSchema = new Schema<IDocumentVersion>(
     s3_bucket: { type: String, required: true },
     s3_key:    { type: String, required: true },
     s3_region: { type: String, default: 'ap-south-1' },
+    etag:      { type: String, select: false },   // backend-only; never in API responses
 
     original_filename: { type: String, required: true },
     mime_type:         { type: String, required: true },
     size_bytes:        { type: Number, required: true },
     sha256:            { type: String, required: true, index: true },
     page_count:        Number,
+
+    processing_status: {
+      type: String,
+      enum: ['processing', 'ready', 'failed'],
+      default: 'ready',
+      index: true,
+    },
 
     uploaded_by:       { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     uploaded_at:       { type: Date, default: Date.now, index: true },
@@ -115,7 +128,7 @@ DocumentVersionSchema.index({ ocr_text: 'text', 'ai_extracted.summary': 'text' }
 (DocumentVersionSchema as any).pre("save", function (this: any) {
   if (this.isNew) return;
   // After creation, allow only specific async-processing fields to be updated.
-  const allowedUpdates = ['ocr_text', 'ai_extracted', 'thumbnail_s3_key', 'virus_scan', 'signature'];
+  const allowedUpdates = ['ocr_text', 'ai_extracted', 'thumbnail_s3_key', 'virus_scan', 'signature', 'processing_status'];
   const modified = this.modifiedPaths();
   const forbidden = modified.filter((p: string) => !allowedUpdates.some(a => p.startsWith(a)));
   if (forbidden.length) {

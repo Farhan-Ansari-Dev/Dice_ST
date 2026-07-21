@@ -92,11 +92,13 @@ export const documentService = {
     ip?: string;
     user_agent?: string;
   }) {
-    // Verify file actually exists in S3. Surface the underlying AWS error
-    // (AccessDenied / NoSuchKey / region mismatch) — swallowing it here hid the
-    // real cause of finalize failures behind a generic "not found" message.
+    // Verify the file exists in S3 AND read its authoritative metadata. Never
+    // trust the client's size/mime — take ContentLength/ContentType/ETag from S3.
+    // Surface the underlying AWS error (AccessDenied / NoSuchKey / region mismatch)
+    // instead of swallowing it behind a generic "not found" message.
+    let head;
     try {
-      await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: input.s3_key }));
+      head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: input.s3_key }));
     } catch (e: any) {
       logger.error(
         `[documents.finalize] HeadObject failed ` +
@@ -105,6 +107,15 @@ export const documentService = {
         `message=${e?.message}`
       );
       throw new Error('S3 object not found — did client complete the upload?');
+    }
+
+    // Authoritative metadata from S3 (fall back to client only when S3 omits a
+    // field — a real object always returns ContentLength).
+    const sizeBytes = head.ContentLength ?? input.size_bytes;
+    const mimeType = head.ContentType ?? input.mime_type;
+    const etag = head.ETag;
+    if (sizeBytes > 100 * 1024 * 1024) {
+      throw new Error('File too large (max 100 MB).');
     }
 
     // Determine version number. For a brand-new logical document, generate its
@@ -129,9 +140,11 @@ export const documentService = {
       s3_key: input.s3_key,
       s3_region: process.env.AWS_REGION ?? 'ap-south-1',
       original_filename: input.name,
-      mime_type: input.mime_type,
-      size_bytes: input.size_bytes,
+      mime_type: mimeType,
+      size_bytes: sizeBytes,
       sha256: input.sha256,
+      etag,
+      processing_status: 'ready',
       uploaded_by: input.user_id,
       uploaded_at: new Date(),
       upload_ip: input.ip,
@@ -199,7 +212,12 @@ export const documentService = {
    * Generate a time-limited download URL for a specific version.
    * Default = current version.
    */
-  async getDownloadUrl(documentId: Types.ObjectId, versionNumber?: number, requesterId?: Types.ObjectId): Promise<string> {
+  async getDownloadUrl(
+    documentId: Types.ObjectId,
+    versionNumber?: number,
+    requesterId?: Types.ObjectId,
+    disposition: 'inline' | 'attachment' = 'attachment',
+  ): Promise<string> {
     const doc = await Document.findById(documentId);
     if (!doc) throw new Error('Document not found');
 
@@ -217,15 +235,19 @@ export const documentService = {
         org_id: doc.org_id,
         resource_type: 'document',
         resource_id: doc._id as Types.ObjectId,
-        action: 'downloaded',
+        // Preview (inline) and download (attachment) are distinct auditable events.
+        action: disposition === 'inline' ? 'viewed' : 'downloaded',
         after: { version: version.version_number },
       });
     }
 
+    // ResponseContentType makes the browser render inline previews (PDF/image)
+    // correctly; disposition selects preview (inline) vs download (attachment).
     const cmd = new GetObjectCommand({
       Bucket: version.s3_bucket,
       Key: version.s3_key,
-      ResponseContentDisposition: `attachment; filename="${version.original_filename}"`,
+      ResponseContentType: version.mime_type,
+      ResponseContentDisposition: `${disposition}; filename="${version.original_filename}"`,
     });
     return getSignedUrl(s3, cmd, { expiresIn: PRESIGN_TTL });
   },

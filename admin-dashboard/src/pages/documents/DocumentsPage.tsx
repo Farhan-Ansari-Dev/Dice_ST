@@ -1,7 +1,18 @@
 import React, { useState, useRef } from 'react'
-import { FileText, Upload, Download, Trash2, Search, Eye } from 'lucide-react'
+import { FileText, Upload, Download, Trash2, Search, Eye, History, X } from 'lucide-react'
 import Button from '../../components/common/Button'
 import { formatDate, formatFileSize } from '../../utils/formatters'
+
+// Single source of truth: file metadata lives on the current DocumentVersion.
+const currentVersion = (doc: any) =>
+  (doc?.current_version_id && typeof doc.current_version_id === 'object') ? doc.current_version_id : null
+
+const STATUS_STYLE: Record<string, { label: string; color: string }> = {
+  processing: { label: 'Processing', color: '#FFB347' },
+  ready:      { label: 'Ready',      color: '#00C896' },
+  failed:     { label: 'Failed',     color: '#FF6B6B' },
+}
+const statusOf = (v: any) => STATUS_STYLE[v?.processing_status] ?? STATUS_STYLE.ready
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../services/apiClient'
@@ -80,11 +91,12 @@ export default function DocumentsPage() {
     }
   }
 
-  const openDocument = async (doc: any, download: boolean) => {
+  const openDocument = async (doc: any, mode: 'preview' | 'download', versionNumber?: number) => {
     try {
-      const res = await apiClient.get(`/documents/${doc._id}/download`)
+      const q = versionNumber ? `?version=${versionNumber}` : ''
+      const res = await apiClient.get(`/documents/${doc._id}/${mode}${q}`)
       const url = res.data.data.url
-      if (download) {
+      if (mode === 'download') {
         const link = document.createElement('a')
         link.href = url
         link.setAttribute('download', doc.name || 'document')
@@ -95,7 +107,26 @@ export default function DocumentsPage() {
         window.open(url, '_blank', 'noopener,noreferrer')
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Could not fetch download link')
+      toast.error(err.response?.data?.error || `Could not fetch ${mode} link`)
+    }
+  }
+
+  // Read-only version history (Phase 1). Replace Version is Phase 2.
+  const [historyDoc, setHistoryDoc] = useState<any>(null)
+  const [versions, setVersions] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  const openHistory = async (doc: any) => {
+    setHistoryDoc(doc)
+    setVersions([])
+    setHistoryLoading(true)
+    try {
+      const res = await apiClient.get(`/documents/${doc._id}/versions`)
+      setVersions(res.data.data || [])
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Could not load version history')
+    } finally {
+      setHistoryLoading(false)
     }
   }
 
@@ -140,7 +171,7 @@ export default function DocumentsPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name || 'Document'}</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{formatFileSize(doc.size_bytes || doc.size || 0)} · {doc.org_id?.name || 'Unknown'}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>{currentVersion(doc)?.size_bytes != null ? formatFileSize(currentVersion(doc).size_bytes) : 'Unknown'}</div>
                 </div>
                 <button onClick={() => { if (window.confirm(`Delete "${doc.name}"?`)) deleteMutation.mutate(doc._id) }} title="Delete"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
@@ -149,15 +180,47 @@ export default function DocumentsPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span style={{ background: (CAT_COLORS[doc.category] ?? '#6C63FF') + '18', color: CAT_COLORS[doc.category] ?? '#6C63FF', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>{doc.doc_type || doc.category || 'General'}</span>
-                {doc.verified ? <span style={{ color: '#00C896', fontSize: 11 }}>✓ Verified</span> : <span style={{ color: '#FFB347', fontSize: 11 }}>⏳ Pending</span>}
+                <span style={{ color: statusOf(currentVersion(doc)).color, fontSize: 11, fontWeight: 600 }}>{statusOf(currentVersion(doc)).label}</span>
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 12 }}>{doc.created_at ? formatDate(doc.created_at) : 'Just now'} · by {doc.uploaded_by?.name || 'Unknown'}</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => openDocument(doc, false)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Eye size={12} /> Preview</button>
-                <button onClick={() => openDocument(doc, true)} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Download size={12} /> Download</button>
+                <button onClick={() => openDocument(doc, 'preview')} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Eye size={12} /> Preview</button>
+                <button onClick={() => openDocument(doc, 'download')} style={{ flex: 1, background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 0', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}><Download size={12} /> Download</button>
+                <button onClick={() => openHistory(doc)} title="Version history" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', padding: '6px 10px', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><History size={12} /></button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {historyDoc && (
+        <div onClick={() => setHistoryDoc(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 16 }}>Version History</h3>
+              <button onClick={() => setHistoryDoc(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 16px' }}>{historyDoc.name}</p>
+            {historyLoading ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
+            ) : versions.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No versions found.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {versions.map((v: any) => (
+                  <div key={v._id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>v{v.version_number}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{v.size_bytes != null ? formatFileSize(v.size_bytes) : 'Unknown'} · <span style={{ color: statusOf(v).color }}>{statusOf(v).label}</span></div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{v.mime_type || 'Unknown'} · {v.uploaded_at ? formatDate(v.uploaded_at) : 'Unknown'} · by {v.uploaded_by?.name || 'Unknown'}</div>
+                    </div>
+                    <button onClick={() => openDocument(historyDoc, 'preview', v.version_number)} title="Preview" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', padding: '5px 8px', cursor: 'pointer' }}><Eye size={13} /></button>
+                    <button onClick={() => openDocument(historyDoc, 'download', v.version_number)} title="Download" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', padding: '5px 8px', cursor: 'pointer' }}><Download size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

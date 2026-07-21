@@ -85,6 +85,11 @@ it('S3 HeadObject SUCCESS → 201 (new doc, admin with no org_id)', async () => 
   // eslint-disable-next-line no-console
   console.log('[repro:success] status', res.status, 'body', JSON.stringify(res.body).slice(0, 300));
   expect(res.status).toBe(201);
+  // S3 metadata fallback: this mock's HeadObject returns {} (no ContentLength),
+  // so finalize must fall back to the client-supplied size/mime rather than crash.
+  expect(res.body.data.version.size_bytes).toBe(finalizeBody.size_bytes);
+  expect(res.body.data.version.mime_type).toBe(finalizeBody.mime_type);
+  expect(res.body.data.version.processing_status).toBe('ready');
 });
 
 it('S3 HeadObject FAILURE → 400 (reproduces the reported symptom)', async () => {

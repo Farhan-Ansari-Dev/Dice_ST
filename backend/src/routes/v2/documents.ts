@@ -121,6 +121,22 @@ router.get('/:id/download', async (req: AuthRequest, res: Response) => {
   return res.json({ data: { url, expires_in: 900 } });
 });
 
+// Get a preview URL (presigned, short-lived, inline). Separate from download so
+// the browser renders PDFs/images in-tab instead of forcing a file download.
+router.get('/:id/preview', async (req: AuthRequest, res: Response) => {
+  const { version } = req.query;
+  const doc = await Document.findOne({ _id: req.params.id, org_id: req.user!.org_id });
+  if (!doc) return res.status(404).json({ error: 'not_found' });
+
+  const url = await documentService.getDownloadUrl(
+    doc._id as any,
+    version ? parseInt(version as string, 10) : undefined,
+    req.user!._id as any,
+    'inline'
+  );
+  return res.json({ data: { url, expires_in: 900 } });
+});
+
 // Soft-delete a document (S3 objects retained for audit/versioning immutability)
 router.delete('/:id', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthRequest, res: Response) => {
   const filter: any = { _id: req.params.id };
