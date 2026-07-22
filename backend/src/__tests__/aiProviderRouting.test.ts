@@ -295,3 +295,50 @@ describe('production does not depend on backend .env keys', () => {
     process.env.NODE_ENV = original;
   });
 });
+
+describe('parseJsonCompletion — OpenAI and NVIDIA response shapes', () => {
+  it('parses a bare JSON object (OpenAI json_object mode)', async () => {
+    const { parseJsonCompletion } = await import('../services/aiService');
+    expect(parseJsonCompletion('{"demand":"High"}')).toEqual({ demand: 'High' });
+  });
+
+  it('parses JSON wrapped in a ```json fence (common on NVIDIA Llama)', async () => {
+    const { parseJsonCompletion } = await import('../services/aiService');
+    const raw = '```json\n{"demand":"Very High","topMarkets":"USA"}\n```';
+    expect(parseJsonCompletion(raw)).toEqual({ demand: 'Very High', topMarkets: 'USA' });
+  });
+
+  it('parses JSON wrapped in a bare fence', async () => {
+    const { parseJsonCompletion } = await import('../services/aiService');
+    expect(parseJsonCompletion('```\n{"a":1}\n```')).toEqual({ a: 1 });
+  });
+
+  it('ignores prose before and after the object', async () => {
+    const { parseJsonCompletion } = await import('../services/aiService');
+    const raw = 'Sure! Here is the analysis:\n{"demand":"Medium"}\nHope this helps.';
+    expect(parseJsonCompletion(raw)).toEqual({ demand: 'Medium' });
+  });
+
+  it('parses a top-level array', async () => {
+    const { parseJsonCompletion } = await import('../services/aiService');
+    expect(parseJsonCompletion('["a","b"]')).toEqual(['a', 'b']);
+  });
+
+  it('throws AIResponseError on empty or unparseable output', async () => {
+    const { parseJsonCompletion, AIResponseError } = await import('../services/aiService');
+    expect(() => parseJsonCompletion('')).toThrow(AIResponseError);
+    expect(() => parseJsonCompletion(null)).toThrow(AIResponseError);
+    expect(() => parseJsonCompletion('I cannot help with that.')).toThrow(AIResponseError);
+    expect(() => parseJsonCompletion('{"broken": ')).toThrow(AIResponseError);
+  });
+
+  it('an unreadable provider payload never becomes fabricated data', async () => {
+    // Regression: the old catch blocks substituted COMP_<market> certifications,
+    // a complianceScore of 75, and canned recommendations on parse failure.
+    const { parseJsonCompletion } = await import('../services/aiService');
+    let thrown: any;
+    try { parseJsonCompletion('not json at all'); } catch (e) { thrown = e; }
+    expect(thrown?.name).toBe('AIResponseError');
+    expect(JSON.stringify(thrown)).not.toMatch(/COMP_|General Compliance|75/);
+  });
+});

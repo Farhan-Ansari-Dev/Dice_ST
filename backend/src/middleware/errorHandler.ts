@@ -46,6 +46,12 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     return res.status(503).json({ success: false, error: 'ai_unavailable', message: err.message })
   }
 
+  // Provider reachable but the payload was unreadable — retryable, and a
+  // different operator action from "no key configured".
+  if (err?.name === 'AIResponseError') {
+    return res.status(502).json({ success: false, error: 'ai_response_invalid', message: err.message })
+  }
+
   const statusCode = err.statusCode ?? err.status ?? 500
   // Operational (4xx) errors carry their message; unexpected 5xx errors must not
   // leak internals in production (stack details are in the server log above).

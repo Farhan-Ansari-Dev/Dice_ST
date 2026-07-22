@@ -83,7 +83,7 @@ export async function getProviderKey(provider: ProviderName): Promise<string | n
       } catch (e) {
         // Wrong master key, or tampered ciphertext. Fall through rather than
         // hard-failing, but make it loud — this is an operational incident.
-        logger.error(`[credentials] failed to decrypt key for ${provider}`, { error: String(e) });
+        logger.error(`[credentials] failed to decrypt key for ${provider}: ${String(e)}`);
       }
     }
   }

@@ -166,7 +166,7 @@ export async function analyseProductImage(
   try {
     return normalise(extractJson(raw));
   } catch (e) {
-    logger.error('[vision] failed to parse model output', { error: String(e), raw: raw.slice(0, 500) });
+    logger.error(`[vision] failed to parse model output: ${String(e)} | raw: ${raw.slice(0, 400)}`);
     throw new Error('The vision model returned an unreadable response. Please retry with a clearer photo.');
   }
 }

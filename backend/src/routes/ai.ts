@@ -117,7 +117,7 @@ router.post(
         } catch (e) {
           // A storage failure must not discard a completed analysis — return the
           // JSON and let the client retry the document separately.
-          logger.error('[ai/analyze-product-image] report generation failed', { analysisId, error: String(e) })
+          logger.error(`[ai/analyze-product-image] report generation failed analysisId=${analysisId}: ${String(e)}`)
         }
       }
 
@@ -126,7 +126,7 @@ router.post(
       if (e instanceof VisionUnavailableError) {
         return res.status(503).json({ success: false, error: 'ai_unavailable', message: e.message })
       }
-      logger.error('[ai/analyze-product-image] analysis failed', { analysisId, error: String(e) })
+      logger.error(`[ai/analyze-product-image] analysis failed analysisId=${analysisId}: ${String(e)}`)
       return res.status(502).json({
         success: false,
         error: 'analysis_failed',
@@ -150,7 +150,7 @@ router.post(
       const report = await generateAndStoreReport(analysis, req.user!._id.toString())
       return sendSuccess(res, report)
     } catch (e) {
-      logger.error('[ai/product-report] failed', { error: String(e) })
+      logger.error(`[ai/product-report] failed: ${String(e)}`)
       return res.status(502).json({ success: false, error: 'report_failed', message: 'Could not generate the report. Please retry.' })
     }
   }),

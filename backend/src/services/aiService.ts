@@ -86,6 +86,50 @@ export class AIUnavailableError extends Error {
   }
 }
 
+/**
+ * Raised when the provider replied but the payload could not be understood.
+ * Distinct from AIUnavailableError: the provider is reachable, so this is
+ * retryable and usually indicates a model/prompt mismatch.
+ */
+export class AIResponseError extends Error {
+  readonly code = 'ai_response_invalid';
+  constructor(message = 'The AI provider returned an unreadable response. Please retry.') {
+    super(message);
+    this.name = 'AIResponseError';
+  }
+}
+
+/**
+ * Parses a JSON payload from a completion.
+ *
+ * `response_format: json_object` is honoured by OpenAI but not reliably by
+ * NVIDIA NIM's Llama models, which frequently wrap the object in ```json
+ * fences or add a sentence before it. Stripping fences and taking the outermost
+ * object makes the same prompt work on both supported providers.
+ */
+export function parseJsonCompletion<T = any>(raw: string | null | undefined): T {
+  const text = (raw ?? '').trim();
+  if (!text) throw new AIResponseError();
+
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced ? fenced[1] : text).trim();
+
+  // Take the outermost object or array, ignoring any prose around it.
+  const firstObj = candidate.indexOf('{');
+  const firstArr = candidate.indexOf('[');
+  const start =
+    firstObj === -1 ? firstArr : firstArr === -1 ? firstObj : Math.min(firstObj, firstArr);
+  const end = Math.max(candidate.lastIndexOf('}'), candidate.lastIndexOf(']'));
+
+  if (start === -1 || end <= start) throw new AIResponseError();
+
+  try {
+    return JSON.parse(candidate.slice(start, end + 1)) as T;
+  } catch {
+    throw new AIResponseError();
+  }
+}
+
 /** Normalises provider SDK errors, which frequently have an empty `.message`. */
 function describeProviderError(err: any): string {
   return (
@@ -219,10 +263,12 @@ export const aiService = {
       temperature: 0.2,
     })
 
-    try {
-      return JSON.parse(completion.choices[0].message.content ?? '{}')
-    } catch {
-      return { issues: [], recommendations: ['Document analysis complete'], complianceScore: 75 }
+    // A parse failure must not become a fabricated complianceScore of 75.
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content)
+    return {
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+      complianceScore: typeof parsed.complianceScore === 'number' ? parsed.complianceScore : 0,
     }
   },
 
@@ -245,18 +291,17 @@ export const aiService = {
       temperature: 0.3,
     });
 
-    try {
-      const parsed = JSON.parse(completion.choices[0].message.content ?? '{}');
-      const result = {
-        demand: parsed.demand || 'Unknown',
-        profitMargin: parsed.profitMargin || 'Unknown',
-        topMarkets: parsed.topMarkets || 'Unknown',
-      };
-      await redis.setex(cacheKey, 86400, JSON.stringify(result)); // Cache for 1 day
-      return result;
-    } catch {
-      return { demand: 'Unknown', profitMargin: 'Unknown', topMarkets: 'Unknown' };
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content);
+    if (!parsed.demand && !parsed.profitMargin && !parsed.topMarkets) {
+      throw new AIResponseError('The trade analysis response was missing every expected field.');
     }
+    const result = {
+      demand: String(parsed.demand ?? 'Not determined'),
+      profitMargin: String(parsed.profitMargin ?? 'Not determined'),
+      topMarkets: String(parsed.topMarkets ?? 'Not determined'),
+    };
+    await redis.setex(cacheKey, 86400, JSON.stringify(result)); // Cache for 1 day
+    return result;
   },
 
   async analyzeRisks(context: string): Promise<Array<{ title: string; level: string; desc: string }>> {
@@ -278,14 +323,11 @@ export const aiService = {
       temperature: 0.3,
     });
 
-    try {
-      const parsed = JSON.parse(completion.choices[0].message.content ?? '{}');
-      const risks = parsed.risks || [];
-      await redis.setex(cacheKey, 86400, JSON.stringify(risks)); // Cache for 1 day
-      return risks;
-    } catch {
-      return [];
-    }
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content);
+    const risks = Array.isArray(parsed.risks) ? parsed.risks : Array.isArray(parsed) ? parsed : null;
+    if (!risks) throw new AIResponseError('The risk analysis response contained no risks array.');
+    await redis.setex(cacheKey, 86400, JSON.stringify(risks)); // Cache for 1 day
+    return risks;
   },
 
   async analyzeCertifications(productName: string, markets: string[]): Promise<{ isValid: boolean; message?: string; certifications?: Array<{ code: string; name: string; market: string }> }> {
@@ -317,16 +359,17 @@ Respond EXCLUSIVELY with a JSON object:
       temperature: 0.1,
     });
 
-    try {
-      const parsed = JSON.parse(completion.choices[0].message.content ?? '{}');
-      return {
-        isValid: parsed.isValid !== false,
-        message: parsed.message,
-        certifications: parsed.certifications || markets.map(m => ({ code: `COMP_${m}`, name: `${m} General Compliance`, market: m }))
-      };
-    } catch {
-      return { isValid: true, certifications: markets.map(m => ({ code: `COMP_${m}`, name: `${m} General Compliance`, market: m })) };
+    // Never substitute invented certification codes, on either path.
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content);
+    const isValid = parsed.isValid !== false;
+    if (isValid && !Array.isArray(parsed.certifications)) {
+      throw new AIResponseError('The certification response contained no certifications array.');
     }
+    return {
+      isValid,
+      message: parsed.message,
+      certifications: isValid ? parsed.certifications : undefined,
+    };
   },
 
   async getComplianceRecommendations(userId: string): Promise<string[]> {
@@ -352,13 +395,12 @@ Respond EXCLUSIVELY with a JSON object:
       temperature: 0.5,
     })
 
-    try {
-      const parsed = JSON.parse(completion.choices[0].message.content ?? '{}')
-      const recommendations = parsed.recommendations ?? parsed
-      await redis.setex(cacheKey, 3600, JSON.stringify(recommendations))
-      return recommendations
-    } catch {
-      return ['Review your upcoming certificate renewals', 'Ensure all product test reports are current', 'Monitor BIS circular updates for your product categories']
-    }
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content)
+    const recommendations = Array.isArray(parsed.recommendations)
+      ? parsed.recommendations
+      : Array.isArray(parsed) ? parsed : null
+    if (!recommendations) throw new AIResponseError('The recommendations response was not a list.')
+    await redis.setex(cacheKey, 3600, JSON.stringify(recommendations))
+    return recommendations
   },
 }
