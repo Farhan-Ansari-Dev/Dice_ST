@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -55,10 +55,15 @@ const AboutScreen: React.FC = () => {
           end={{ x: 1, y: 1 }}
         >
           <View style={styles.appIconWrapper}>
-            <Text style={styles.appIconText}>DICE</Text>
+            <Image
+              source={require('../../../assets/logo.png')}
+              style={styles.appIcon}
+              resizeMode="contain"
+              accessibilityLabel="DICE by Sanyog logo"
+            />
           </View>
           <Text style={styles.appName}>DICE</Text>
-          <Text style={styles.appTagline}>Digital India Compliance Engine</Text>
+          <Text style={styles.appTagline}>Digital Identity &amp; Compliance Ecosystem</Text>
           <View style={styles.versionRow}>
             <View style={styles.versionChip}>
               <Text style={styles.versionChipText}>Version {APP_VERSION}</Text>
@@ -81,9 +86,9 @@ const AboutScreen: React.FC = () => {
         {/* Stats row */}
         <View style={styles.statsRow}>
           {[
-            { value: '0', label: 'Certifications' },
-            { value: '0', label: 'Businesses' },
-            { value: '0%', label: 'Compliance Rate' },
+            { value: '500+', label: 'Certifications' },
+            { value: '100+', label: 'Businesses' },
+            { value: '95%',  label: 'Compliance Rate' },
           ].map((s) => (
             <LinearGradient
               key={s.label}
@@ -135,8 +140,8 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     headerTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: colors.textPrimary },
     content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 60 },
     appCard: { borderRadius: BorderRadius.xl, padding: 28, alignItems: 'center', marginBottom: 16 },
+    appIcon: { width: '100%', height: '100%' },
     appIconWrapper: { width: 100, height: 100, borderRadius: 24, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginBottom: 16, padding: 8 },
-    appIconText: { fontSize: 26, fontWeight: '900', color: colors.primaryDark, letterSpacing: 1.4 },
     appName: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', marginBottom: 4 },
     appTagline: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginBottom: 14 },
     versionRow: { alignItems: 'center' },
