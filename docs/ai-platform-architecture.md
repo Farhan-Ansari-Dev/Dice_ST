@@ -132,6 +132,22 @@ adapter a pure, unit-testable translation layer.
 performed by the vision model. See §6.2 — this is a real accuracy limitation and
 the reason `ocr` is a separate capability rather than an alias for `vision`.
 
+**Ollama is development and testing only.** Confirmed as a decision, and
+enforced rather than documented:
+
+- The adapter carries `productionEligible = false`.
+- `AIConfigService` refuses to resolve Ollama for any feature when
+  `NODE_ENV === 'production'`, raising a startup-time configuration error rather
+  than failing at request time.
+- Ollama can never be selected as `fallbackProvider` in production — a fallback
+  chain that silently lands on an unmanaged local model would produce
+  compliance output of unknown provenance.
+- The admin UI marks it "development only" and hides it from production
+  provider pickers.
+
+Its value is real but narrow: contract-testing adapters and running the
+evaluation harness without incurring provider spend.
+
 ### 3.3 Structured output
 
 Providers differ substantially here, so the adapter normalises:
@@ -250,6 +266,17 @@ aiSettings: {
       deployment?: string;      // Azure deployment name
       models: { chat?: string; vision?: string; embeddings?: string };
     };
+  };
+
+  // Hard enforcing limits — see §10.2
+  limits: {
+    user: { perMinute: number; perDay: number };
+    org: {
+      perMinute: number; perDay: number; perMonth: number;
+      dailyCostUsd: number; monthlyCostUsd: number;
+      timezone: string;             // calendar-day boundary for spend caps
+    };
+    warnAtPercent: number;          // 80
   };
 
   features: {
@@ -416,9 +443,20 @@ what ships today — this is the property that makes the output defensible.
 
 ---
 
-## 8. Compliance knowledge layer (RAG extension point)
+## 8. Compliance knowledge layer (RAG)
 
-Interfaces now, implementation later, **no API change when it lands**.
+**RAG is a core platform component**, designed in full in
+[ai-rag-architecture.md](./ai-rag-architecture.md) — ingestion, clause-aware
+chunking, multilingual embeddings, hybrid search, reranking, citations,
+versioning, tenant permissions, and caching. The vector layer is a
+`VectorStoreAdapter` with **Qdrant as the initial target** and pgvector or Atlas
+Vector Search as drop-in alternatives.
+
+Implementation is still phased (R0–R4 in that document); what ships in Phase 1
+here is the interface surface, so nothing changes when the real provider lands.
+
+The contract the router depends on: interfaces now, implementation later,
+**no API change when it lands**.
 
 ```ts
 export interface KnowledgeProvider {
@@ -455,6 +493,34 @@ still owns the conclusion. RAG must never become a backdoor for the model to
 assert certification status.
 
 ---
+
+## 8b. AI Feature Matrix
+
+Which platform capability each product feature consumes. Read this as the
+dependency map: a change to a column affects every feature with a mark in it.
+
+| Feature | LLM | Vision | OCR | RAG | Vector DB | Cache | Admin config | Notes |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|---|
+| **AI Quality Analyzer** (`vision.product_analysis`) | ✅ | ✅ | ✅ | ◐ R2 | ◐ R2 | ✅ | ✅ | Barcode/QR by **decoder, not LLM** (§7.3) |
+| **Export Compliance Report** (`report.generation`) | ❌ | ❌ | ❌ | ◐ R2 | ◐ R2 | ❌ | ✅ | Deterministic render; cites RAG chunks when available |
+| **Compliance Engine** (`compliance.rules`) | ❌ | ❌ | ❌ | ◐ R2 | ◐ R2 | ✅ | ✅ | **Never** LLM-driven — rules only (§7.2) |
+| **DICE AI Assistant** (`chat.assistant`) | ✅ | ❌ | ❌ | ◐ R2 | ◐ R2 | ✅ | ✅ | Biggest RAG beneficiary |
+| **Document Analysis** (`document.analysis`) | ✅ | ◐ | ✅ | ◐ R4 | ◐ R4 | ✅ | ✅ | OCR for scanned uploads |
+| **AI Search** (`search.semantic`) | ◐ | ❌ | ❌ | ✅ R1 | ✅ R1 | ✅ | ✅ | Retrieval-first; LLM only to summarise |
+| **HS Code Analysis** (`analysis.hs_code`) | ✅ | ❌ | ❌ | ◐ R3 | ◐ R3 | ✅ | ✅ | Tariff schedules are a strong RAG corpus |
+| **Risk Analysis** (`analysis.risk`) | ✅ | ❌ | ❌ | ◐ R3 | ◐ R3 | ✅ | ✅ | |
+| **Certification Recommendations** (`compliance.recommendations`) | ◐ | ❌ | ❌ | ◐ R2 | ◐ R2 | ✅ | ✅ | Rules primary; LLM only for phrasing |
+| **Knowledge Ingestion** (`knowledge.ingest`) | ❌ | ❌ | ✅ | ✅ R1 | ✅ R1 | ❌ | ✅ | Embeddings capability; OCR for scanned gazettes |
+| **Support Chat Assist** (`support.assist`) | ✅ | ❌ | ❌ | ◐ R3 | ◐ R3 | ✅ | ✅ | Not yet built |
+
+✅ used · ◐ planned (phase noted) · ❌ not used
+
+**Two rows deserve emphasis.** The Compliance Engine and Export Report have **no
+LLM dependency at all** — that is deliberate and is the property that makes DICE
+output defensible. Adding one later would undo the safety boundary in §7.2.
+
+Every row depends on **Admin config**, which is the point of the programme: no
+AI behaviour anywhere is changeable only by redeploy.
 
 ## 9. AI analytics
 
@@ -503,24 +569,113 @@ must not carry forward:
    public `GET /config` correctly strips it; the admin route does not. Any
    admin session, browser cache, or proxy log now holds the key.
 
-**Proposed remediation:**
+**Approved remediation — lands BEFORE Phase 1, as a standalone security fix.**
 
-- Keys move to `AIProviderCredential`, a separate collection, encrypted at rest
-  with AES-256-GCM under a `CONFIG_ENCRYPTION_KEY` held only in the environment.
-  `aiSettings.providers[x].apiKeyRef` stores a reference, never the value.
-- No API route returns a key. Ever. The admin UI shows presence, last-4, and
-  last-rotated; writes are set-only.
-- Key material is redacted from logs, audit records, and error messages.
-- A key-rotation endpoint records the actor in `AuditLog` without the value.
+This is not sequenced behind the platform programme. The defects are live.
 
-Migration for existing keys is described in §11.
+**Storage.** A new `AIProviderCredential` collection, one document per provider:
 
-### 10.2 Other considerations
+```ts
+{
+  provider: 'nvidia' | 'openai' | ...,   // unique
+  ciphertext: Buffer,      // AES-256-GCM
+  iv: Buffer,              // 12-byte, unique per encryption
+  authTag: Buffer,         // GCM integrity tag
+  keyVersion: number,      // supports envelope-key rotation
+  last4: string,           // display only — never the full key
+  rotated_at: Date,
+  rotated_by: ObjectId,
+}
+```
 
-- **Authorisation** — AI config is `admin`/`super_admin` only, via the existing
-  `requireRole`. Prompt editing is `super_admin` only: a prompt is executable
-  configuration, and the ability to rewrite the system prompt is equivalent to
-  code deployment.
+- AES-256-GCM (authenticated encryption — a tampered ciphertext fails to
+  decrypt rather than silently yielding garbage).
+- Master key from `CONFIG_ENCRYPTION_KEY`, environment only, never in the
+  database. Absent at boot → `validateEnv()` fails fast, matching the existing
+  startup-secret behaviour in `index.ts`.
+- `keyVersion` allows the master key to be rotated without re-entering every
+  provider key.
+- `aiSettings.providers[x].apiKeyRef` stores a provider name reference. The
+  `aiSettings.apiKey` field is emptied and then removed (§11 Phase 2).
+
+**Never returned by any API.** A single `redactCredentials()` helper is applied
+on the way out of *every* config route, and `GET /config/admin` — which today
+returns the raw Mongoose document including the plaintext key — is changed to
+project through it. The admin UI receives `{ present: true, last4: '…3f9a',
+rotatedAt }` and nothing more. Writes are set-only: there is no read path, so
+there is nothing for a browser cache, proxy log, or screenshot to leak.
+
+Decryption happens in exactly one place — `AIConfigService`, when assembling the
+`AdapterContext` — and the plaintext exists only for the life of the request.
+
+**Defence in depth.**
+- A serializer-level guard: any object leaving a config route is scanned for
+  key-shaped strings (`sk-`, `nvapi-`, high-entropy 32+ char tokens) and the
+  response is failed rather than sent if one is found. A test asserts this.
+- Redaction in logs, `AuditLog`, error messages, and provider SDK error objects
+  (which frequently echo request headers).
+- Rotation writes an `AuditLog` entry with actor and timestamp, never the value.
+
+**Migration of existing keys** — a one-shot idempotent script reads the current
+plaintext `aiSettings.apiKey`, encrypts it into `AIProviderCredential` under the
+configured provider, verifies decryption round-trips, then clears the plaintext
+field. Because the key has been stored in plaintext in MongoDB and returned over
+the admin API, **it should be treated as compromised and rotated at the provider
+after migration.** Encrypting a key that may already have leaked is not
+sufficient on its own.
+
+### 10.2 Hard usage limits
+
+**Approved: limits are enforcing, not advisory.** A request that would exceed a
+limit is rejected with `429` and a typed `AIQuotaExceededError` naming which
+limit was hit and when it resets.
+
+Five dimensions, all enforced:
+
+| Scope | Window | Config key |
+|---|---|---|
+| Per user | rolling | `limits.user.perMinute`, `.perDay` |
+| Per organisation | rolling | `limits.org.perMinute`, `.perDay`, `.perMonth` |
+| Per feature (per org) | rolling | `features[f].rateLimit` |
+| Daily spend (per org) | calendar day, org timezone | `limits.org.dailyCostUsd` |
+| Monthly spend (per org) | calendar month | `limits.org.monthlyCostUsd` |
+
+**Mechanism.** Redis counters, checked *and reserved* before dispatch, then
+reconciled against actual token usage on completion. Checking after the call
+would let a burst of concurrent requests all pass a stale read and blow the cap
+— so the counter is incremented optimistically at admission and adjusted down if
+the call fails. Keys carry the window in their name
+(`ai:q:{orgId}:{YYYY-MM-DD}`) and expire naturally, so no sweeper job is needed.
+
+**Cost limits use estimated cost** (§9), which lags provider billing. Caps are
+therefore set with headroom and the dashboard shows estimate-vs-actual drift.
+
+**Ordering matters:** counters are checked cheapest-first (feature flag → rate
+limit → spend cap) so a disabled feature never costs a Redis round-trip on the
+spend key.
+
+**Fallback does not bypass limits.** A fallback invocation is a second billable
+call and is counted as one. Otherwise a provider outage silently doubles spend.
+
+**Admin visibility:** current consumption against every cap is shown in the AI
+Usage panel, and an org approaching a cap (80%) raises a notification rather
+than surprising the user at 100%.
+
+**Warn-then-block for spend:** at 80% the org admin is notified; at 100% new AI
+requests are refused. In-flight requests complete. This was the open decision in
+§14 and is resolved as a hard stop — a runaway loop against a paid vision model
+is a materially worse outcome than a blocked feature.
+
+### 10.3 Other considerations
+
+- **Authorisation** — AI config is `admin`/`super_admin`. **Prompt editing and
+  activation are `super_admin` only, confirmed.** A prompt is executable
+  configuration; the ability to rewrite a system prompt is equivalent to
+  deploying code, with none of the review or CI. Every create, activate and
+  rollback writes an `AuditLog` entry recording actor, prompt key, version,
+  and a diff summary. Version history is immutable — editing creates a new
+  version and never mutates an existing one, so the audit trail cannot be
+  rewritten from the UI.
 - **SSRF** — `baseUrl` (Ollama, Azure) is operator-supplied and becomes an
   outbound request target. It must be validated against an allowlist and must
   reject link-local and private ranges unless explicitly permitted, or the AI
@@ -542,7 +697,14 @@ Migration for existing keys is described in §11.
 
 ## 11. Migration strategy
 
-Five phases, each independently shippable and reversible. No big-bang cutover.
+Each phase independently shippable and reversible. No big-bang cutover.
+
+**Phase 0 — Security remediation. Ships first, standalone.**
+Encrypt provider credentials at rest, remove the plaintext key from every API
+response, add the serializer guard and its test, migrate the existing key, and
+rotate it at the provider. Independent of the rest of this programme and
+deployable on its own; nothing below depends on it beyond reading credentials
+through `AIConfigService`. See §10.1.
 
 **Phase 1 — Foundation, no behaviour change.**
 Add router, config service, adapters for NVIDIA and OpenAI, usage logging.
@@ -585,8 +747,14 @@ New **AI Platform** section (extends the existing `RemoteConfigPage`):
   fallback/rate-limit, and an enable toggle.
 - **Prompts** — list by key, version history, diff between versions, edit
   (creates a draft), activate, roll back. `super_admin` only.
-- **Usage** — spend and latency by provider/feature/org over time, error rate,
-  fallback rate, top consumers. Reads `AIUsageLog`.
+- **Usage & limits** — spend and latency by provider/feature/org over time,
+  error rate, fallback rate, top consumers, and **live consumption against every
+  hard limit** with the 80% warning state visible. Reads `AIUsageLog`.
+- **Credentials** — set/rotate per provider. Set-only: presence, last-4 and
+  rotated-at are shown; the key itself has no read path (§10.1).
+- **Knowledge corpus** (RAG phases) — sources, versions with effective dates,
+  ingestion run history and failures, and a retrieval test console for
+  validating what a given query returns before it reaches customers.
 
 ---
 
@@ -612,34 +780,43 @@ mobile client shipped in `19d73d3` keeps working with no change.
 
 ---
 
-## 14. Open decisions — I need your call
+## 14. Decisions
 
-These change the design materially and I will not guess them.
+### 14.1 Resolved
 
-1. **Vector store for future RAG.** MongoDB Atlas Vector Search keeps everything
-   in one datastore and adds no infrastructure, but requires Atlas (not
-   self-hosted Mongo). pgvector is stronger but adds Postgres to a stack that
-   currently has none. **Which is acceptable?** This affects the
-   `KnowledgeProvider` interface only slightly, but it affects infrastructure
-   planning a lot.
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Vector store | **Qdrant** initial, behind `VectorStoreAdapter`; pgvector / Atlas remain drop-in. |
+| 2 | Ollama scope | **Development and testing only.** Blocked in production by config, not convention (§3.2). |
+| 3 | Cost controls | **Hard stop** at 100%, notify at 80%. In-flight requests complete (§10.2). |
+| 4 | Key-storage defects | **Fixed before Phase 1**, as a standalone security change (§10.1). |
+| 5 | Prompt editing | **`super_admin` only**, immutable versions, full audit (§10.3). |
+| 6 | RAG status | **Core platform component**, fully designed in the companion doc. |
 
-2. **Is Ollama actually in scope?** It implies self-hosted GPU infrastructure.
-   Including the adapter is cheap; provisioning to serve production compliance
-   analysis is not. Adapter only, or a real deployment target?
+### 14.2 Still open
 
-3. **Cost controls.** Should a per-org monthly spend cap **hard-stop** AI
-   features, or warn and continue? A hard stop is safer commercially and worse
-   for users mid-workflow. This needs a product decision, not an engineering one.
+1. **Corpus licensing — blocks RAG R1, not Phase 1.** Gazette notifications and
+   QCOs are government works, but **IS standards are copyrighted and sold by
+   BIS**. Ingesting their full text may not be licensable. R1 is scoped to
+   freely reproducible instruments with IS standards *referenced by number
+   only* until legal confirms. This needs an answer before ingestion, not after.
 
-4. **Do the two key-storage defects (§10.1) get fixed immediately**, ahead of
-   this programme? They are live now. I would treat them as a standalone
-   security fix rather than waiting for Phase 2 — but that is your call on
-   sequencing.
+2. **Qdrant hosting** — self-hosted in the existing compose stack, or Qdrant
+   Cloud? Affects backup, HA, and data residency (the `User` model already
+   carries `country_code` for residency reasons).
 
-5. **Prompt editing in production.** A bad system prompt is a production
-   incident with no code review and no CI. I strongly recommend prompt
-   activation require a second approver, or at minimum be restricted to
-   `super_admin` with full audit. Confirm which.
+3. **Reranker provider** — Cohere Rerank is strongest but adds a seventh
+   vendor; a cross-encoder on the existing NVIDIA NIM endpoint keeps vendor
+   count flat at some quality cost.
+
+4. **Corpus ownership** — ingestion quality is a compliance-expertise task, not
+   an engineering one. Without a named owner and a review workflow the index
+   will drift out of date and become actively harmful.
+
+5. **Spend cap defaults** — what daily and monthly USD figures per org? I will
+   ship conservative defaults and they will be wrong for your economics.
+
+None of these block Phase 1.
 
 ---
 
@@ -647,7 +824,11 @@ These change the design materially and I will not guess them.
 
 Stated plainly so scope is not assumed:
 
-- No RAG ingestion, chunking, embedding, or retrieval implementation
+- **No RAG implementation in Phase 1.** RAG is a core component and is fully
+  designed, but only its interfaces (`KnowledgeProvider`,
+  `VectorStoreAdapter`, `NullKnowledgeProvider`) ship in Phase 1. Ingestion,
+  embedding, retrieval and reranking arrive in R1–R4, and R1 is blocked on the
+  corpus-licensing question in §14.2.
 - No fine-tuning or model hosting
 - No streaming responses (the current UX is request/response; adding streaming
   later changes the adapter interface and should be designed deliberately)
