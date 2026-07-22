@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Search, Plus, Filter, MoreHorizontal, Award, Trash2, RefreshCcw, Edit2, Download } from 'lucide-react'
+import { Search, Plus, Filter, MoreHorizontal, Award, Trash2, RefreshCcw, Edit2, Download, CheckCircle2, Clock } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Avatar from '../../components/common/Avatar'
 import Badge from '../../components/common/Badge'
@@ -73,12 +73,16 @@ export default function ClientsPage() {
 
   const handleExportCSV = () => {
     if (!filtered || filtered.length === 0) return;
-    const headers = ['Name', 'Email', 'Company', 'Status', 'Updated At'];
+    const headers = ['Name', 'Email', 'Company', 'Status', 'Onboarding', 'Onboarding Completed At', 'Business Role', 'Company Size', 'Updated At'];
     const rows = filtered.map((c: any) => [
       `"${c.name || ''}"`,
       `"${c.email || ''}"`,
       `"${c.org_id?.name || ''}"`,
       `"${c.deleted_at ? 'Suspended' : 'Active'}"`,
+      `"${c.onboarding_completed_at ? 'Complete' : 'Pending'}"`,
+      `"${c.onboarding_completed_at || ''}"`,
+      `"${c.business_role || ''}"`,
+      `"${c.company_size || ''}"`,
       `"${c.updated_at || ''}"`
     ]);
     const csvContent = [headers.join(','), ...rows.map((r: string[]) => r.join(','))].join('\n');
@@ -153,16 +157,16 @@ export default function ClientsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
-              {['Client', 'Company', 'Status', 'Certificates', 'Open Apps', 'Last Activity', 'Actions'].map(h => (
+              {['Client', 'Company', 'Status', 'Onboarding', 'Certificates', 'Open Apps', 'Last Activity', 'Actions'].map(h => (
                 <th key={h} style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textAlign: 'left', padding: '12px 16px', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-               <tr><td colSpan={7} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading clients...</td></tr>
+               <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading clients...</td></tr>
             ) : filtered.length === 0 ? (
-               <tr><td colSpan={7} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No clients found.</td></tr>
+               <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No clients found.</td></tr>
             ) : filtered.map((client: any) => (
               <tr key={client._id} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.15s', opacity: client.deleted_at ? 0.5 : 1 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
@@ -178,6 +182,24 @@ export default function ClientsPage() {
                 </td>
                 <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: 13 }}>{client.org_id?.name || '—'}</td>
                 <td style={{ padding: '14px 16px' }}><Badge status={client.deleted_at ? 'suspended' : 'active'} size="sm" /></td>
+                <td style={{ padding: '14px 16px' }}>
+                  {client.onboarding_completed_at ? (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <CheckCircle2 size={13} color="var(--accent-green, #22c55e)" />
+                        <span style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>Complete</span>
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>
+                        {[client.business_role, client.company_size].filter(Boolean).join(' · ') || formatDate(client.onboarding_completed_at)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Clock size={13} color="var(--text-muted)" />
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Pending</span>
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Award size={13} color="var(--accent-purple)" />
