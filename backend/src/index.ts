@@ -79,6 +79,14 @@ async function main() {
   io.on('connection', (socket) => {
     socket.on('join_org', (orgId: string) => socket.join(`org:${orgId}`));
     socket.on('join_application', (appId: string) => socket.join(`app:${appId}`));
+    // Support chat: both the customer and staff join the ticket room so new
+    // messages, read receipts and typing indicators fan out in realtime.
+    socket.on('join_ticket', (ticketId: string) => socket.join(`ticket:${ticketId}`));
+    socket.on('leave_ticket', (ticketId: string) => socket.leave(`ticket:${ticketId}`));
+    socket.on('ticket:typing', (payload: { ticketId: string; userId: string; name?: string }) => {
+      if (!payload?.ticketId) return;
+      socket.to(`ticket:${payload.ticketId}`).emit('ticket:typing', payload);
+    });
   });
   app.locals.io = io;
 
