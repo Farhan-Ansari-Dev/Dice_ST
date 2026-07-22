@@ -1,6 +1,11 @@
 import { Document, model, Schema, Types } from 'mongoose';
 
-export type MeetingStatus = 'confirmed' | 'cancelled';
+/**
+ * Bookings now require staff approval before they are confirmed, so a request
+ * lands as 'pending' and a certification manager approves or rejects it.
+ * 'confirmed' is retained for records created before this change.
+ */
+export type MeetingStatus = 'pending' | 'approved' | 'rejected' | 'confirmed' | 'cancelled';
 
 export interface IMeeting extends Document {
   user_id: Types.ObjectId;
@@ -12,6 +17,9 @@ export interface IMeeting extends Document {
   topic: string;
   status: MeetingStatus;
   meeting_url?: string;
+  decided_by?: Types.ObjectId;
+  decided_at?: Date;
+  decision_note?: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -25,7 +33,10 @@ const MeetingSchema = new Schema<IMeeting>(
     starts_at: { type: Date, required: true, index: true },
     ends_at: { type: Date, required: true },
     topic: { type: String, required: true, trim: true, maxlength: 160 },
-    status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed', index: true },
+    status: { type: String, enum: ['pending', 'approved', 'rejected', 'confirmed', 'cancelled'], default: 'pending', index: true },
+    decided_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    decided_at: { type: Date },
+    decision_note: { type: String, trim: true, maxlength: 1000 },
     meeting_url: String,
   },
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
