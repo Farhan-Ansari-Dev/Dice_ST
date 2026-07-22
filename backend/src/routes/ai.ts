@@ -11,6 +11,9 @@ import { generateAndStoreReport } from '../services/vision/productReportPdf'
 import { logger } from '../utils/logger'
 
 const router = Router()
+
+// AIUnavailableError is mapped to a 503 centrally in middleware/errorHandler,
+// so every AI-touching route reports the same shape.
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
 
 // In-memory: the image is forwarded to the vision model and never persisted.

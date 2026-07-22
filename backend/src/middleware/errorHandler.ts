@@ -39,6 +39,13 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     return res.status(404).json({ success: false, message: 'Referenced resource not found' })
   }
 
+  // AI features fail loudly rather than returning fabricated compliance data.
+  // Handled here so every route that touches AI (ai.ts, insights.ts) reports
+  // the same recognisable shape without duplicating the check.
+  if (err?.name === 'AIUnavailableError') {
+    return res.status(503).json({ success: false, error: 'ai_unavailable', message: err.message })
+  }
+
   const statusCode = err.statusCode ?? err.status ?? 500
   // Operational (4xx) errors carry their message; unexpected 5xx errors must not
   // leak internals in production (stack details are in the server log above).

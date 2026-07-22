@@ -35,6 +35,36 @@ export async function getAIClientAndModel(modelOverride?: string): Promise<{ ope
   return { openai, model };
 }
 
+/**
+ * Raised when no AI provider is usable — no key configured, or the provider
+ * call failed.
+ *
+ * Every AI function throws this rather than returning invented data. The
+ * previous fallbacks fabricated compliance output: analyzeHsCode returned a
+ * fixed "High / 10%-15% / USA, EU" trade analysis, analyzeCertifications
+ * invented certification codes like COMP_IN, and analyzeRisks returned two
+ * canned risks. A customer cannot tell fabricated compliance advice from real
+ * advice, which makes it worse than a visible outage.
+ */
+export class AIUnavailableError extends Error {
+  readonly code = 'ai_unavailable';
+  constructor(message = 'AI is not configured. Add a provider API key in the Admin Panel to enable AI features.') {
+    super(message);
+    this.name = 'AIUnavailableError';
+  }
+}
+
+/** Normalises provider SDK errors, which frequently have an empty `.message`. */
+function describeProviderError(err: any): string {
+  return (
+    err?.error?.message ??
+    err?.response?.data?.error?.message ??
+    err?.message ??
+    (err?.status ? `provider returned HTTP ${err.status}` : null) ??
+    String(err)
+  );
+}
+
 const SYSTEM_PROMPT = `You are an expert AI compliance assistant for Sanyog Conformity Solutions, a leading certification and compliance consultancy in India. You have deep knowledge of:
 
 - BIS (Bureau of Indian Standards) certification processes and IS standards
@@ -78,19 +108,11 @@ export const aiService = {
     const fullMessage = message + contextStr
     messages.push({ role: 'user', content: fullMessage })
 
-    // Offline/degraded fallback — used when no provider is configured OR the provider call fails.
-    const offlineFallback = async (): Promise<{ response: string; conversationId: string }> => {
-      const greeting = /^\s*(hi|hello|hey|namaste)\b/i.test(message)
-      const fallback = greeting
-        ? `Hello! I'm the Sanyog compliance assistant. AI-powered answers are temporarily unavailable, but I'm still here — you can browse certifications, applications, and insights from the sidebar, or reach support@sanyogconformity.com for expert guidance.`
-        : `I understand your question about "${message.slice(0, 50)}". AI-powered compliance advice is temporarily unavailable. Please contact support@sanyogconformity.com for expert guidance.`
-      messages[messages.length - 1].content = message
-      messages.push({ role: 'assistant', content: fallback })
-      const newConv = await AIConversation.create({ user_id: userId, messages })
-      return { response: fallback, conversationId: newConv._id.toString() }
-    }
-
-    if (!openai) return offlineFallback()
+    // No silent fallback. Writing a canned "AI is unavailable" line into the
+    // conversation renders it as a normal assistant bubble, which reads like an
+    // answer and pollutes the stored history. The client shows an explicit
+    // unavailable state instead.
+    if (!openai) throw new AIUnavailableError()
 
     let completion
     try {
@@ -101,8 +123,9 @@ export const aiService = {
         temperature: 0.6,
       })
     } catch (err: any) {
-      logger.error('[aiService.chat] provider call failed, using fallback:', err?.message)
-      return offlineFallback()
+      const detail = describeProviderError(err)
+      logger.error(`[aiService.chat] provider call failed: ${detail}`)
+      throw new AIUnavailableError(`The AI provider could not be reached: ${detail}`)
     }
 
     const response = completion.choices[0].message.content ?? ''
@@ -132,7 +155,7 @@ export const aiService = {
     const cached = await redis.get(cacheKey)
     if (cached) return cached
 
-    if (!openai) return 'AI summary unavailable — configure API KEY in admin panel to enable.'
+    if (!openai) throw new AIUnavailableError()
 
     const completion = await openai.chat.completions.create({
       model: model,
@@ -151,7 +174,7 @@ export const aiService = {
 
   async analyzeDocument(text: string): Promise<{ issues: string[]; recommendations: string[]; complianceScore: number }> {
     const { openai, model } = await getAIClientAndModel()
-    if (!openai) return { issues: [], recommendations: ['Configure AI API key in Admin Panel for document analysis'], complianceScore: 70 }
+    if (!openai) throw new AIUnavailableError()
 
     const completion = await openai.chat.completions.create({
       model: model,
@@ -177,7 +200,7 @@ export const aiService = {
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    if (!openai) return { demand: 'High', profitMargin: '10% - 15%', topMarkets: 'USA, EU' };
+    if (!openai) throw new AIUnavailableError();
 
     const completion = await openai.chat.completions.create({
       model: model,
@@ -210,10 +233,7 @@ export const aiService = {
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    if (!openai) return [
-      { title: 'Currency Fluctuation', level: 'High', desc: 'Exchange rate volatility.' },
-      { title: 'Logistics', level: 'Medium', desc: 'Potential delays.' }
-    ];
+    if (!openai) throw new AIUnavailableError();
 
     const completion = await openai.chat.completions.create({
       model: model,
@@ -238,12 +258,10 @@ export const aiService = {
 
   async analyzeCertifications(productName: string, markets: string[]): Promise<{ isValid: boolean; message?: string; certifications?: Array<{ code: string; name: string; market: string }> }> {
     const { openai, model } = await getAIClientAndModel()
-    if (!openai) {
-      if (productName.toLowerCase().includes('zebra') || productName.toLowerCase().includes('dog')) {
-        return { isValid: false, message: `${productName} is a live animal. We only provide compliance services for physical manufactured goods, food, cosmetics, electronics, etc.` };
-      }
-      return { isValid: true, certifications: markets.map(m => ({ code: `COMP_${m}`, name: `${m} General Compliance`, market: m })) };
-    }
+    // Previously invented certification codes (COMP_<market>) and did hardcoded
+    // "zebra"/"dog" string matching. Fabricated certification requirements are
+    // the most dangerous possible output for this product.
+    if (!openai) throw new AIUnavailableError();
 
     const prompt = `You are a compliance expert for Sanyog Conformity Solutions. 
 The user wants to certify the product: "${productName}" for markets: ${markets.join(', ')}.
@@ -289,7 +307,7 @@ Respond EXCLUSIVELY with a JSON object:
     const certs = await Certification.find({ org_id: userId }).sort({ expiry_date: 1 }).limit(10).lean()
     const context = certs.map((c: any) => `${c.cert_type}: expires ${c.expiry_date}, status: ${c.status}`).join('; ')
 
-    if (!openai) return ['Review your upcoming certificate renewals', 'Ensure all product test reports are current', 'Monitor BIS circular updates for your product categories']
+    if (!openai) throw new AIUnavailableError()
 
     const completion = await openai.chat.completions.create({
       model: model,

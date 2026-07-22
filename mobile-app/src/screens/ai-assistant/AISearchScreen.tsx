@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
-import { AISearchResult, performAISearch } from '../../data/AISearchDB';
+import aiAssistantService from '../../services/aiAssistantService';
 
 interface ChatMessage {
   id: string;
@@ -24,6 +24,8 @@ interface ChatMessage {
   text?: string;
   action?: any;
   isTyping?: boolean;
+  /** Rendered as a failure notice, visually distinct from an answer. */
+  isError?: boolean;
 }
 
 const AISearchScreen: React.FC = () => {
@@ -44,6 +46,8 @@ const AISearchScreen: React.FC = () => {
     }
   ]);
   const [isTyping, setIsTyping] = useState(false);
+  // Server-assigned thread id, so follow-up questions keep their context.
+  const [conversationId, setConversationId] = useState<string | undefined>();
 
   useEffect(() => {
     if (initialQuery) {
@@ -62,35 +66,36 @@ const AISearchScreen: React.FC = () => {
     setInput('');
     setIsTyping(true);
 
-    // Add dummy typing message
     const typingId = 'typing_' + Date.now();
     setMessages([...newMessages, { id: typingId, role: 'ai', isTyping: true }]);
 
-    // Fetch from mock RAG DB
-    const results = await performAISearch(textToSend.trim());
+    try {
+      const answer = await aiAssistantService.ask(textToSend.trim(), conversationId);
+      setConversationId(answer.conversationId);
 
-    setIsTyping(false);
-    
-    let aiText = '';
-    let action = null;
-
-    if (results.length > 0) {
-      const bestMatch = results[0];
-      if (bestMatch.type === 'navigate') {
-        aiText = `Certainly! I can help you with that. ${bestMatch.content}`;
-        action = bestMatch.action;
-      } else {
-        aiText = bestMatch.content;
-      }
-    } else {
-      aiText = "I'm sorry, I couldn't find an answer to that. Could you please rephrase your question?";
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== typingId),
+        { id: Date.now().toString(), role: 'ai', text: answer.content },
+      ]);
+    } catch (err: any) {
+      // Surfaced as an explicit failure, never as a fabricated answer — a
+      // plausible-looking wrong compliance answer is worse than a visible
+      // outage, because the user cannot tell the difference.
+      const unavailable = err?.name === 'AIUnavailableError';
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== typingId),
+        {
+          id: Date.now().toString(),
+          role: 'ai',
+          isError: true,
+          text: unavailable
+            ? `${err.message}\n\nIn the meantime, you can browse Certifications, Applications and Insights, or contact support@sanyogconformity.com.`
+            : err?.message ?? 'Something went wrong. Please try again.',
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
     }
-    
-    // Replace typing message with actual response
-    setMessages((prev) => {
-      const filtered = prev.filter(m => m.id !== typingId);
-      return [...filtered, { id: Date.now().toString(), role: 'ai', text: aiText, action }];
-    });
   };
 
   useEffect(() => {
@@ -135,8 +140,20 @@ const AISearchScreen: React.FC = () => {
         
         <View style={{ flex: 1, gap: 12 }}>
           {item.text && (
-            <View style={[styles.bubble, styles.aiBubble, { backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF', borderColor: isDark ? 'rgba(255,255,255,0.05)' : colors.border }]}>
-              <Text style={[styles.aiText, { color: colors.textPrimary }]}>{item.text}</Text>
+            <View style={[
+              styles.bubble,
+              styles.aiBubble,
+              item.isError
+                ? { backgroundColor: isDark ? 'rgba(220,38,38,0.12)' : '#FEF2F2', borderColor: isDark ? 'rgba(248,113,113,0.35)' : '#FECACA' }
+                : { backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF', borderColor: isDark ? 'rgba(255,255,255,0.05)' : colors.border },
+            ]}>
+              {item.isError && (
+                <View style={styles.errorHeader}>
+                  <Ionicons name="alert-circle" size={14} color={isDark ? '#F87171' : '#DC2626'} />
+                  <Text style={[styles.errorHeaderText, { color: isDark ? '#F87171' : '#DC2626' }]}>AI unavailable</Text>
+                </View>
+              )}
+              <Text style={[styles.aiText, { color: item.isError ? (isDark ? '#FCA5A5' : '#7F1D1D') : colors.textPrimary }]}>{item.text}</Text>
             </View>
           )}
 
@@ -225,6 +242,8 @@ const styles = StyleSheet.create({
   aiAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   bubble: { borderRadius: 20, padding: 14, borderWidth: 1 },
   aiBubble: { borderBottomLeftRadius: 4 },
+  errorHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  errorHeaderText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
   aiText: { fontSize: 15, lineHeight: 24 },
   resultTitle: { fontSize: 16, fontWeight: '800', marginBottom: 8 },
   sourceWrapper: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(150,150,150,0.1)' },
