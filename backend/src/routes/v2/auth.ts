@@ -118,7 +118,13 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
     data: { otp, ttl_minutes: 10 },
   });
 
-  if (!delivered) {
+  // Local development has no SES credentials, so delivery always fails and the
+  // 502 below made it impossible to log in at all without production email.
+  // In development only, fall back to printing the OTP to the server console.
+  // Strictly gated: any other NODE_ENV (including an unset one) still 502s.
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
+  if (!delivered && !isDevelopment) {
     logger.error(`[auth/send-otp] delivery failed for ${email}`);
     return res.status(502).json({
       error: 'otp_delivery_failed',
@@ -126,8 +132,8 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
     });
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    logger.info(`[DEV] OTP for ${email ?? phone}: ${otp}`);
+  if (isDevelopment) {
+    logger.info(`[DEV] OTP for ${email ?? phone}: ${otp}${delivered ? '' : ' (email delivery unavailable)'}`);
   }
 
   await audit({
@@ -141,8 +147,11 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
 
   return res.json({
     success: true,
-    delivered_via: 'email',
-    delivery_confirmed: delivered,
+    // In development the code is on the server console, which is a real
+    // delivery channel for a developer — the client should proceed to the
+    // OTP screen rather than showing a delivery failure.
+    delivered_via: delivered ? 'email' : 'console',
+    delivery_confirmed: delivered || isDevelopment,
   });
 });
 
