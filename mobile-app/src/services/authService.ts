@@ -68,6 +68,17 @@ const authService = {
   updateProfile: (data: Partial<User>) =>
     api.put<{ success: boolean; data: User }>('/users/me', data).then((res) => (res as any).data),
 
+  /** Starts a phone-number change: sends an OTP to the NEW number. */
+  sendPhoneOtp: (phone: string) =>
+    api.post<{ success: boolean; data: { deliveredVia: string; phone: string } }>(
+      '/users/me/phone/send-otp', { phone },
+    ),
+
+  /** Confirms the code and swaps the number in. Returns the updated user. */
+  verifyPhoneOtp: (otp: string) =>
+    api.post<{ success: boolean; data: User }>('/users/me/phone/verify', { otp })
+      .then((res) => res.data),
+
   logout: () =>
     api.post<{ message: string }>('/auth/logout'),
 

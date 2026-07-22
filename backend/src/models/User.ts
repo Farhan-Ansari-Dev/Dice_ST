@@ -16,6 +16,13 @@ export interface IUser extends Document {
   otp_expires_at?: Date;
   otp_attempts: number;
 
+  // Phone-change verification (a new number must be proven before it replaces
+  // the existing one, so a hijacked session cannot silently move the account).
+  pending_phone?: string;
+  phone_otp_hash?: string;
+  phone_otp_expires_at?: Date;
+  phone_otp_attempts: number;
+
   // 2FA for high-privilege accounts
   totp_secret?: string;
   totp_enabled: boolean;
@@ -88,6 +95,11 @@ const UserSchema = new Schema<IUser>(
     otp_hash:         { type: String, select: false },
     otp_expires_at:   { type: Date, select: false },
     otp_attempts:     { type: Number, default: 0, select: false },
+
+    pending_phone:        { type: String, trim: true, select: false },
+    phone_otp_hash:       { type: String, select: false },
+    phone_otp_expires_at: { type: Date, select: false },
+    phone_otp_attempts:   { type: Number, default: 0, select: false },
 
     totp_secret:   { type: String, select: false },
     totp_enabled:  { type: Boolean, default: false },

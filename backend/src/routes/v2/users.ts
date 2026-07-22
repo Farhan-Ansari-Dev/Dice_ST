@@ -3,6 +3,9 @@ import { authenticate, AuthRequest } from '../../middleware/authMongo'
 import { authorize } from '../../middleware/authorize'
 import { User } from '../../models/User'
 import { sendSuccess, sendError } from '../../utils/response'
+import crypto from 'crypto'
+import { sendSMS } from '../../services/notifications/sms'
+import { logger } from '../../utils/logger'
 import { serializeUser } from '../../utils/serializeUser'
 
 const router = Router()
@@ -122,6 +125,95 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
     return;
   }
 }))
+
+
+// ═══════════════════════════════════════════════════════════════
+// Phone number change — verified by OTP to the NEW number.
+//
+// The new number is held in `pending_phone` until proven, so a hijacked
+// session cannot silently move the account to an attacker's number.
+// ═══════════════════════════════════════════════════════════════
+const PHONE_RE = /^\+?[1-9]\d{7,14}$/;
+
+const hashPhoneOtp = (otp: string) =>
+  crypto.createHash('sha256').update(otp + process.env.JWT_SECRET).digest('hex');
+
+router.post('/me/phone/send-otp', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const phone = String(req.body?.phone ?? '').replace(/[\s()-]/g, '').trim();
+  if (!PHONE_RE.test(phone)) {
+    return res.status(400).json({ success: false, error: 'invalid_phone', message: 'Enter a valid phone number with country code.' });
+  }
+
+  const existing = await User.findOne({ phone, _id: { $ne: req.user!._id } }).select('_id').lean();
+  if (existing) {
+    return res.status(409).json({ success: false, error: 'phone_in_use', message: 'That number is already linked to another account.' });
+  }
+
+  const otp = crypto.randomInt(100_000, 999_999).toString();
+  await User.updateOne({ _id: req.user!._id }, {
+    $set: {
+      pending_phone: phone,
+      phone_otp_hash: hashPhoneOtp(otp),
+      phone_otp_expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      phone_otp_attempts: 0,
+    },
+  });
+
+  const delivered = await sendSMS({
+    to: phone,
+    text: `Your DICE verification code is ${otp}. It expires in 10 minutes.`,
+  });
+
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  if (!delivered && !isDevelopment) {
+    return res.status(502).json({ success: false, error: 'sms_delivery_failed', message: 'Could not send the verification code. Please try again shortly.' });
+  }
+  if (isDevelopment) {
+    logger.info(`[DEV] phone OTP for ${phone}: ${otp}${delivered ? '' : ' (SMS delivery unavailable)'}`);
+  }
+
+  return res.json({ success: true, data: { deliveredVia: delivered ? 'sms' : 'console', phone } });
+}));
+
+router.post('/me/phone/verify', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const otp = String(req.body?.otp ?? '').trim();
+  if (!otp) return res.status(400).json({ success: false, error: 'missing_otp', message: 'Enter the verification code.' });
+
+  const user = await User.findById(req.user!._id)
+    .select('+pending_phone +phone_otp_hash +phone_otp_expires_at +phone_otp_attempts');
+  if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+  if (!user.pending_phone || !user.phone_otp_hash || !user.phone_otp_expires_at || user.phone_otp_expires_at < new Date()) {
+    return res.status(400).json({ success: false, error: 'otp_expired', message: 'That code has expired. Request a new one.' });
+  }
+  if ((user.phone_otp_attempts ?? 0) >= 5) {
+    return res.status(429).json({ success: false, error: 'too_many_attempts', message: 'Too many attempts. Request a new code.' });
+  }
+  if (hashPhoneOtp(otp) !== user.phone_otp_hash) {
+    user.phone_otp_attempts = (user.phone_otp_attempts ?? 0) + 1;
+    await user.save();
+    return res.status(401).json({ success: false, error: 'invalid_otp', message: 'That code is not correct.' });
+  }
+
+  const newPhone = user.pending_phone;
+  user.phone = newPhone;
+  user.pending_phone = undefined;
+  user.phone_otp_hash = undefined;
+  user.phone_otp_expires_at = undefined;
+  user.phone_otp_attempts = 0;
+  await user.save();
+
+  await audit({
+    actor: req.user!._id as any,
+    resource_type: 'user',
+    resource_id: req.user!._id as any,
+    action: 'updated',
+    notes: 'phone_changed',
+    ip: req.ip,
+  });
+
+  return res.json({ success: true, data: await serializeUser(user) });
+}));
 
 router.get('/', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}

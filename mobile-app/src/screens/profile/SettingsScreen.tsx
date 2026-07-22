@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
+import authService from '../../services/authService';
 import Avatar from '../../components/common/Avatar';
 import { useAuthStore } from '../../store/authStore';
 
@@ -24,8 +25,13 @@ const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { user, updateUser } = useAuthStore();
+  const { user, updateUser, setUser } = useAuthStore();
   const [name, setName] = useState(user?.name ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [phoneBusy, setPhoneBusy] = useState(false);
   const [email, setEmail] = useState(user?.email ?? '');
   const [companyName, setCompanyName] = useState(user?.companyName ?? '');
   const [gstNumber, setGstNumber] = useState(user?.gstNumber ?? '');
@@ -90,12 +96,63 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  // Previously this faked a save: an 800ms setTimeout followed by a local-only
+  // updateUser(), so nothing ever reached the server and the change was lost on
+  // the next profile refresh.
   const handleSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('Name required', 'Please enter your full name.');
+      return;
+    }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    updateUser({ name, email, companyName, gstNumber, city, state });
-    setLoading(false);
-    Alert.alert('Saved', 'Profile updated successfully!');
+    try {
+      const updated = await authService.updateProfile({ name: name.trim(), companyName, gstNumber });
+      setUser(updated);
+      Alert.alert('Saved', 'Your profile has been updated.');
+    } catch (err: any) {
+      Alert.alert('Could not save', err?.response?.data?.message ?? 'Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Phone number change (verified by OTP to the new number) ──────────────
+  const handleSendPhoneOtp = async () => {
+    const trimmed = phone.replace(/[\s()-]/g, '').trim();
+    if (!/^\+?[1-9]\d{7,14}$/.test(trimmed)) {
+      Alert.alert('Invalid number', 'Enter a valid phone number including the country code, e.g. +919876543210.');
+      return;
+    }
+    setPhoneBusy(true);
+    try {
+      await authService.sendPhoneOtp(trimmed);
+      setPhoneOtpSent(true);
+      Alert.alert('Code sent', `We sent a 6-digit code to ${trimmed}.`);
+    } catch (err: any) {
+      Alert.alert('Could not send code', err?.response?.data?.message ?? 'Please try again shortly.');
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async () => {
+    if (phoneOtp.trim().length !== 6) {
+      Alert.alert('Enter the code', 'The verification code is 6 digits.');
+      return;
+    }
+    setPhoneBusy(true);
+    try {
+      const updated = await authService.verifyPhoneOtp(phoneOtp.trim());
+      setUser(updated);
+      setPhoneOtpSent(false);
+      setPhoneOtp('');
+      setEditingPhone(false);
+      Alert.alert('Phone updated', 'Your phone number has been verified and saved.');
+    } catch (err: any) {
+      Alert.alert('Verification failed', err?.response?.data?.message ?? 'That code is not correct.');
+    } finally {
+      setPhoneBusy(false);
+    }
   };
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
@@ -137,12 +194,46 @@ const SettingsScreen: React.FC = () => {
             <Input label="Email Address" value={email} onChangeText={setEmail} placeholder="your@email.com" keyboardType="email-address" leftIcon={<Ionicons name="mail-outline" size={18} color={colors.textTertiary} />} />
             <Input
               label="Phone Number"
-              value={user?.phone ?? ''}
-              editable={false}
-              placeholder="+91 XXXXX XXXXX"
+              value={phone}
+              onChangeText={(v) => { setPhone(v); setEditingPhone(true); setPhoneOtpSent(false); }}
+              placeholder="+919876543210"
+              keyboardType="phone-pad"
               leftIcon={<Ionicons name="phone-portrait-outline" size={18} color={colors.textTertiary} />}
-              hint="Phone number cannot be changed"
+              hint={user?.phone ? 'Changing this requires verifying the new number' : 'Add a number to enable SMS alerts'}
             />
+
+            {editingPhone && phone.trim() !== (user?.phone ?? '') && (
+              <View style={{ gap: 10, marginTop: 4 }}>
+                {!phoneOtpSent ? (
+                  <Button
+                    title={phoneBusy ? 'Sending…' : 'Send verification code'}
+                    onPress={handleSendPhoneOtp}
+                    disabled={phoneBusy}
+                    variant="outline"
+                  />
+                ) : (
+                  <>
+                    <Input
+                      label="Verification code"
+                      value={phoneOtp}
+                      onChangeText={setPhoneOtp}
+                      placeholder="6-digit code"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      leftIcon={<Ionicons name="keypad-outline" size={18} color={colors.textTertiary} />}
+                    />
+                    <Button
+                      title={phoneBusy ? 'Verifying…' : 'Verify & save number'}
+                      onPress={handleVerifyPhoneOtp}
+                      disabled={phoneBusy}
+                    />
+                    <TouchableOpacity onPress={handleSendPhoneOtp} disabled={phoneBusy}>
+                      <Text style={{ color: colors.primary, fontSize: 12, textAlign: 'center' }}>Resend code</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            )}
           </LinearGradient>
         </View>
 
