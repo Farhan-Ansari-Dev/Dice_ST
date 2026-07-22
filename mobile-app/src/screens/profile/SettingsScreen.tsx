@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  ActionSheetIOS,
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -17,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
+import PhotoPickerSheet from '../../components/common/PhotoPickerSheet';
 import authService from '../../services/authService';
 import Avatar from '../../components/common/Avatar';
 import { useAuthStore } from '../../store/authStore';
@@ -32,6 +32,7 @@ const SettingsScreen: React.FC = () => {
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [phoneOtp, setPhoneOtp] = useState('');
   const [phoneBusy, setPhoneBusy] = useState(false);
+  const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
   const [email, setEmail] = useState(user?.email ?? '');
   const [companyName, setCompanyName] = useState(user?.companyName ?? '');
   const [gstNumber, setGstNumber] = useState(user?.gstNumber ?? '');
@@ -72,33 +73,11 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleChangePhoto = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Take Photo', 'Choose from Library', 'Remove Photo'],
-          cancelButtonIndex: 0,
-          destructiveButtonIndex: 3,
-        },
-        (index) => {
-          if (index === 1) takePhoto();
-          else if (index === 2) pickFromLibrary();
-          else if (index === 3) updateUser({ avatar: undefined });
-        }
-      );
-    } else {
-      Alert.alert('Change Photo', 'Choose an option', [
-        { text: 'Take Photo', onPress: takePhoto },
-        { text: 'Choose from Library', onPress: pickFromLibrary },
-        { text: 'Remove Photo', style: 'destructive', onPress: () => updateUser({ avatar: undefined }) },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
-  };
+  // Replaces the platform-split ActionSheetIOS / Alert.alert pair. Android
+  // previously fell back to the stock AOSP alert, which looked nothing like the
+  // rest of the app. One Material-style sheet is now used on both platforms.
+  const handleChangePhoto = () => setPhotoSheetVisible(true);
 
-  // Previously this faked a save: an 800ms setTimeout followed by a local-only
-  // updateUser(), so nothing ever reached the server and the change was lost on
-  // the next profile refresh.
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Name required', 'Please enter your full name.');
@@ -254,6 +233,14 @@ const SettingsScreen: React.FC = () => {
         <Button title="Save Changes" onPress={handleSave} loading={loading} fullWidth size="lg" style={{ marginBottom: 20 }} />
         <View style={{ height: 60 }} />
       </ScrollView>
+
+      <PhotoPickerSheet
+        visible={photoSheetVisible}
+        onClose={() => setPhotoSheetVisible(false)}
+        onTakePhoto={takePhoto}
+        onPickFromLibrary={pickFromLibrary}
+        onRemove={user?.avatar ? () => updateUser({ avatar: undefined }) : undefined}
+      />
     </View>
   );
 };
