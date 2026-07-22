@@ -301,10 +301,10 @@ const HomeScreen: React.FC = () => {
           {[
             { id: '1', badge: 'NEW', badgeColor: '#00C853', title: 'AI Product Quality\nIdentifier', desc: 'Scan any product or label to get instant quality, safety & composition insights', icon: 'scan', gradient: ['#311B92', '#00B0FF'], route: 'Identifier' },
             { id: '2', badge: 'POPULAR', badgeColor: '#FF8F00', title: 'Find Your\nCertification Body', desc: 'Compare 50+ CBs on pricing, TAT, scope & reviews — and apply directly', icon: 'git-compare-outline', gradient: ['#004D40', '#00E676'], route: 'Certifications' },
-            { id: '3', badge: 'OFFER', badgeColor: '#FF5252', title: 'Saudi PCoC & SCoC\nCertifications', desc: 'Get your SABER Product and Shipment Certificates approved in just 1-2 days', icon: 'flash', gradient: ['#1A0033', '#8E24AA'], route: 'Applications' },
+            { id: '3', badge: 'OFFER', badgeColor: '#FF5252', title: 'Saudi PCoC & SCoC\nCertifications', desc: 'Get your SABER Product and Shipment Certificates approved in just 1-2 days', icon: 'flash', gradient: ['#1A0033', '#8E24AA'], route: 'Certifications', screen: 'CertificationOverview', params: { serviceId: 'pcoc_scoc' } },
             { id: '4', badge: 'LIVE', badgeColor: '#00B0FF', title: 'Live Regulatory\nUpdates', desc: 'AI-curated feed of BIS, FSSAI, WPC, EPR policy changes — delivered daily', icon: 'newspaper', gradient: ['#3E2723', '#FF8F00'], route: 'Insights' },
           ].map((feature) => (
-            <TouchableOpacity key={feature.id} activeOpacity={0.9} style={styles.richExploreCard} onPress={() => navigation.navigate(feature.route)}>
+            <TouchableOpacity key={feature.id} activeOpacity={0.9} style={styles.richExploreCard} onPress={() => navigation.navigate(feature.route, (feature as any).screen ? { screen: (feature as any).screen, params: (feature as any).params } : undefined)}>
               <LinearGradient colors={feature.gradient as any} style={styles.richExploreGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                 <View style={styles.richExploreTopRow}>
                   <View style={[styles.richExploreBadge, { backgroundColor: feature.badgeColor }]}>

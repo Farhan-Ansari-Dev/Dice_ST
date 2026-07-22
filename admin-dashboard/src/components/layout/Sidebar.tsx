@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Award, ClipboardList, FileText, TrendingUp,
   CreditCard, Truck, FlaskConical, Briefcase, Bot, BarChart3, Settings,
   ChevronLeft, ChevronRight, LogOut, Shield, Sliders,
-  Globe2, Building2, CalendarClock, Package, BookOpen, MessageSquare, GitBranch,
+  Globe2, Building2, CalendarClock, Package, BookOpen, MessageSquare, GitBranch, Send,
 } from 'lucide-react'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
@@ -24,6 +24,7 @@ const NAV = [
   { to: '/market-access/countries',      icon: Globe2,          label: 'Countries' },
   { to: '/market-access/opportunities',  icon: Building2,       label: 'Opportunities' },
   { to: '/standards',                     icon: BookOpen,        label: 'Standards' },
+  { to: '/leads',                        icon: Send,            label: 'Enquiries' },
   { to: '/support-tickets',              icon: MessageSquare,   label: 'Support Tickets' },
   { to: '/workflows',                    icon: GitBranch,       label: 'Workflows' },
   { to: '/consultants/verification',     icon: Shield,          label: 'Verification' },

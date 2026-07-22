@@ -29,6 +29,7 @@ const MeetingAvailabilityPage = lazy(() => import('./pages/consultants/MeetingAv
 const ConsultantVerificationPage = lazy(() => import('./pages/consultants/ConsultantVerificationPage'))
 const StandardsPage = lazy(() => import('./pages/standards/StandardsPage'))
 const SupportTicketsPage = lazy(() => import('./pages/support-tickets/SupportTicketsPage'))
+const LeadsPage = lazy(() => import('./pages/leads/LeadsPage'))
 const WorkflowsPage = lazy(() => import('./pages/workflows/WorkflowsPage'))
 const CountriesPage = lazy(() => import('./pages/market-access/CountriesPage'))
 const OpportunitiesPage = lazy(() => import('./pages/market-access/OpportunitiesPage'))
@@ -88,6 +89,7 @@ function ThemedApp() {
             <Route path="consultants/verification" element={<ConsultantVerificationPage />} />
             <Route path="standards" element={<StandardsPage />} />
             <Route path="support-tickets" element={<SupportTicketsPage />} />
+            <Route path="leads" element={<LeadsPage />} />
             <Route path="workflows" element={<WorkflowsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

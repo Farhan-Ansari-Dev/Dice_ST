@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import CertificationsDashboardScreen from '../../screens/certifications/CertificationsDashboardScreen';
+import CertificationOverviewScreen from '../../screens/certifications/CertificationOverviewScreen';
 import CertificationsListScreen from '../../screens/certifications/CertificationsListScreen';
 import CertificationDetailScreen from '../../screens/certifications/CertificationDetailScreen';
 import NewCertificationScreen from '../../screens/certifications/NewCertificationScreen';
@@ -27,6 +28,7 @@ const CertificationsStackNavigator: React.FC = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="CertificationsDashboard" component={CertificationsDashboardScreen} />
     <Stack.Screen name="CertificationsList" component={CertificationsListScreen} />
+    <Stack.Screen name="CertificationOverview" component={CertificationOverviewScreen} />
     <Stack.Screen name="CBComparison" component={CBComparisonScreen} />
     <Stack.Screen name="CertificationDetail" component={CertificationDetailScreen} />
     <Stack.Screen name="NewCertification" component={NewCertificationScreen} />
