@@ -9,6 +9,12 @@ import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 
+// presentationStyle 'pageSheet' is iOS-only. On Android it is ignored and the
+// Modal falls back to its opaque default window background, which shows as a
+// grey panel behind the picker (most visible during the slide animation).
+// Android uses a full-screen modal whose own themed background covers it.
+const MODAL_PRESENTATION = Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen';
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -219,7 +225,7 @@ const NewTestingScreen: React.FC = () => {
       </ScrollView>
 
       {/* ---------------- PRODUCT SEARCH MODAL ---------------- */}
-      <Modal visible={isProductModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setProductModalVisible(false)}>
+      <Modal visible={isProductModalVisible} animationType="slide" presentationStyle={MODAL_PRESENTATION} statusBarTranslucent onRequestClose={() => setProductModalVisible(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.bgDark : '#F8FAFC' }}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <View style={styles.modalHeader}>
@@ -261,7 +267,7 @@ const NewTestingScreen: React.FC = () => {
       </Modal>
 
       {/* ---------------- MARKET SEARCH MODAL ---------------- */}
-      <Modal visible={isMarketModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setMarketModalVisible(false)}>
+      <Modal visible={isMarketModalVisible} animationType="slide" presentationStyle={MODAL_PRESENTATION} statusBarTranslucent onRequestClose={() => setMarketModalVisible(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.bgDark : '#F8FAFC' }}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <View style={styles.modalHeader}>

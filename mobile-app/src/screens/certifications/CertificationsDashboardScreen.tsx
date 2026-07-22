@@ -81,25 +81,31 @@ const CertificationsDashboardScreen: React.FC = () => {
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
+  // Only 'CertificationsList' lives in this stack. The other targets are in
+  // sibling navigators, so they need the nested form — navigating by bare
+  // screen name silently failed with "was not handled by any navigator".
+  // 'ReportsDashboard' and 'HistoryDashboard' never existed at all; the real
+  // screens are TestReports (Documents stack) and ApplicationHistory
+  // (Applications stack).
   const handleCardPress = (card: DashboardCard) => {
     switch (card.action) {
       case 'Certifications':
         navigation.navigate('CertificationsList');
         break;
       case 'Testing':
-        navigation.navigate('TestingDashboard');
+        navigation.navigate('Testing', { screen: 'TestingDashboard' });
         break;
       case 'Inspection':
-        navigation.navigate('InspectionDashboard');
+        navigation.navigate('Inspection', { screen: 'InspectionDashboard' });
         break;
       case 'Reports':
-        navigation.navigate('ReportsDashboard');
+        navigation.navigate('Documents', { screen: 'TestReports' });
         break;
       case 'History':
-        navigation.navigate('HistoryDashboard');
+        navigation.navigate('Applications', { screen: 'ApplicationHistory' });
         break;
       case 'Identifier':
-        navigation.navigate('Identifier');
+        navigation.navigate('MainTabs', { screen: 'Identifier' });
         break;
     }
   };
