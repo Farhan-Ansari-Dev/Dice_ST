@@ -6,6 +6,12 @@ import redis from '../../config/redis'
 import { audit } from '../../models/AuditLog'
 import { z } from 'zod'
 import { logger } from '../../utils/logger'
+import { redactSecrets } from '../../utils/redactSecrets'
+import { isEncryptionConfigured } from '../../utils/crypto/secretBox'
+import { PROVIDER_NAMES, ProviderName } from '../../models/AIProviderCredential'
+import {
+  getAllCredentialStatuses, setProviderKey, deleteProviderKey,
+} from '../../services/ai/credentialService'
 
 const router = Router()
 
@@ -61,10 +67,73 @@ router.get('/', wrap(async (req: Request, res: Response) => {
   sendSuccess(res, safeConfig, 'Config fetched from database')
 }))
 
-// Admin endpoint to get config details
+// Admin endpoint to get config details.
+//
+// Previously returned the raw document including aiSettings.apiKey in
+// plaintext. Key material now has no read path at all: credential presence is
+// reported separately via /admin/ai/credentials, value never included.
 router.get('/admin', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
   const config = await RemoteConfig.getGlobalConfig()
-  sendSuccess(res, config, 'Admin config fetched')
+  sendSuccess(res, redactSecrets(config.toObject()), 'Admin config fetched')
+}))
+
+// Credential status for the admin UI — presence, last-4 and rotation time only.
+router.get('/admin/ai/credentials', authenticate, requireRole('admin', 'super_admin'), wrap(async (_req: AuthRequest, res: Response) => {
+  const statuses = await getAllCredentialStatuses(PROVIDER_NAMES)
+  sendSuccess(res, { providers: statuses, encryptionConfigured: isEncryptionConfigured() })
+}))
+
+// Set or rotate a provider key. Set-only: there is no corresponding read.
+router.put('/admin/ai/credentials/:provider', authenticate, requireRole('super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  const provider = req.params.provider as ProviderName
+  if (!PROVIDER_NAMES.includes(provider)) {
+    return res.status(400).json({ success: false, error: 'unknown_provider', message: `Unknown provider "${provider}"` })
+  }
+
+  const parsed = z.object({ apiKey: z.string().min(8) }).safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, error: 'invalid_key', message: 'apiKey must be at least 8 characters' })
+  }
+
+  try {
+    const status = await setProviderKey(provider, parsed.data.apiKey, req.user!._id as any)
+
+    // Audit the rotation — actor and provider, never the value.
+    await audit({
+      actor: req.user!._id as any,
+      resource_type: 'remote_config',
+      resource_id: req.user!._id as any,
+      action: 'updated',
+      notes: `ai_credential_rotated:${provider}`,
+      ip: req.ip,
+    })
+
+    return sendSuccess(res, status, 'Provider key stored')
+  } catch (e) {
+    logger.error('[config] failed to store provider key', { provider, error: String(e) })
+    return res.status(503).json({
+      success: false,
+      error: 'encryption_unavailable',
+      message: e instanceof Error ? e.message : 'Could not store the key',
+    })
+  }
+}))
+
+router.delete('/admin/ai/credentials/:provider', authenticate, requireRole('super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+  const provider = req.params.provider as ProviderName
+  if (!PROVIDER_NAMES.includes(provider)) {
+    return res.status(400).json({ success: false, error: 'unknown_provider' })
+  }
+  const removed = await deleteProviderKey(provider)
+  await audit({
+    actor: req.user!._id as any,
+    resource_type: 'remote_config',
+    resource_id: req.user!._id as any,
+    action: 'updated',
+    notes: `ai_credential_deleted:${provider}`,
+    ip: req.ip,
+  })
+  return sendSuccess(res, { provider, removed })
 }))
 
 // Admin endpoint to update config and bust cache
@@ -80,9 +149,32 @@ router.put('/admin', authenticate, requireRole('admin', 'super_admin'), wrap(asy
     config.dynamicConfig = { ...config.dynamicConfig, ...updates.dynamicConfig }
   }
   if (updates.aiSettings) {
-    config.aiSettings = { ...config.aiSettings, ...updates.aiSettings }
+    // An apiKey arriving here (the existing admin UI still sends one) is
+    // diverted into the encrypted credential store instead of being written
+    // to RemoteConfig in plaintext. Provider/model behaviour is unchanged.
+    const { apiKey, ...safeAiSettings } = updates.aiSettings
+    config.aiSettings = { ...config.aiSettings, ...safeAiSettings, apiKey: '' }
+
+    if (apiKey && apiKey.trim()) {
+      const targetProvider = (safeAiSettings.provider ?? config.aiSettings.provider) as ProviderName
+      if (!PROVIDER_NAMES.includes(targetProvider)) {
+        return res.status(400).json({
+          success: false, error: 'unknown_provider',
+          message: `Cannot store a key for unknown provider "${targetProvider}"`,
+        })
+      }
+      try {
+        await setProviderKey(targetProvider, apiKey, req.user!._id as any)
+      } catch (e) {
+        logger.error('[config] could not store provider key from aiSettings', { error: String(e) })
+        return res.status(503).json({
+          success: false, error: 'encryption_unavailable',
+          message: e instanceof Error ? e.message : 'Could not store the key',
+        })
+      }
+    }
   }
-  
+
   await config.save()
 
   // Immediately bust the public cache (we want public clients to fetch and cache the stripped version)
@@ -100,7 +192,7 @@ router.put('/admin', authenticate, requireRole('admin', 'super_admin'), wrap(asy
   })
 
   logger.info(`Remote Config updated by admin ${req.user!._id}`)
-  sendSuccess(res, config, 'Configuration updated successfully')
+  return sendSuccess(res, redactSecrets(config.toObject()), 'Configuration updated successfully')
 }))
 
 export default router

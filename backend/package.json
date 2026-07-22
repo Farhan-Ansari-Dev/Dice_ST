@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
-    "db:seed:workflows": "ts-node src/db/seed-workflows.ts"
+    "db:seed:workflows": "ts-node src/db/seed-workflows.ts",
+    "migrate:provider-keys": "ts-node src/scripts/migrateProviderKeys.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",

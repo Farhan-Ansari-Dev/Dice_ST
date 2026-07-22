@@ -5,6 +5,8 @@ import redis from '../config/redis'
 import { logger } from '../utils/logger'
 
 import { RemoteConfig } from '../models/RemoteConfig'
+import { getProviderKey } from './ai/credentialService'
+import type { ProviderName } from '../models/AIProviderCredential'
 
 /**
  * Resolves the configured OpenAI-compatible client.
@@ -18,7 +20,10 @@ export async function getAIClientAndModel(modelOverride?: string): Promise<{ ope
   const config = await RemoteConfig.getGlobalConfig()
   const aiSettings = config.aiSettings || { provider: 'nvidia', model: 'meta/llama-3.3-70b-instruct', apiKey: '' };
 
-  const key = aiSettings.apiKey || process.env.NVIDIA_API_KEY || process.env.OPENAI_API_KEY;
+  // Key comes from the encrypted credential store, which falls back to the
+  // legacy plaintext field and then to environment variables. This service
+  // never reads aiSettings.apiKey directly.
+  const key = await getProviderKey((aiSettings.provider ?? 'nvidia') as ProviderName);
   const model = modelOverride || aiSettings.model;
   if (!key) return { openai: null, model };
 
