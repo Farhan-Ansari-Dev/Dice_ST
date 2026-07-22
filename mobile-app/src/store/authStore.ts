@@ -72,6 +72,16 @@ interface AuthState {
   setBiometricAuthenticated: (authenticated: boolean) => void;
 }
 
+/**
+ * True only when the server actively rejected the session (401/403).
+ * Network errors, timeouts and 5xx must NOT sign the user out — being offline
+ * is not the same as being logged out.
+ */
+function isAuthFailure(error: unknown): boolean {
+  const status = (error as any)?.response?.status;
+  return status === 401 || status === 403;
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
@@ -210,8 +220,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             const fresh = await authService.getProfile();
             get().setUser(fresh);
             await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(fresh));
-          } catch {
-            // Offline or transient failure — keep the cached profile.
+          } catch (e) {
+            // The api client already attempted a refresh before surfacing a 401,
+            // so a 401/403 here means the session is genuinely dead — sign out.
+            // Anything else (offline, 5xx) keeps the cached profile.
+            if (isAuthFailure(e)) await get().logout();
           }
         }
       } else if (token) {
@@ -228,8 +241,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           get().setUser(profile);
           await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(profile));
         } catch (profileError) {
-          console.warn('Profile reload failed:', profileError);
-          set({ token, refreshToken: refreshToken || null, isAuthenticated: true, isLoading: false, isOnboardingDone, userType, isUserTypeDone: cachedUserTypeDone, isBiometricEnabled });
+          // A token with no cached profile is unusable if it is also rejected —
+          // there is nothing to fall back to, so clear it and send them to Login.
+          if (isAuthFailure(profileError)) {
+            await get().logout();
+            set({ isLoading: false, isOnboardingDone, isBiometricEnabled });
+          } else {
+            console.warn('Profile reload failed:', profileError);
+            set({ token, refreshToken: refreshToken || null, isAuthenticated: true, isLoading: false, isOnboardingDone, userType, isUserTypeDone: cachedUserTypeDone, isBiometricEnabled });
+          }
         }
       } else {
         // No session — land on the intro carousel / login.
