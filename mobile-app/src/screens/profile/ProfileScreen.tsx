@@ -30,7 +30,9 @@ const ProfileScreen: React.FC = () => {
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
-  const isManager = user?.role === 'manager';
+  // The Consultant Zone gates the verification centre. It previously tested for
+  // a 'manager' role that the API never issues, so the section never rendered.
+  const isConsultant = user?.role === 'consultant';
 
   const MENU_SECTIONS = [
     {
@@ -42,7 +44,7 @@ const ProfileScreen: React.FC = () => {
         { icon: 'notifications-outline' as const, label: 'Notifications', onPress: () => navigation.navigate('NotificationSettings'), toggle: notifications, onToggle: setNotifications },
       ],
     },
-    ...(isManager ? [{
+    ...(isConsultant ? [{
       title: 'Consultant Zone',
       items: [
         { icon: 'shield-checkmark-outline' as const, label: 'Verification Center', onPress: () => navigation.navigate('ConsultantVerification') },

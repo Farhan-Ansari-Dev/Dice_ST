@@ -36,6 +36,19 @@ export interface IUser extends Document {
     quiet_hours?: { start: string; end: string; timezone: string };
   };
 
+  // Onboarding profile — captured by the post-login onboarding wizard.
+  // Stored server-side so a returning user skips onboarding on any device
+  // (SecureStore alone is per-install and is lost on reinstall).
+  business_role?: string;
+  industries: string[];
+  target_markets: string[];
+  interested_certifications: string[];
+  company_size?: string;
+  business_goals: string[];
+  company_name?: string;
+  gst_number?: string;
+  onboarding_completed_at?: Date;
+
   // Consultant verification
   consultant_verification_status?: 'pending' | 'verified' | 'rejected';
   consultant_verification_documents?: Array<{
@@ -78,6 +91,16 @@ const UserSchema = new Schema<IUser>(
 
     totp_secret:   { type: String, select: false },
     totp_enabled:  { type: Boolean, default: false },
+
+    business_role:             { type: String, trim: true },
+    industries:                { type: [String], default: [] },
+    target_markets:            { type: [String], default: [] },
+    interested_certifications: { type: [String], default: [] },
+    company_size:              { type: String, trim: true },
+    business_goals:            { type: [String], default: [] },
+    company_name:              { type: String, trim: true },
+    gst_number:                { type: String, trim: true, uppercase: true },
+    onboarding_completed_at:   { type: Date },
 
     consultant_verification_status: {
       type: String,

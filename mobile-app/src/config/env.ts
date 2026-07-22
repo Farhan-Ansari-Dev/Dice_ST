@@ -22,9 +22,26 @@ const PROD_HOST  = 'https://api.sanyogconformity.com';
 
 const apiHost = envApi || (isDev ? LOCAL_HOST : PROD_HOST);
 
+// Google OAuth client IDs.
+//
+// These are PUBLIC identifiers (the confidential client *secret* lives only in
+// the backend env) — they must be present at bundle time or GoogleSignin cannot
+// mint an ID token. EXPO_PUBLIC_* vars are inlined by Metro from .env locally
+// and from eas.json `env` in CI; both sources are kept in sync.
+const GOOGLE_WEB_CLIENT_ID =
+  (process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID as string | undefined) ||
+  (Constants.expoConfig?.extra?.googleWebClientId as string | undefined);
+
+const GOOGLE_IOS_CLIENT_ID =
+  (process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID as string | undefined) ||
+  (Constants.expoConfig?.extra?.googleIosClientId as string | undefined);
+
 export const ENV = {
   API_URL:    `${apiHost}/api/v1`,
   SOCKET_URL: apiHost,
+
+  GOOGLE_WEB_CLIENT_ID,
+  GOOGLE_IOS_CLIENT_ID,
 
   RAZORPAY_KEY_ID: Constants.expoConfig?.extra?.razorpayKeyId ?? 'rzp_test_placeholder',
   OPENAI_API_KEY:  Constants.expoConfig?.extra?.openaiKey ?? '',

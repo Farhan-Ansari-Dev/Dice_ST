@@ -16,9 +16,7 @@ import { z } from 'zod';
 import { OAuth2Client } from 'google-auth-library';
 import { validate } from '../../middleware/validate';
 import { User, audit } from '../../models';
-import { Application } from '../../models/Application';
-import { Certification } from '../../models/Certification';
-import { Insight } from '../../models/Insight';
+import { serializeUser } from '../../utils/serializeUser';
 import { issueTokens } from '../../middleware/authMongo';
 import { denylistJti, isJtiDenylisted, remainingTtl } from '../../utils/tokenDenylist';
 import { sendEmail } from '../../services/notifications/email';
@@ -63,39 +61,9 @@ function hashOTP(otp: string): string {
   return crypto.createHash('sha256').update(otp + process.env.JWT_SECRET).digest('hex');
 }
 
-async function buildUserResponse(user: any) {
-  const query: any = { org_id: user.org_id };
-  if (!user.org_id) {
-    query.created_by = user._id;
-  }
-
-  const [applicationsCount, certificationsCount, insightsRead] = await Promise.all([
-    Application.countDocuments({ ...query, deleted_at: { $exists: false } }),
-    Certification.countDocuments({ ...query, deleted_at: { $exists: false } }),
-    Insight.countDocuments({ ...query, deleted_at: { $exists: false } }),
-  ]);
-
-  return {
-    id: user._id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    org_id: user.org_id,
-    phone: user.phone,
-    companyName: user.companyName,
-    gstNumber: user.gstNumber,
-    avatar_url: user.avatar_url,
-    businessRole: user.businessRole,
-    industries: user.industries ?? [],
-    targetMarkets: user.targetMarkets ?? [],
-    interestedCertifications: user.interestedCertifications ?? [],
-    companySize: user.companySize,
-    businessGoals: user.businessGoals ?? [],
-    applicationsCount,
-    certificationsCount,
-    insightsRead,
-  };
-}
+// User payload shape lives in utils/serializeUser so /auth/* and /users/me
+// cannot drift apart. Local alias keeps existing call sites unchanged.
+const buildUserResponse = (user: any) => serializeUser(user);
 
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/send-otp

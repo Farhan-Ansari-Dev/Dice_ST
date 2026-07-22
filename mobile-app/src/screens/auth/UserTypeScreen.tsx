@@ -38,6 +38,28 @@ const STEPS = [
   { step: 6, title: 'What are your\nkey goals?',       subtitle: 'Pick everything you want to achieve with DICE',                      type: 'multi'  as const, icon: 'rocket'          as const, accentColor: '#FF6B6B' },
 ];
 
+// ── Welcome gate content ─────────────────────────────────────────────────────
+const WELCOME_POINTS = [
+  { icon: 'sparkles'          as const, label: 'AI insights matched to your industry',   color: '#6C63FF' },
+  { icon: 'shield-checkmark'  as const, label: 'Only the certifications you actually need', color: '#00C896' },
+  { icon: 'globe'             as const, label: 'Market requirements for where you sell',  color: '#00D4FF' },
+];
+
+const welcomeStyle = StyleSheet.create({
+  body:       { flex: 1, paddingHorizontal: 28, justifyContent: 'center' },
+  badge:      { width: 66, height: 66, borderRadius: 21, alignItems: 'center', justifyContent: 'center', marginBottom: 26 },
+  title:      { fontSize: 31, fontWeight: '800', letterSpacing: -0.6, marginBottom: 12 },
+  subtitle:   { fontSize: 15, lineHeight: 23 },
+  points:     { marginTop: 34, gap: 16 },
+  point:      { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  pointIcon:  { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  pointLabel: { fontSize: 14, fontWeight: '500', flex: 1 },
+  footer:     { paddingHorizontal: 28, gap: 12 },
+  cta:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 17, borderRadius: BorderRadius.xl },
+  ctaText:    { color: '#fff', fontSize: 16, fontWeight: '700' },
+  footnote:   { fontSize: 11.5, textAlign: 'center' },
+});
+
 // ── Step 1: Role Card (2-col grid) ───────────────────────────────────────────
 const RoleCard: React.FC<{
   id: string; label: string; icon: string; color: string;
@@ -170,9 +192,15 @@ const chipStyle = StyleSheet.create({
 const UserTypeScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { setOnboardingProfile } = useAuthStore();
+  const { setOnboardingProfile, user } = useAuthStore();
   const { showToast } = useToast();
 
+  const firstName = user?.name?.trim().split(/\s+/)[0] ?? '';
+
+  // Welcome gate — shown once before the wizard. Kept as a gate rather than a
+  // STEPS entry because every step index here (canContinue, selectionCount,
+  // skip rules) is positional; prepending a step would shift all of them.
+  const [showWelcome, setShowWelcome] = useState(true);
   const [step, setStep] = useState(0);
   const [businessRole, setBusinessRole]         = useState<BusinessRoleId | null>(null);
   const [industries, setIndustries]             = useState<Set<IndustryId>>(new Set());
@@ -250,6 +278,9 @@ const UserTypeScreen: React.FC = () => {
       const raw = await SecureStore.getItemAsync(ONBOARDING_DRAFT_KEY);
       if (!raw) return;
 
+      // Resuming an interrupted run — go straight back to the wizard.
+      setShowWelcome(false);
+
       try {
         const parsed = JSON.parse(raw) as {
           step?: number;
@@ -315,6 +346,67 @@ const UserTypeScreen: React.FC = () => {
 
   // Selection count for multi steps
   const selectionCount = [0, industries.size, targetMarkets.size, certifications.size, 0, businessGoals.size][step] ?? 0;
+
+  if (showWelcome) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <LinearGradient
+          colors={isDark ? [colors.bgDark, '#0E0F1C'] : ['#F8F9FF', '#EEF0FB']}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={welcomeStyle.body}>
+          <LinearGradient colors={['#6C63FF', '#4D45CC']} style={welcomeStyle.badge}>
+            <Ionicons name="layers" size={30} color="#fff" />
+          </LinearGradient>
+
+          <Text style={[welcomeStyle.title, { color: colors.textPrimary }]}>
+            Welcome to DICE
+          </Text>
+          <Text style={[welcomeStyle.subtitle, { color: colors.textSecondary }]}>
+            {firstName ? `${firstName}, let's` : "Let's"} set up your compliance workspace.
+            Six quick questions so your dashboard, certifications, and AI insights
+            arrive already tailored to your business.
+          </Text>
+
+          <View style={welcomeStyle.points}>
+            {WELCOME_POINTS.map((point) => (
+              <View key={point.label} style={welcomeStyle.point}>
+                <View style={[welcomeStyle.pointIcon, { backgroundColor: point.color + '1F' }]}>
+                  <Ionicons name={point.icon} size={17} color={point.color} />
+                </View>
+                <Text style={[welcomeStyle.pointLabel, { color: colors.textSecondary }]}>
+                  {point.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <View style={[welcomeStyle.footer, { paddingBottom: insets.bottom + 20 }]}>
+          <TouchableOpacity
+            onPress={() => setShowWelcome(false)}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Get started"
+            accessibilityHint="Begins the onboarding questions"
+          >
+            <LinearGradient
+              colors={['#6C63FF', '#4D45CC']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={welcomeStyle.cta}
+            >
+              <Text style={welcomeStyle.ctaText}>Get Started</Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={[welcomeStyle.footnote, { color: colors.textTertiary }]}>
+            Takes about a minute · You can change these later in Profile
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

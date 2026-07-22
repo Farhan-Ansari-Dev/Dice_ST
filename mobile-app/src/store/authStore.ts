@@ -9,7 +9,9 @@ export interface User {
   email: string;
   phone: string;
   companyName: string;
-  role: 'admin' | 'manager' | 'viewer';
+  // Mirrors the backend role enum (backend/src/models/User.ts). The previous
+  // 'admin' | 'manager' | 'viewer' union did not match any role the API issues.
+  role: 'super_admin' | 'admin' | 'consultant' | 'employee' | 'client' | 'viewer' | 'cb' | 'lab' | 'ib';
   avatar?: string;
   gstNumber?: string;
   address?: string;
@@ -28,6 +30,9 @@ export interface User {
   interestedCertifications?: string[];
   companySize?: string;
   businessGoals?: string[];
+  /** Server-authoritative: true once the onboarding wizard has been submitted. */
+  isOnboardingComplete?: boolean;
+  onboardingCompletedAt?: string | null;
 }
 
 interface AuthState {
@@ -73,7 +78,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshToken: null,
   isAuthenticated: false,
   isLoading: false,
-  isOnboardingDone: true,
+  // Intro carousel (pre-login). Defaults false so a fresh install sees it once.
+  isOnboardingDone: false,
   userType: null,
   businessRole: null,
   industries: [],
@@ -81,11 +87,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   interestedCertifications: [],
   companySize: null,
   businessGoals: [],
-  isUserTypeDone: true,
+  // Post-login onboarding wizard. Authoritative value comes from the server
+  // (`isOnboardingComplete`); false until a user object proves otherwise, so a
+  // brand-new account can never fall straight through to the dashboard.
+  isUserTypeDone: false,
   isBiometricEnabled: false,
   isBiometricAuthenticated: false,
 
-  setUser: (user) => set({ user }),
+  // Setting the user also settles the onboarding gate. Every auth path
+  // (OTP, Google, cold-start restore) funnels through here, so the wizard
+  // decision is made in exactly one place from server-owned data.
+  setUser: (user) =>
+    set({
+      user,
+      isUserTypeDone: Boolean(user?.isOnboardingComplete),
+      userType: user?.businessRole ?? null,
+      businessRole: user?.businessRole ?? null,
+    }),
 
   setTokens: async (token, refreshToken) => {
     try {
@@ -164,12 +182,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ]);
 
       const isOnboardingDone = onboardingDone === 'true';
-      const isUserTypeDone = userTypeDone === null ? get().isUserTypeDone : userTypeDone === 'true';
       const userType = userTypeSaved ?? get().userType;
       const isBiometricEnabled = biometricEnabledStr === 'true';
+      // SecureStore is a per-install cache only; it is wiped on reinstall and is
+      // not shared across devices. The cached flag is an optimistic starting
+      // value that the /users/me refresh below corrects.
+      const cachedUserTypeDone = userTypeDone === 'true';
 
       if (userData) {
-        // Restore saved user profile (works in both demo and authenticated modes)
+        // Restore the cached profile for an instant first paint, then reconcile
+        // with the server so onboarding state follows the account, not the device.
         const user = JSON.parse(userData) as User;
         set({
           token: token || get().token,
@@ -178,32 +200,40 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
           isOnboardingDone,
-          userType,
-          isUserTypeDone,
+          userType: user.businessRole ?? userType,
+          isUserTypeDone: user.isOnboardingComplete ?? cachedUserTypeDone,
           isBiometricEnabled,
         });
+
+        if (token) {
+          try {
+            const fresh = await authService.getProfile();
+            get().setUser(fresh);
+            await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(fresh));
+          } catch {
+            // Offline or transient failure — keep the cached profile.
+          }
+        }
       } else if (token) {
         try {
           const profile = await authService.getProfile();
           set({
             token,
             refreshToken: refreshToken || null,
-            user: profile,
             isAuthenticated: true,
             isLoading: false,
             isOnboardingDone,
-            userType,
-            isUserTypeDone,
             isBiometricEnabled,
           });
+          get().setUser(profile);
           await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(profile));
         } catch (profileError) {
           console.warn('Profile reload failed:', profileError);
-          set({ token, refreshToken: refreshToken || null, isAuthenticated: true, isLoading: false, isOnboardingDone, userType, isUserTypeDone, isBiometricEnabled });
+          set({ token, refreshToken: refreshToken || null, isAuthenticated: true, isLoading: false, isOnboardingDone, userType, isUserTypeDone: cachedUserTypeDone, isBiometricEnabled });
         }
       } else {
-        // First launch — persist the demo user so future relaunches restore it
-        set({ isLoading: false, isOnboardingDone, userType, isUserTypeDone, isBiometricEnabled });
+        // No session — land on the intro carousel / login.
+        set({ isLoading: false, isOnboardingDone, userType, isUserTypeDone: false, isBiometricEnabled });
       }
     } catch (e) {
       console.warn('Load stored auth error:', e);

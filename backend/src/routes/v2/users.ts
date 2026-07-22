@@ -3,6 +3,7 @@ import { authenticate, AuthRequest } from '../../middleware/authMongo'
 import { authorize } from '../../middleware/authorize'
 import { User } from '../../models/User'
 import { sendSuccess, sendError } from '../../utils/response'
+import { serializeUser } from '../../utils/serializeUser'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -19,10 +20,28 @@ const pick = (body: any, fields: string[]) => {
 const isAdmin = (role?: string) => role === 'admin' || role === 'super_admin'
 
 router.get('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
-  res.json({ success: true, data: req.user });
+  res.json({ success: true, data: await serializeUser(req.user) });
 }))
 
 import { audit } from '../../models/AuditLog'
+
+// Onboarding-wizard fields. The client speaks camelCase; the schema is
+// snake_case. Mapping here keeps the public contract stable while still
+// whitelisting every writable key (no mass assignment).
+const ONBOARDING_FIELD_MAP: Record<string, string> = {
+  businessRole:             'business_role',
+  industries:               'industries',
+  targetMarkets:            'target_markets',
+  interestedCertifications: 'interested_certifications',
+  companySize:              'company_size',
+  businessGoals:            'business_goals',
+  companyName:              'company_name',
+  gstNumber:                'gst_number',
+};
+
+const STRING_ARRAY_FIELDS = new Set([
+  'industries', 'target_markets', 'interested_certifications', 'business_goals',
+]);
 
 router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   try {
@@ -30,6 +49,33 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
     const update: any = {};
     for (const k of allowed) {
       if (req.body[k] !== undefined) update[k] = req.body[k];
+    }
+
+    for (const [clientKey, dbKey] of Object.entries(ONBOARDING_FIELD_MAP)) {
+      const value = req.body[clientKey];
+      if (value === undefined) continue;
+
+      if (STRING_ARRAY_FIELDS.has(dbKey)) {
+        // Reject non-arrays and coerce members to strings — these feed
+        // recommendation queries, so keep them well-typed at the boundary.
+        if (!Array.isArray(value)) {
+          return res.status(400).json({
+            success: false,
+            message: `${clientKey} must be an array of strings`,
+          });
+        }
+        update[dbKey] = value.map(String);
+      } else {
+        update[dbKey] = value === null ? undefined : String(value);
+      }
+    }
+
+    // A submitted wizard (business role + company size present) marks onboarding
+    // complete. Stamped once and never cleared, so returning users skip it.
+    const completesOnboarding =
+      update.business_role !== undefined && update.company_size !== undefined;
+    if (completesOnboarding && !(req.user as any).onboarding_completed_at) {
+      update.onboarding_completed_at = new Date();
     }
 
     if (req.user!.role === 'super_admin' && update.name) {
@@ -68,7 +114,7 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
       console.error('Audit failed:', e);
     }
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: await serializeUser(updated) });
     return;
   } catch (err: any) {
     console.error("PUT /me EXACT ERROR:", err);

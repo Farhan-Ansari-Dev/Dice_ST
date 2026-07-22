@@ -14,6 +14,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { GoogleSignin, statusCodes, isSuccessResponse, isCancelledResponse } from '@react-native-google-signin/google-signin';
 import { STORAGE_KEYS } from '../../utils/constants';
+import ENV from '../../config/env';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../components/common/ToastProvider';
 
@@ -28,10 +29,20 @@ const LoginScreen: React.FC = () => {
   const { setTokens, setUser } = useAuthStore();
   const { showToast } = useToast();
 
-  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const iosClientId = ENV.GOOGLE_IOS_CLIENT_ID;
+  const webClientId = ENV.GOOGLE_WEB_CLIENT_ID;
 
   useEffect(() => {
+    // webClientId is mandatory on Android: without it GoogleSignin completes the
+    // account picker but returns a null idToken, and the backend then rejects the
+    // request as a validation error. Surface the real cause instead.
+    if (!webClientId) {
+      console.error(
+        '[GoogleSignIn] Missing web client ID. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ' +
+        'or expo.extra.googleWebClientId in app.json — Google Sign-In cannot issue an ID token without it.'
+      );
+      return;
+    }
     GoogleSignin.configure({
       iosClientId,
       webClientId,
@@ -95,6 +106,10 @@ const LoginScreen: React.FC = () => {
   };
 
   const handleGoogleSignIn = async () => {
+    if (!webClientId) {
+      showToast('Google Sign-In Unavailable', 'This build is missing its Google configuration. Please use email OTP.', 'error');
+      return;
+    }
     setGoogleLoading(true);
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -110,9 +125,9 @@ const LoginScreen: React.FC = () => {
         // User cancelled — no toast needed
       }
     } catch (error: any) {
-      console.error('[GoogleSignIn] error:', error?.code, error?.message, error);
-      if (Platform.OS === 'android' && error?.code && error?.code !== statusCodes.SIGN_IN_CANCELLED) {
-        Alert.alert('Google Sign-In Error', `code: ${error.code}\nmessage: ${error.message || 'none'}\n${JSON.stringify(error, Object.getOwnPropertyNames(error), 2).slice(0, 500)}`);
+      // Full detail to the dev console only — never into a user-facing toast.
+      if (__DEV__) {
+        console.error('[GoogleSignIn] error:', error?.code, error?.message, error);
       }
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         // User cancelled — no toast needed
@@ -121,10 +136,7 @@ const LoginScreen: React.FC = () => {
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         showToast('Google Sign-In Failed', 'Google Play Services are not available.', 'error');
       } else {
-        const message = error?.response?.data?.message || error?.message || 'Unable to sign in with Google. Please try again.';
-        const details = JSON.stringify(error?.response?.data || error?.message || error, null, 2).slice(0, 400);
-        showToast('Google Sign-In Failed', `${message}\n${details}`, 'error');
-        console.error('[GoogleSignIn] backend error:', error?.response?.data || error);
+        showToast('Google Sign-In Failed', 'Unable to sign in with Google. Please try again or use email OTP.', 'error');
       }
     } finally {
       setGoogleLoading(false);
@@ -139,10 +151,14 @@ const LoginScreen: React.FC = () => {
       await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(result.user));
       setUser(result.user);
     } catch (err: any) {
-      const message = err?.response?.data?.message || err?.message || 'Unable to sign in with Google. Please try again.';
-      const details = JSON.stringify(err?.response?.data || err?.message || err, null, 2).slice(0, 400);
-      showToast('Google Sign-In Failed', `${message}\n${details}`, 'error');
-      console.error('[GoogleSignIn] backend error:', err?.response?.data || err);
+      if (__DEV__) {
+        console.error('[GoogleSignIn] backend rejected token:', err?.response?.data ?? err);
+      }
+      showToast(
+        'Google Sign-In Failed',
+        err?.response?.data?.message ?? 'Unable to complete sign-in. Please try again or use email OTP.',
+        'error',
+      );
     } finally {
       setGoogleLoading(false);
     }
