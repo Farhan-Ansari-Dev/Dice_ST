@@ -34,8 +34,9 @@ import Animated, {
   FadeInDown
 } from 'react-native-reanimated';
 
-import { ComplianceDB, ComplianceDomain } from '../../data/ComplianceDB';
+import { Linking, Share } from 'react-native';
 import { useTheme } from '../../theme';
+import productAnalysisService, { ProductAnalysis, Finding } from '../../services/productAnalysisService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -64,17 +65,71 @@ const CAPABILITIES = [
   { id: '5', title: 'Risk Assessment', desc: 'Detects compliance risks', icon: 'warning-outline' },
 ];
 
+// Shown while the request is genuinely in flight. These describe the real
+// backend stages; the sequence stops advancing at the last step and waits for
+// the response rather than pretending to finish.
 const LOADING_STEPS = [
-  'Initializing AI Engine...',
-  'Reading Product Data...',
-  'Detecting Category...',
-  'Checking Regulations...',
-  'Evaluating Quality...',
-  'Matching Certifications...',
-  'Preparing Report...',
+  'Uploading image...',
+  'Reading labels and markings...',
+  'Identifying product category...',
+  'Matching applicable regulations...',
+  'Assessing missing declarations...',
+  'Generating report...',
 ];
 
+const SEVERITY_STYLE: Record<Finding['severity'], { color: string; icon: string; label: string }> = {
+  critical:  { color: '#DC2626', icon: 'alert-circle',   label: 'Critical' },
+  important: { color: '#EA580C', icon: 'warning',        label: 'Important' },
+  advisory:  { color: '#CA8A04', icon: 'information-circle', label: 'Advisory' },
+  info:      { color: '#0284C7', icon: 'ellipse-outline',    label: 'Info' },
+};
+
+const riskBand = (score: number) =>
+  score >= 70 ? { label: 'High', color: '#DC2626' }
+  : score >= 40 ? { label: 'Moderate', color: '#EA580C' }
+  : score >= 15 ? { label: 'Low', color: '#CA8A04' }
+  : { label: 'Minimal', color: '#16A34A' };
+
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+
+/**
+ * Renders a group of findings. Every finding shows its severity, confidence and
+ * the evidence it rests on — the user must be able to judge how much weight to
+ * put on each statement.
+ */
+const FindingSection: React.FC<{
+  title: string;
+  findings: Finding[];
+  isDark: boolean;
+  emptyNote: string;
+}> = ({ title, findings, isDark, emptyNote }) => (
+  <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.resultCard}>
+    <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{title}</Text>
+    {findings.length === 0 ? (
+      <Text style={styles.insightDesc}>{emptyNote}</Text>
+    ) : (
+      findings.map((f) => {
+        const sev = SEVERITY_STYLE[f.severity];
+        return (
+          <View key={f.id} style={styles.insightRow}>
+            <View style={[styles.insightIcon, { backgroundColor: `${sev.color}15` }]}>
+              <Ionicons name={sev.icon as any} size={18} color={sev.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.severityTag, { color: sev.color }]}>
+                {sev.label} · {Math.round(f.confidence * 100)}% confidence
+              </Text>
+              <Text style={[styles.insightTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{f.title}</Text>
+              <Text style={styles.insightDesc}>{f.detail}</Text>
+              {!!f.reference && <Text style={styles.referenceText}>Reference: {f.reference}</Text>}
+              <Text style={styles.evidenceText}>Evidence: {f.evidence}</Text>
+            </View>
+          </View>
+        );
+      })
+    )}
+  </BlurView>
+);
 
 const ScoreRing = ({ value, label, color, size = 100 }: { value: number, label: string, color: string, size?: number }) => {
   return (
@@ -103,7 +158,9 @@ const AIProductQualityScreen = () => {
   const [manualInput, setManualInput] = useState('');
   const [isManualExpanded, setIsManualExpanded] = useState(false);
   const [showPickerModal, setShowPickerModal] = useState(false);
-  const [domain, setDomain] = useState<ComplianceDomain>('tech');
+  const [analysis, setAnalysis] = useState<ProductAnalysis | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Reanimated Values
   const pulseScale = useSharedValue(1);
@@ -130,28 +187,62 @@ const AIProductQualityScreen = () => {
     manualHeight.value = withSpring(isManualExpanded ? 0 : 120, { damping: 20, stiffness: 100 });
   };
 
-  const startAnalysis = () => {
-    if (!imageUri && !manualInput.trim()) {
-      Alert.alert('Action Required', 'Please scan an item or enter manual details first.');
+  const startAnalysis = async () => {
+    if (!imageUri) {
+      Alert.alert('Photo Required', 'Take or choose a product photo. The analysis reads the label, so an image is required.');
       return;
     }
-    
+
     setPhase('analysing');
     setLoadingStep(0);
-    
-    // Simulate AI Workflow Steps
-    let currentStep = 0;
+    setErrorMessage(null);
+    setAnalysis(null);
+
+    // Advances through the stage labels while the request is genuinely in
+    // flight, then holds on the final stage until the server responds.
     const interval = setInterval(() => {
-      currentStep += 1;
-      if (currentStep < LOADING_STEPS.length) {
-        setLoadingStep(currentStep);
-      } else {
-        clearInterval(interval);
-        const domains: ComplianceDomain[] = ['tech', 'food', 'cosmetics', 'toys', 'apparel', 'medical'];
-        setDomain(domains[Math.floor(Math.random() * domains.length)]);
-        setPhase('result');
+      setLoadingStep((s) => Math.min(s + 1, LOADING_STEPS.length - 1));
+    }, 1400);
+
+    try {
+      const result = await productAnalysisService.analyzeImage(imageUri, manualInput);
+      setAnalysis(result);
+      setPhase('result');
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ??
+        'Could not analyse this image. Check your connection and try again.';
+      setErrorMessage(message);
+      setPhase('pick');
+      Alert.alert('Analysis Failed', message);
+    } finally {
+      clearInterval(interval);
+    }
+  };
+
+  const handleExportReport = async () => {
+    if (!analysis) return;
+    setExporting(true);
+    try {
+      const report = analysis.report ?? (await productAnalysisService.generateReport(analysis));
+      if (!report?.downloadUrl) throw new Error('No report URL returned');
+
+      await Share.share({
+        url: report.downloadUrl,
+        message: `DICE compliance assessment — ${analysis.productType}\n${report.downloadUrl}`,
+        title: 'DICE Compliance Report',
+      });
+    } catch {
+      // Sharing unavailable or dismissed — fall back to opening the PDF.
+      const url = analysis.report?.downloadUrl;
+      if (url) {
+        const canOpen = await Linking.canOpenURL(url).catch(() => false);
+        if (canOpen) { await Linking.openURL(url); return; }
       }
-    }, 800); // 800ms per step
+      Alert.alert('Export Failed', 'Could not produce the report. Please try again.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handlePickImage = async () => {
@@ -173,7 +264,6 @@ const AIProductQualityScreen = () => {
   const buttonAnimatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: buttonScale.value }] }));
   const manualAnimatedStyle = useAnimatedStyle(() => ({ height: manualHeight.value, opacity: manualHeight.value > 10 ? 1 : 0 }));
 
-  const resultData = ComplianceDB[domain];
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#020617' : COLORS.background, paddingTop: insets.top }]}>
@@ -332,70 +422,130 @@ const AIProductQualityScreen = () => {
         )}
 
         {/* PHASE 3: RESULTS DASHBOARD */}
-        {phase === 'result' && (
+        {phase === 'result' && analysis && (
           <Animated.View entering={SlideInDown.springify().damping(20)} style={styles.contentPadding}>
-            
-            {/* Top Scores */}
+
+            {/* Risk + category confidence — both server-computed */}
             <View style={styles.scoreRow}>
-              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? "dark" : "light"} style={styles.scoreCard}>
-                <ScoreRing value={94} label="Compliance" color={COLORS.success} />
+              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.scoreCard}>
+                <ScoreRing
+                  value={analysis.riskScore}
+                  label={`${riskBand(analysis.riskScore).label} risk`}
+                  color={riskBand(analysis.riskScore).color}
+                />
               </BlurView>
-              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? "dark" : "light"} style={styles.scoreCard}>
-                <ScoreRing value={88} label="Quality" color={COLORS.primary} />
+              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.scoreCard}>
+                <ScoreRing
+                  value={Math.round(analysis.confidence * 100)}
+                  label="ID confidence"
+                  color={COLORS.primary}
+                />
               </BlurView>
             </View>
 
-            {/* Product Identity */}
-            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? "dark" : "light"} style={styles.resultCard}>
+            {/* Product identity */}
+            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.resultCard}>
               <View style={styles.identityHeader}>
                 <View style={[styles.iconBox, { backgroundColor: `${COLORS.accent}20` }]}>
-                  <Ionicons name={resultData.icon as any} size={28} color={COLORS.accent} />
+                  <Ionicons name="cube-outline" size={28} color={COLORS.accent} />
                 </View>
                 <View style={{ flex: 1, marginLeft: 16 }}>
-                  <Text style={[styles.resultProductTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{resultData.productName}</Text>
-                  <Text style={styles.confidenceText}>Confidence: 99.8%</Text>
+                  <Text style={[styles.resultProductTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>
+                    {analysis.productType}
+                  </Text>
+                  <Text style={styles.confidenceText}>
+                    {analysis.productCategory}
+                    {analysis.brand ? ` · ${analysis.brand}` : ''}
+                  </Text>
                 </View>
               </View>
+
+              {analysis.observations.imageQualityNotes ? (
+                <Text style={[styles.insightDesc, { color: COLORS.warning, marginTop: 10 }]}>
+                  {analysis.observations.imageQualityNotes}
+                </Text>
+              ) : null}
             </BlurView>
 
-            {/* Certifications (Required vs Missing) */}
-            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? "dark" : "light"} style={styles.resultCard}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>Applicable Certifications</Text>
-              <View style={styles.certGrid}>
-                {resultData.certifications.map((cert: string, i: number) => (
-                  <View key={i} style={[styles.certChip, { borderColor: `${COLORS.success}40`, backgroundColor: `${COLORS.success}10` }]}>
-                    <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
-                    <Text style={[styles.certText, { color: COLORS.success }]}>{cert}</Text>
-                  </View>
-                ))}
-                <View style={[styles.certChip, { borderColor: `${COLORS.warning}40`, backgroundColor: `${COLORS.warning}10` }]}>
-                  <Ionicons name="warning" size={14} color={COLORS.warning} />
-                  <Text style={[styles.certText, { color: COLORS.warning }]}>FCC (Missing)</Text>
+            {/* What the image showed */}
+            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.resultCard}>
+              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>What the image shows</Text>
+              {analysis.detectedText.length ? (
+                <View style={styles.certGrid}>
+                  {analysis.detectedText.slice(0, 12).map((t, i) => (
+                    <View key={i} style={[styles.certChip, { borderColor: `${COLORS.primary}40`, backgroundColor: `${COLORS.primary}10` }]}>
+                      <Ionicons name="text-outline" size={13} color={COLORS.primary} />
+                      <Text style={[styles.certText, { color: COLORS.primary }]} numberOfLines={1}>{t}</Text>
+                    </View>
+                  ))}
                 </View>
-              </View>
+              ) : (
+                <Text style={styles.insightDesc}>No legible text was detected in this image.</Text>
+              )}
+
+              {analysis.observations.visibleCertifications.length > 0 && (
+                <>
+                  <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain, fontSize: 13, marginTop: 14 }]}>
+                    Marks present on artwork
+                  </Text>
+                  {analysis.observations.visibleCertifications.map((c, i) => (
+                    <View key={i} style={styles.insightRow}>
+                      <View style={[styles.insightIcon, { backgroundColor: `${COLORS.success}15` }]}>
+                        <Ionicons name="ribbon-outline" size={18} color={COLORS.success} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.insightTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>
+                          {c.mark} · {Math.round(c.confidence * 100)}%
+                        </Text>
+                        <Text style={styles.insightDesc}>{c.observation}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </>
+              )}
             </BlurView>
 
-            {/* Compliance Intelligence */}
-            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? "dark" : "light"} style={styles.resultCard}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>Risk Assessment & Next Steps</Text>
-              {resultData.insights.map((insight: any, i: number) => (
-                <View key={i} style={styles.insightRow}>
-                  <View style={[styles.insightIcon, { backgroundColor: `${insight.color}15` }]}>
-                    <Ionicons name={insight.icon as any} size={18} color={insight.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.insightTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{insight.title}</Text>
-                    <Text style={styles.insightDesc}>{insight.desc}</Text>
-                  </View>
-                </View>
-              ))}
-            </BlurView>
+            <FindingSection
+              title="Applicable certifications"
+              findings={analysis.assessment.applicableCertifications}
+              isDark={isDark}
+              emptyNote="No certification scheme was identified for this category."
+            />
+
+            <FindingSection
+              title="Markings & declarations not visible"
+              findings={[...analysis.assessment.missingVisibleMarkings, ...analysis.assessment.missingDeclarations]}
+              isDark={isDark}
+              emptyNote="All expected markings and declarations were identified."
+            />
+
+            <FindingSection
+              title="Applicable regulations & standards"
+              findings={[...analysis.assessment.applicableRegulations, ...analysis.assessment.applicableStandards]}
+              isDark={isDark}
+              emptyNote="No specific regulation was identified."
+            />
+
+            <FindingSection
+              title="Recommended next steps"
+              findings={analysis.assessment.recommendedNextSteps}
+              isDark={isDark}
+              emptyNote="No further action identified."
+            />
+
+            {/* Scope — this is an indicative assessment, never a certificate */}
+            <View style={styles.disclaimerBox}>
+              <Ionicons name="information-circle" size={16} color="#991B1B" />
+              <Text style={styles.disclaimerText}>{analysis.disclaimer}</Text>
+            </View>
 
             {/* Final Actions */}
-            <TouchableOpacity style={styles.exportBtn}>
+            <TouchableOpacity style={styles.exportBtn} onPress={handleExportReport} disabled={exporting}>
               <LinearGradient colors={['#0F172A', '#1E293B'] as const} style={[StyleSheet.absoluteFill, { borderRadius: 16 }]} />
-              <Ionicons name="document-text" size={18} color="#FFF" />
-              <Text style={styles.exportBtnText}>Export Comprehensive Report</Text>
+              <Ionicons name={exporting ? 'hourglass-outline' : 'document-text'} size={18} color="#FFF" />
+              <Text style={styles.exportBtnText}>
+                {exporting ? 'Preparing report...' : 'Export Comprehensive Report'}
+              </Text>
             </TouchableOpacity>
 
           </Animated.View>
@@ -504,6 +654,11 @@ const styles = StyleSheet.create({
   insightTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4 },
   insightDesc: { fontSize: 13, color: COLORS.textSub, lineHeight: 20 },
   exportBtn: { height: 56, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10 },
+  severityTag: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 2 },
+  referenceText: { fontSize: 11, color: '#6C63FF', fontWeight: '600', marginTop: 3 },
+  evidenceText: { fontSize: 11, color: '#94A3B8', marginTop: 3, lineHeight: 15 },
+  disclaimerBox: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16 },
+  disclaimerText: { flex: 1, fontSize: 11, lineHeight: 16, color: '#7F1D1D' },
   exportBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
 
   // Modal

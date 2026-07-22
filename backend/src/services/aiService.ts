@@ -6,19 +6,28 @@ import { logger } from '../utils/logger'
 
 import { RemoteConfig } from '../models/RemoteConfig'
 
-async function getAIClientAndModel(): Promise<{ openai: OpenAI | null, model: string }> {
+/**
+ * Resolves the configured OpenAI-compatible client.
+ *
+ * `modelOverride` lets a caller reuse this client with a different model on the
+ * same provider/key — the vision analyser needs a vision-capable model while
+ * chat stays on the configured text model. Exported so there is exactly one
+ * place that knows how to build the client.
+ */
+export async function getAIClientAndModel(modelOverride?: string): Promise<{ openai: OpenAI | null, model: string }> {
   const config = await RemoteConfig.getGlobalConfig()
   const aiSettings = config.aiSettings || { provider: 'nvidia', model: 'meta/llama-3.3-70b-instruct', apiKey: '' };
-  
+
   const key = aiSettings.apiKey || process.env.NVIDIA_API_KEY || process.env.OPENAI_API_KEY;
-  if (!key) return { openai: null, model: aiSettings.model };
-  
+  const model = modelOverride || aiSettings.model;
+  if (!key) return { openai: null, model };
+
   let baseURL = undefined;
   if (aiSettings.provider === 'nvidia') baseURL = 'https://integrate.api.nvidia.com/v1';
   // Add other open-ai compatible endpoints here if needed
-  
+
   const openai = new OpenAI({ apiKey: key, baseURL });
-  return { openai, model: aiSettings.model };
+  return { openai, model };
 }
 
 const SYSTEM_PROMPT = `You are an expert AI compliance assistant for Sanyog Conformity Solutions, a leading certification and compliance consultancy in India. You have deep knowledge of:
