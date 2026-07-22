@@ -43,8 +43,10 @@ const CONFIG_REGISTRY: ConfigEntry[] = [
   { key: 'announcement_body', section: 'dynamicConfig', name: 'Announcement Body', description: 'Full announcement message shown in-app.', category: 'Home Screen', type: 'textarea', icon: <Type size={16} />, environment: 'mobile' },
 
   // AI Settings
-  { key: 'provider', section: 'aiSettings', name: 'AI Provider', description: 'Backend AI inference provider for the assistant.', category: 'AI', type: 'select', options: [{ label: 'Nvidia NIM (Llama)', value: 'nvidia' }, { label: 'OpenAI (GPT)', value: 'openai' }, { label: 'Google Gemini', value: 'gemini' }, { label: 'GitHub Copilot', value: 'copilot' }], icon: <Brain size={16} />, environment: 'admin' },
+  { key: 'provider', section: 'aiSettings', name: 'AI Provider', description: 'Backend AI inference provider for the assistant.', category: 'AI', type: 'select', options: [{ label: 'NVIDIA NIM (Llama)', value: 'nvidia' }, { label: 'OpenAI (GPT)', value: 'openai' }, { label: 'Google Gemini', value: 'gemini' }, { label: 'Anthropic Claude', value: 'claude' }, { label: 'Azure OpenAI', value: 'azure' }, { label: 'Ollama (local, dev only)', value: 'ollama' }], icon: <Brain size={16} />, environment: 'admin' },
   { key: 'model', section: 'aiSettings', name: 'AI Model', description: 'Specific model identifier used for inference calls.', category: 'AI', type: 'string', icon: <Zap size={16} />, environment: 'admin' },
+  { key: 'visionModel', section: 'aiSettings', name: 'AI Vision Model', description: 'Vision-capable model for the Product Quality Analyzer. Leave blank to use the provider default.', category: 'AI', type: 'string', icon: <Zap size={16} />, environment: 'admin' },
+  { key: 'baseUrl', section: 'aiSettings', name: 'AI Base URL', description: 'Only needed for Azure OpenAI (your resource endpoint) or a non-default Ollama host. Leave blank otherwise.', category: 'AI', type: 'string', icon: <Zap size={16} />, environment: 'admin' },
   { key: 'apiKey', section: 'aiSettings', name: 'AI API Key', description: 'Secret key for the AI provider. Never exposed to clients.', category: 'AI', type: 'password', icon: <Shield size={16} />, environment: 'admin' },
 ]
 

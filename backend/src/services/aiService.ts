@@ -7,6 +7,7 @@ import { logger } from '../utils/logger'
 import { RemoteConfig } from '../models/RemoteConfig'
 import { getProviderKey } from './ai/credentialService'
 import type { ProviderName } from '../models/AIProviderCredential'
+import { PROVIDERS, isKnownProvider, isProviderAllowedHere } from './ai/providerRegistry'
 
 /**
  * Resolves the configured OpenAI-compatible client.
@@ -16,23 +17,54 @@ import type { ProviderName } from '../models/AIProviderCredential'
  * chat stays on the configured text model. Exported so there is exactly one
  * place that knows how to build the client.
  */
-export async function getAIClientAndModel(modelOverride?: string): Promise<{ openai: OpenAI | null, model: string }> {
+export async function getAIClientAndModel(
+  modelOverride?: string,
+  capability: 'chat' | 'vision' = 'chat',
+): Promise<{ openai: OpenAI | null; model: string; provider: ProviderName }> {
   const config = await RemoteConfig.getGlobalConfig()
-  const aiSettings = config.aiSettings || { provider: 'nvidia', model: 'meta/llama-3.3-70b-instruct', apiKey: '' };
+  const aiSettings: any = config.aiSettings ?? {}
 
-  // Key comes from the encrypted credential store, which falls back to the
-  // legacy plaintext field and then to environment variables. This service
-  // never reads aiSettings.apiKey directly.
-  const key = await getProviderKey((aiSettings.provider ?? 'nvidia') as ProviderName);
-  const model = modelOverride || aiSettings.model;
-  if (!key) return { openai: null, model };
+  const rawProvider = String(aiSettings.provider ?? 'nvidia')
+  const provider: ProviderName = isKnownProvider(rawProvider) ? rawProvider : 'nvidia'
+  const spec = PROVIDERS[provider]
 
-  let baseURL = undefined;
-  if (aiSettings.provider === 'nvidia') baseURL = 'https://integrate.api.nvidia.com/v1';
-  // Add other open-ai compatible endpoints here if needed
+  if (!isKnownProvider(rawProvider)) {
+    logger.warn(`[ai] unknown provider "${rawProvider}" in Remote Config — falling back to nvidia`)
+  }
 
-  const openai = new OpenAI({ apiKey: key, baseURL });
-  return { openai, model };
+  // Model precedence: explicit override → Remote Config → provider default.
+  // Vision uses its own configured model, since the chat model is usually not
+  // vision-capable and silently sending an image to it fails at the provider.
+  const configured = capability === 'vision' ? aiSettings.visionModel : aiSettings.model
+  const fallbackModel = capability === 'vision' ? spec.defaultVisionModel : spec.defaultChatModel
+  const model = modelOverride || configured || fallbackModel || spec.defaultChatModel
+
+  if (!isProviderAllowedHere(provider)) {
+    logger.error(`[ai] provider "${provider}" is development-only and cannot serve production traffic`)
+    return { openai: null, model, provider }
+  }
+
+  if (capability === 'vision' && !spec.defaultVisionModel && !configured && !modelOverride) {
+    logger.error(`[ai] provider "${provider}" has no vision model configured`)
+    return { openai: null, model, provider }
+  }
+
+  // Keys come only from Remote Config (encrypted credential store) in
+  // production; see credentialService for the resolution order.
+  const key = await getProviderKey(provider)
+  if (!key && spec.requiresKey) return { openai: null, model, provider }
+
+  // baseUrl override exists for Azure (per-resource endpoint) and for a
+  // self-hosted Ollama on a non-default host.
+  const baseURL = (aiSettings.baseUrl && String(aiSettings.baseUrl).trim()) || spec.baseUrl
+
+  const openai = new OpenAI({
+    apiKey: key ?? 'not-required',
+    baseURL,
+    timeout: 60_000,
+    maxRetries: 1,
+  })
+  return { openai, model, provider }
 }
 
 /**

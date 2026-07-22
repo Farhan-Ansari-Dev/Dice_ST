@@ -12,6 +12,8 @@ import { getAIClientAndModel } from '../aiService';
 import { logger } from '../../utils/logger';
 import type { VisionObservations } from './types';
 
+// Model now resolves through the provider registry so switching provider in
+// Remote Config switches vision too. Kept exported for reference/tests.
 export const VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
 
 /** Hard cap on what we send upstream — NVIDIA rejects oversized payloads. */
@@ -134,7 +136,7 @@ export async function analyseProductImage(
     throw new Error(`image exceeds ${MAX_IMAGE_BYTES} bytes`);
   }
 
-  const { openai, model } = await getAIClientAndModel(VISION_MODEL);
+  const { openai, model } = await getAIClientAndModel(undefined, 'vision');
   if (!openai) {
     throw new VisionUnavailableError('No AI API key configured. Set it in the admin panel or NVIDIA_API_KEY.');
   }

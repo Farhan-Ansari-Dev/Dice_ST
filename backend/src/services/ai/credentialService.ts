@@ -15,7 +15,19 @@ import { RemoteConfig } from '../../models/RemoteConfig';
 import { seal, open, last4, isEncryptionConfigured } from '../../utils/crypto/secretBox';
 import { logger } from '../../utils/logger';
 
-/** Environment fallbacks, by provider. */
+/**
+ * Values that look configured but are not. backend/.env ships
+ * OPENAI_API_KEY=sk-your-api-key-here, which produced an opaque 401 at the
+ * provider rather than a clear "not configured" state.
+ */
+const PLACEHOLDER_KEYS = new Set([
+  'sk-your-api-key-here',
+  'your-api-key-here',
+  'changeme',
+  'REPLACE_ME',
+]);
+
+/** Environment fallbacks, by provider (development only). */
 const ENV_KEYS: Record<ProviderName, string[]> = {
   nvidia: ['NVIDIA_API_KEY'],
   openai: ['OPENAI_API_KEY'],
@@ -83,9 +95,16 @@ export async function getProviderKey(provider: ProviderName): Promise<string | n
     return legacy;
   }
 
-  for (const name of ENV_KEYS[provider] ?? []) {
-    const value = process.env[name];
-    if (value) return value;
+  // Environment keys are a DEVELOPMENT convenience only. Production reads
+  // provider keys exclusively from Remote Config (the encrypted credential
+  // store), so rotating a key is an admin action and never a redeploy.
+  if (process.env.NODE_ENV !== 'production') {
+    for (const name of ENV_KEYS[provider] ?? []) {
+      const value = process.env[name];
+      // Reject the placeholder shipped in .env.example, which otherwise looks
+      // like a configured key and fails opaquely at the provider.
+      if (value && !PLACEHOLDER_KEYS.has(value.trim())) return value;
+    }
   }
 
   return null;
@@ -115,7 +134,12 @@ export async function getCredentialStatus(provider: ProviderName): Promise<Crede
     };
   }
 
-  const fromEnv = (ENV_KEYS[provider] ?? []).some((n) => !!process.env[n]);
+  const fromEnv =
+    process.env.NODE_ENV !== 'production' &&
+    (ENV_KEYS[provider] ?? []).some((n) => {
+      const v = process.env[n];
+      return !!v && !PLACEHOLDER_KEYS.has(v.trim());
+    });
   return {
     provider,
     present: fromEnv,

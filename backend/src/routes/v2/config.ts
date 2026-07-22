@@ -40,6 +40,8 @@ const configUpdateSchema = z.object({
     provider: z.string().optional(),
     model: z.string().optional(),
     apiKey: z.string().optional(),
+    visionModel: z.string().optional(),
+    baseUrl: z.string().optional(),
   }).optional(),
 })
 

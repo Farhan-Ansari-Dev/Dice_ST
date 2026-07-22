@@ -47,6 +47,10 @@ const remoteConfigSchema = new mongoose.Schema<IRemoteConfig>({
     provider: { type: String, default: 'nvidia' },
     model: { type: String, default: 'meta/llama-3.3-70b-instruct' },
     apiKey: { type: String, default: '' },
+    // Vision-capable model; the chat model usually is not.
+    visionModel: { type: String, default: '' },
+    // Required for Azure OpenAI (per-resource endpoint) and a non-default Ollama host.
+    baseUrl: { type: String, default: '' },
   }
 }, { timestamps: true });
 
