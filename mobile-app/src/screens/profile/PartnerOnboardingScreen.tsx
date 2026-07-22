@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
+import partnersService from '../../services/partnersService';
 
 const PARTNER_TYPES = ['Certification Body (CB)', 'Testing Laboratory', 'Inspection Body (IB)'];
 
@@ -32,19 +33,40 @@ const PartnerOnboardingScreen: React.FC = () => {
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
+  // Previously faked the submission: a 1500ms setTimeout followed by a success
+  // alert. Nothing was sent and the partnerships team never saw the application.
   const handleSubmit = async () => {
-    if (!companyName || !contactName || !email || !phone) {
-      Alert.alert('Missing Info', 'Please fill out all fields.');
+    if (!companyName.trim() || !contactName.trim() || !email.trim() || !phone.trim()) {
+      Alert.alert('Missing info', 'Please fill out all fields.');
       return;
     }
-    
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setLoading(false);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
 
-    Alert.alert('Application Submitted', 'Thank you! Our partnership team will review your application and contact you shortly.', [
-      { text: 'OK', onPress: () => navigation.goBack() }
-    ]);
+    setLoading(true);
+    try {
+      await partnersService.apply({
+        partnerType,
+        companyName: companyName.trim(),
+        contactName: contactName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+      });
+      Alert.alert(
+        'Application submitted',
+        'Thank you. Our partnerships team will review your application and contact you shortly. You can track its status here.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Could not submit',
+        err?.response?.data?.message ?? 'Please check your connection and try again.',
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

@@ -26,6 +26,7 @@ const NAV = [
   { to: '/standards',                     icon: BookOpen,        label: 'Standards' },
   { to: '/leads',                        icon: Send,            label: 'Enquiries' },
   { to: '/consultants/requests',         icon: CalendarClock,   label: 'Meeting Requests' },
+  { to: '/partners/applications',        icon: Building2,       label: 'Partner Applications' },
   { to: '/support-tickets',              icon: MessageSquare,   label: 'Support Tickets' },
   { to: '/workflows',                    icon: GitBranch,       label: 'Workflows' },
   { to: '/consultants/verification',     icon: Shield,          label: 'Verification' },
