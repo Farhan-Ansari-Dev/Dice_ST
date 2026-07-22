@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,10 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -20,7 +22,15 @@ const VaultListScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { documents, addDocument, markAsUploaded } = useVaultStore();
+  const { documents, addDocument, markAsUploaded, loadDocuments, isLoading, hasLoaded, error } = useVaultStore();
+
+  // Documents come from the server. Refetch on focus so an upload made
+  // elsewhere in the app is reflected when the user returns here.
+  useFocusEffect(
+    useCallback(() => {
+      loadDocuments();
+    }, [loadDocuments]),
+  );
   const uploadedDocuments = documents.filter((document) => document.uploaded);
   const pendingDocuments = documents.filter((document) => !document.uploaded);
 
@@ -159,7 +169,9 @@ const VaultListScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={isLoading && hasLoaded} onRefresh={loadDocuments} tintColor={colors.primary} />}
+        showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <LinearGradient colors={[colors.primary, colors.primaryDark]} style={[styles.summaryCard, Shadows.md]}>
           <View style={styles.summaryHeader}>
             <View style={styles.summaryIcon}>
@@ -200,7 +212,28 @@ const VaultListScreen: React.FC = () => {
 
         <View style={[styles.listCard, Shadows.sm]}>
           <LinearGradient colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#FFFFFF']} style={styles.listCardInner}>
-            {documents.map((doc, index) => (
+            {isLoading && !hasLoaded ? (
+              <View style={styles.stateBox}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={styles.stateText}>Loading your documents…</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.stateBox}>
+                <Ionicons name="cloud-offline-outline" size={30} color={colors.textTertiary} />
+                <Text style={styles.stateText}>{error}</Text>
+                <TouchableOpacity onPress={loadDocuments} style={styles.retryBtn}>
+                  <Text style={styles.retryText}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            ) : documents.length === 0 ? (
+              <View style={styles.stateBox}>
+                <Ionicons name="folder-open-outline" size={30} color={colors.textTertiary} />
+                <Text style={styles.stateTitle}>No documents yet</Text>
+                <Text style={styles.stateText}>
+                  Upload a certificate, test report or company document and it will appear here.
+                </Text>
+              </View>
+            ) : documents.map((doc, index) => (
               <View key={doc.id}>
                 <TouchableOpacity style={styles.docRow} onPress={() => handleDocumentClick(doc)}>
                   <View style={[styles.docIconWrapper, doc.uploaded && styles.readyIconWrapper]}>
@@ -272,6 +305,11 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   openButtonText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   uploadBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' },
   uploadBtnText: { fontSize: 12, fontWeight: '600', color: colors.primary, marginLeft: 6 },
+  stateBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, paddingHorizontal: 24, gap: 10 },
+  stateTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  stateText: { fontSize: 13, lineHeight: 19, color: colors.textSecondary, textAlign: 'center' },
+  retryBtn: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: `${colors.primary}18` },
+  retryText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
   divider: { height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', marginHorizontal: 12 },
 });
 export default VaultListScreen;
