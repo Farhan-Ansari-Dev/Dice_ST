@@ -52,3 +52,11 @@ logs/
 
 # ─── Accidental shell-command files ───
 eval*
+
+# Android release signing material — never commit
+*.jks
+*.keystore
+mobile-app/android/key.properties
+
+# Redis snapshot
+dump.rdb
