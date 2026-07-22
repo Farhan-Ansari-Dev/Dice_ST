@@ -45,6 +45,9 @@ const authService = {
   },
 
   googleSignIn: async (idToken: string) => {
+    // Diagnostic: production returned `validation_error / idToken Required`
+    // while the client held a token, so record what we actually transmit.
+    console.warn('[auth] POST /auth/google idToken length:', idToken?.length ?? 0);
     const res = await api.post<{ success: boolean, data: { accessToken: string, refreshToken: string, user: User } }>('/auth/google', { idToken });
     return {
       token: res.data.accessToken,

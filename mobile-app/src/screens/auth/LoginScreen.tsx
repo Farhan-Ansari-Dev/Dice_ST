@@ -125,18 +125,31 @@ const LoginScreen: React.FC = () => {
         // User cancelled — no toast needed
       }
     } catch (error: any) {
-      // Full detail to the dev console only — never into a user-facing toast.
-      if (__DEV__) {
-        console.error('[GoogleSignIn] error:', error?.code, error?.message, error);
-      }
+      // Logged in release builds too. A __DEV__-only log makes a release-only
+      // failure undiagnosable, which is exactly when it matters. Code and
+      // message carry no secrets — the ID token is never touched here.
+      console.warn('[GoogleSignIn] failed:', error?.code, error?.message);
+
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         // User cancelled — no toast needed
       } else if (error.code === statusCodes.IN_PROGRESS) {
         showToast('Google Sign-In', 'Sign in is already in progress.', 'info');
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         showToast('Google Sign-In Failed', 'Google Play Services are not available.', 'error');
+      } else if (String(error?.code) === '10') {
+        // DEVELOPER_ERROR: this build's signing certificate SHA-1 is not
+        // registered on the Android OAuth client for com.sanyogconformity.app.
+        showToast(
+          'Google Sign-In Unavailable',
+          'This app build is not registered with Google. Please use email OTP.',
+          'error',
+        );
       } else {
-        showToast('Google Sign-In Failed', 'Unable to sign in with Google. Please try again or use email OTP.', 'error');
+        showToast(
+          'Google Sign-In Failed',
+          `Unable to sign in with Google (${error?.code ?? 'unknown'}). Please use email OTP.`,
+          'error',
+        );
       }
     } finally {
       setGoogleLoading(false);
@@ -151,9 +164,13 @@ const LoginScreen: React.FC = () => {
       await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(result.user));
       setUser(result.user);
     } catch (err: any) {
-      if (__DEV__) {
-        console.error('[GoogleSignIn] backend rejected token:', err?.response?.data ?? err);
-      }
+      // Release-visible too: a backend rejection here is the failure mode that
+      // only ever appears against the production API. Status + error code only.
+      console.warn(
+        '[GoogleSignIn] backend rejected token:',
+        err?.response?.status,
+        err?.response?.data?.error ?? err?.message,
+      );
       showToast(
         'Google Sign-In Failed',
         err?.response?.data?.message ?? 'Unable to complete sign-in. Please try again or use email OTP.',
