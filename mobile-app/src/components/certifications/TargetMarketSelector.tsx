@@ -90,7 +90,10 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
   },
   cardSelected: {
     borderColor: colors.primary,
-    backgroundColor: `${colors.primary}1A`,
+    // Opaque tint, NOT `${colors.primary}1A`. A translucent background combined
+    // with the card's elevation (Shadows.sm) makes Android fill the card with a
+    // grey shadow box. An opaque light-purple gives the same look without it.
+    backgroundColor: isDark ? '#20223A' : '#EFEDFF',
   },
   flag: {
     width: 40,
