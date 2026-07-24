@@ -15,7 +15,8 @@
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
     "db:seed:workflows": "ts-node src/db/seed-workflows.ts",
-    "migrate:provider-keys": "ts-node src/scripts/migrateProviderKeys.ts"
+    "migrate:provider-keys": "ts-node src/scripts/migrateProviderKeys.ts",
+    "diagnose:ses": "ts-node src/scripts/diagnoseSes.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",

@@ -53,7 +53,17 @@ export async function sendEmail(input: EmailInput): Promise<boolean> {
     );
     return true;
   } catch (err: any) {
-    logger.error(`[email] send to ${input.to} failed: ${err.message}`);
+    // AWS SDK v3 errors carry the actionable detail on .name / $metadata, not
+    // .message. Logging only .message hid which of the four SES failure modes
+    // was actually occurring (bad credentials, unverified sender, sandbox
+    // recipient restriction, or region mismatch). Surface all of it.
+    const name = err?.name ?? err?.Code ?? 'UnknownError';
+    const httpStatus = err?.$metadata?.httpStatusCode;
+    logger.error(
+      `[email] send to ${input.to} failed: ${name}` +
+      `${httpStatus ? ` (HTTP ${httpStatus})` : ''} — ${err?.message ?? 'no message'} ` +
+      `[from=${FROM}, region=${process.env.AWS_REGION ?? 'ap-south-1'}]`,
+    );
     return false;
   }
 }
