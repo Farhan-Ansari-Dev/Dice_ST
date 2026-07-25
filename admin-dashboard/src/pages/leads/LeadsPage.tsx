@@ -3,6 +3,7 @@ import { Search, Mail, Phone, Building2, Clock, CheckCircle2, XCircle, UserCheck
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from '../../store/toastStore'
 import apiClient from '../../services/apiClient'
+import { asList } from '../../utils/http'
 import { formatDate } from '../../utils/formatters'
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = {
@@ -26,7 +27,7 @@ export default function LeadsPage() {
     queryKey: ['leads', statusFilter],
     queryFn: async () => {
       const res = await apiClient.get(`/leads${statusFilter ? `?status=${statusFilter}` : ''}`)
-      return (res as any).data ?? []
+      return asList(res)
     },
   })
 

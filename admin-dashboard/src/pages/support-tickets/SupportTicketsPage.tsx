@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Button from '../../components/common/Button'
 import { toast } from '../../store/toastStore'
 import apiClient from '../../services/apiClient'
+import { asList } from '../../utils/http'
 
 const PRIORITY_COLOR: Record<string, string> = {
   low: '#10B981',
@@ -35,7 +36,7 @@ export default function SupportTicketsPage() {
     refetchInterval: 5000,          // keeps the thread live without a socket client here
     queryFn: async () => {
       const res = await apiClient.get(`/support-tickets/${openTicket._id}/messages`)
-      return (res as any).data ?? []
+      return asList(res)
     },
   })
 

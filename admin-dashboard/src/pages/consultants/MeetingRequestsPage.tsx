@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Button from '../../components/common/Button'
 import { toast } from '../../store/toastStore'
 import apiClient from '../../services/apiClient'
+import { asList } from '../../utils/http'
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = {
   pending:   { color: '#F59E0B', icon: Clock,        label: 'Pending' },
@@ -24,7 +25,7 @@ export default function MeetingRequestsPage() {
     queryKey: ['meetings', statusFilter],
     queryFn: async () => {
       const res = await apiClient.get(`/meetings${statusFilter ? `?status=${statusFilter}` : ''}`)
-      return (res as any).data ?? []
+      return asList(res)
     },
   })
 
