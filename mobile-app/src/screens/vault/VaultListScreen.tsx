@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useEffect, useCallback, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,12 +17,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { useVaultStore } from '../../store/vaultStore';
+import documentsService from '../../services/documentsService';
 
 const VaultListScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { documents, addDocument, markAsUploaded, loadDocuments, isLoading, hasLoaded, error } = useVaultStore();
+  const { documents, markAsUploaded, loadDocuments, isLoading, hasLoaded, error } = useVaultStore();
+  const [uploading, setUploading] = useState(false);
 
   // Documents come from the server. Refetch on focus so an upload made
   // elsewhere in the app is reflected when the user returns here.
@@ -46,29 +48,34 @@ const VaultListScreen: React.FC = () => {
     );
   };
 
-  const addPickedDocument = (document: {
+  const addPickedDocument = async (document: {
     name: string;
     uri: string;
     mimeType?: string | null;
     source: 'camera' | 'image-library' | 'file-picker';
   }) => {
     const isImage = document.mimeType?.startsWith('image/') ?? false;
-    addDocument({
-      name: document.name,
-      type: document.mimeType === 'application/pdf' ? 'PDF document' : isImage ? 'Scanned image' : 'Document',
-      uri: document.uri,
-      mimeType: document.mimeType,
-      source: document.source,
-      ocrStatus: isImage ? 'queued' : 'ready',
-      dateAdded: new Date().toISOString(),
-      uploaded: true,
-    });
-    Alert.alert(
-      isImage ? 'Scan saved' : 'Document added',
-      isImage
-        ? 'Your image was added to the Vault and is ready for OCR extraction.'
-        : 'Your document is now available in the Vault.'
-    );
+    const mimeType = document.mimeType || (isImage ? 'image/jpeg' : 'application/octet-stream');
+    setUploading(true);
+    try {
+      // Real upload (presign → S3 → finalize). Previously this only added a
+      // local phantom that loadDocuments() wiped on the next focus, so the file
+      // was never persisted despite the success message.
+      await documentsService.uploadFromDevice(document.uri, document.name, mimeType);
+      // Reflect the authoritative server list rather than an optimistic entry.
+      await loadDocuments();
+      Alert.alert(
+        isImage ? 'Scan uploaded' : 'Document uploaded',
+        'Your document has been securely saved to the Vault.'
+      );
+    } catch (e: any) {
+      Alert.alert(
+        'Upload failed',
+        e?.response?.data?.error || e?.message || 'Could not upload the document. Please try again.'
+      );
+    } finally {
+      setUploading(false);
+    }
   };
 
   const takePhoto = async () => {
@@ -267,12 +274,28 @@ const VaultListScreen: React.FC = () => {
         </View>
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {uploading && (
+        <View style={styles.uploadingOverlay}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={styles.uploadingText}>Uploading…</Text>
+        </View>
+      )}
     </View>
   );
 };
 
 const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   container: { flex: 1 },
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    zIndex: 10,
+  },
+  uploadingText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
   eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: colors.primary, marginBottom: 4 },
   headerTitle: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
