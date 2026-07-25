@@ -9,12 +9,22 @@ import { stripProtected } from '../../utils/sanitize'
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
 
-router.get('/', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
-  const query: any = {}
-  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
-  }
-  
+// Ownership scoping for reads. Staff (admin/super_admin) operate platform-wide;
+// employees are org-scoped; clients see only certifications produced by an
+// application they created. An org-less client cannot be scoped by org_id
+// ({ org_id: undefined } would match every org-less record — the same IDOR trap
+// documented in routes/v2/applications.ts), so scope by owned applications.
+const certOwnershipFilter = async (req: AuthRequest): Promise<any> => {
+  const role = req.user!.role
+  if (role === 'admin' || role === 'super_admin') return {}
+  if (role === 'employee') return { org_id: req.user!.org_id }
+  const ownedAppIds = await Application.find({ created_by: req.user!._id }).distinct('_id')
+  return { application_id: { $in: ownedAppIds } }
+}
+
+router.get('/', authenticate, authorize(['admin','employee','super_admin','client']), wrap(async (req: AuthRequest, res: Response) => {
+  const query: any = await certOwnershipFilter(req)
+
   if (req.query.showDeleted !== 'true') {
     query.deleted_at = { $exists: false }
   }
@@ -39,8 +49,9 @@ const certScope = (req: AuthRequest): any => {
   return filter
 }
 
-router.get('/:id', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
-  const cert = await Certification.findOne(certScope(req)).lean()
+router.get('/:id', authenticate, authorize(['admin','employee','super_admin','client']), wrap(async (req: AuthRequest, res: Response) => {
+  const filter = { ...(await certOwnershipFilter(req)), _id: req.params.id }
+  const cert = await Certification.findOne(filter).lean()
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert)
 }))
