@@ -99,7 +99,7 @@ const HomeScreen: React.FC = () => {
     { id: '2', title: 'Market\nAccess', icon: 'globe', color: colors.success, route: 'MarketAccess' },
     { id: '3', title: 'Vault', icon: 'lock-closed', color: colors.info, route: 'Profile' },
     { id: '4', title: 'Ask\nExpert', icon: 'chatbubbles', color: colors.warning, route: 'Profile', screen: 'SupportCenter' },
-    { id: '5', title: 'Action\nRequired', icon: 'alert-circle', color: colors.error, route: 'Applications', screen: 'ActionRequired' },
+    { id: '5', title: 'My\nWork', icon: 'briefcase', color: colors.primary, route: 'MyWork' },
   ], [colors, isDark]);
 
   const handleRefresh = async () => {

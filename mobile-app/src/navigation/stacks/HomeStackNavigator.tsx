@@ -8,6 +8,7 @@ import ComplianceScoreScreen from '../../screens/home/ComplianceScoreScreen';
 import NotificationsScreen from '../../screens/notifications/NotificationsScreen';
 import NotificationDetailScreen from '../../screens/communication/NotificationDetailScreen';
 import AISearchScreen from '../../screens/ai-assistant/AISearchScreen';
+import MyWorkScreen from '../../screens/home/MyWorkScreen';
 
 const Stack = createNativeStackNavigator();
 const HomeStackNavigator: React.FC = () => (
@@ -32,6 +33,7 @@ const HomeStackNavigator: React.FC = () => (
     />
     <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen} />
     <Stack.Screen name="AISearch" component={AISearchScreen} />
+    <Stack.Screen name="MyWork" component={MyWorkScreen} />
   </Stack.Navigator>
 );
 export default HomeStackNavigator;
