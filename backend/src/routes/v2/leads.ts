@@ -14,6 +14,7 @@ import { notificationService } from '../../services/notificationService';
 import { Notification } from '../../models/Notification';
 import { User } from '../../models/User';
 import { logger } from '../../utils/logger';
+import { createDraftApplication } from '../../services/applicationService';
 
 const router = Router();
 const wrap = (handler: any) => (req: Request, res: Response, next: NextFunction) => handler(req, res, next).catch(next);
@@ -79,7 +80,36 @@ router.post('/', authenticate, validate(createSchema), wrap(async (req: AuthRequ
     logger.warn(`[leads] admin notification failed: ${String(e)}`);
   }
 
-  return res.status(201).json({ success: true, data: lead });
+  // Auto-create a linked Draft Application when the intake carries enough to
+  // start one: a catalog product_id + a certification type. The Lead stays the
+  // internal CRM record; the customer immediately sees a Draft Application.
+  // Best-effort — a draft-creation failure must never lose the captured Lead.
+  let application: any = null;
+  const productId = b.product_id ?? b.productId;
+  const certType =
+    b.cert_type ?? b.certType ?? (Array.isArray(b.certifications) ? b.certifications[0]?.code : undefined);
+  if (productId && certType) {
+    try {
+      application = await createDraftApplication({
+        user: req.user!, product_id: productId, cert_type: certType, notes: b.notes, ip: req.ip,
+      });
+      lead.converted_application_id = application._id;
+      await lead.save();
+
+      // Confirm to the customer that their draft is ready to continue.
+      await Notification.create({
+        user_id: req.user!._id,
+        type: 'application',
+        title: 'Draft application ready',
+        body: `Your ${certType} application ${application.application_number} is ready to complete.`,
+        data: { applicationId: String(application._id) },
+      });
+    } catch (e) {
+      logger.warn(`[leads] draft application auto-create skipped: ${String(e)}`);
+    }
+  }
+
+  return res.status(201).json({ success: true, data: lead, application });
 }));
 
 // ── My enquiries (so the user can track them) ───────────────────────────────

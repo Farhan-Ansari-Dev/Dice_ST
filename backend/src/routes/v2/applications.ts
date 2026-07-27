@@ -12,6 +12,7 @@ import { Types } from 'mongoose';
 import { Application, ApplicationStatus, Workflow, Product, Certification, audit, AuditLog } from '../../models';
 import { authenticate, AuthRequest, requireRole, ADMIN_ROLES } from '../../middleware/authMongo';
 import { notify } from '../../services/notifications';
+import { createDraftApplication, ProductNotFoundError } from '../../services/applicationService';
 
 const router = Router();
 router.use(authenticate);
@@ -75,47 +76,16 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'product_id and cert_type required' });
   }
 
-  // Product is the shared Sanyog-managed catalog (single-tenant, org-optional).
-  const product = await Product.findById(product_id);
-  if (!product) return res.status(404).json({ error: 'product_not_found' });
-
-  // Workflow is optional — it supplies fee/duration defaults only (transitions use
-  // ALLOWED_TRANSITIONS). If none is seeded for this cert type we fall back to defaults.
-  const workflow = (await Workflow.findOne({ cert_type, active: true }).sort({ version: -1 })) as any;
-
-  // Application number sequence (platform-wide in single-tenant).
-  const count = await Application.countDocuments({});
-  const appNumber = `APP-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
-
-  const durationDays = workflow?.estimated_duration_days ?? 45;
-  const app = await Application.create({
-    application_number: appNumber,
-    org_id: req.user!.org_id,
-    product_id: new Types.ObjectId(product_id),
-    workflow_id: workflow?._id,
-    cert_type,
-    status: 'draft',
-    current_stage: 'draft',
-    created_by: req.user!._id,
-    assignees: [],
-    documents: [],
-    fee: { base_inr: workflow?.fee_structure?.application_fee_inr ?? 0, expedited: false, paid: false },
-    priority,
-    tags: [],
-    estimated_completion_at: new Date(Date.now() + durationDays * 24 * 3600 * 1000),
-  });
-
-  await audit({
-    actor: req.user!._id as any,
-    org_id: req.user!.org_id,
-    resource_type: 'application',
-    resource_id: app._id as any,
-    action: 'created',
-    after: { cert_type, product_id, application_number: appNumber },
-    ip: req.ip,
-  });
-
-  return res.status(201).json({ data: app });
+  try {
+    // Shared creation path (also used by the enquiry intake in routes/v2/leads).
+    const app = await createDraftApplication({
+      user: req.user!, product_id, cert_type, priority, notes, ip: req.ip,
+    });
+    return res.status(201).json({ data: app });
+  } catch (e) {
+    if (e instanceof ProductNotFoundError) return res.status(404).json({ error: 'product_not_found' });
+    throw e;
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
