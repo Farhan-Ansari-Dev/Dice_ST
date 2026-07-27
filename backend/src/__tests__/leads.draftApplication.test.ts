@@ -66,6 +66,7 @@ describe('POST /leads — draft application auto-creation', () => {
     expect(res.body.data._id).toBeTruthy();                       // the Lead
     expect(res.body.application).toBeTruthy();                    // the Draft Application
     expect(res.body.application.status).toBe('draft');
+    expect(res.body.application.product_status).toBe('validated');
     expect(res.body.application.cert_type).toBe('BIS');
     expect(String(res.body.application.created_by)).toBe(String(clientId));
     // Lead is linked to the application (internal CRM ↔ customer-facing app)
@@ -89,14 +90,29 @@ describe('POST /leads — draft application auto-creation', () => {
     expect(res.body.application ?? null).toBeNull();
   });
 
-  it('captures the Lead even if the product is invalid (draft creation is best-effort)', async () => {
+  it('still creates a Draft Application (pending_validation) when the product cannot be resolved', async () => {
     const res = await request(app)
       .post('/api/v2/leads')
       .set('Authorization', `Bearer ${clientToken}`)
       .send(enquiry({ product_id: '000000000000000000000000', cert_type: 'BIS' }));
 
     expect(res.status).toBe(201);
-    expect(res.body.data._id).toBeTruthy();          // Lead survived
-    expect(res.body.application ?? null).toBeNull();  // draft skipped, not fatal
+    expect(res.body.data._id).toBeTruthy();                              // Lead
+    expect(res.body.application).toBeTruthy();                           // draft still created — lifecycle never diverges
+    expect(res.body.application.product_status).toBe('pending_validation');
+    expect(res.body.application.product_id ?? null).toBeNull();          // manager validates later
+    expect(res.body.application.status).toBe('draft');
+  });
+
+  it('a Draft Application is also created when a cert_type is given without any product_id', async () => {
+    const res = await request(app)
+      .post('/api/v2/leads')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send(enquiry({ cert_type: 'EPR' })); // no product_id at all
+
+    expect(res.status).toBe(201);
+    expect(res.body.application).toBeTruthy();
+    expect(res.body.application.product_status).toBe('pending_validation');
+    expect(res.body.application.cert_type).toBe('EPR');
   });
 });

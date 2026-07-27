@@ -21,11 +21,16 @@ export class ProductNotFoundError extends Error {
 
 export interface CreateDraftApplicationInput {
   user: IUser;
-  product_id: string | Types.ObjectId;
+  /** Optional: when it doesn't resolve to a catalog product, the draft is still
+   *  created with product_status 'pending_validation' (unless `strict`). */
+  product_id?: string | Types.ObjectId;
   cert_type: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   notes?: string;
   ip?: string;
+  /** Direct "New Application" (catalog pick) requires a real product — set true
+   *  to 404 on an unresolved product instead of creating a pending draft. */
+  strict?: boolean;
 }
 
 /**
@@ -35,8 +40,13 @@ export interface CreateDraftApplicationInput {
  * status `draft`, and an immutable audit entry.
  */
 export async function createDraftApplication(input: CreateDraftApplicationInput) {
-  const product = await Product.findById(input.product_id);
-  if (!product) throw new ProductNotFoundError();
+  // Resolve the product when supplied. An enquiry intake may not have a catalog
+  // match — the draft is still created (one lifecycle for every customer); a
+  // manager validates the product later. Only the strict (catalog-pick) path
+  // treats an unresolved product as an error.
+  const product = input.product_id ? await Product.findById(input.product_id) : null;
+  if (!product && input.strict) throw new ProductNotFoundError();
+  const product_status: 'validated' | 'pending_validation' = product ? 'validated' : 'pending_validation';
 
   // Workflow is optional — it supplies fee/duration defaults only (transitions
   // use ALLOWED_TRANSITIONS). Falls back to defaults when none is seeded.
@@ -50,7 +60,8 @@ export async function createDraftApplication(input: CreateDraftApplicationInput)
   const app = await Application.create({
     application_number: appNumber,
     org_id: input.user.org_id,
-    product_id: new Types.ObjectId(String(input.product_id)),
+    product_id: product?._id,
+    product_status,
     workflow_id: workflow?._id,
     cert_type: input.cert_type,
     status: 'draft',
@@ -70,7 +81,7 @@ export async function createDraftApplication(input: CreateDraftApplicationInput)
     resource_type: 'application',
     resource_id: app._id as any,
     action: 'created',
-    after: { cert_type: input.cert_type, product_id: String(input.product_id), application_number: appNumber },
+    after: { cert_type: input.cert_type, product_id: product ? String(product._id) : null, product_status, application_number: appNumber },
     ip: input.ip,
   });
 

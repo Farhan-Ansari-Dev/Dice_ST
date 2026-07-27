@@ -80,15 +80,17 @@ router.post('/', authenticate, validate(createSchema), wrap(async (req: AuthRequ
     logger.warn(`[leads] admin notification failed: ${String(e)}`);
   }
 
-  // Auto-create a linked Draft Application when the intake carries enough to
-  // start one: a catalog product_id + a certification type. The Lead stays the
-  // internal CRM record; the customer immediately sees a Draft Application.
-  // Best-effort — a draft-creation failure must never lose the captured Lead.
+  // Auto-create a linked Draft Application so the customer ALWAYS gets one —
+  // the single lifecycle does not diverge on catalogue coverage. We only need a
+  // certification type; if the product doesn't resolve to a catalogue entry the
+  // draft is created with product_status 'pending_validation' for a manager to
+  // validate. The Lead stays the internal CRM record. Best-effort: a failure
+  // here must never lose the captured Lead.
   let application: any = null;
   const productId = b.product_id ?? b.productId;
   const certType =
     b.cert_type ?? b.certType ?? (Array.isArray(b.certifications) ? b.certifications[0]?.code : undefined);
-  if (productId && certType) {
+  if (certType) {
     try {
       application = await createDraftApplication({
         user: req.user!, product_id: productId, cert_type: certType, notes: b.notes, ip: req.ip,

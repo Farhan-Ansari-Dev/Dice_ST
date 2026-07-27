@@ -78,8 +78,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
   try {
     // Shared creation path (also used by the enquiry intake in routes/v2/leads).
+    // strict: this catalog-pick route requires a real product (404 otherwise);
+    // the enquiry intake calls it leniently to always produce a Draft Application.
     const app = await createDraftApplication({
-      user: req.user!, product_id, cert_type, priority, notes, ip: req.ip,
+      user: req.user!, product_id, cert_type, priority, notes, ip: req.ip, strict: true,
     });
     return res.status(201).json({ data: app });
   } catch (e) {

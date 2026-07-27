@@ -41,7 +41,11 @@ export interface IStatusTransition {
 export interface IApplication extends Document {
   application_number: string;              // human-friendly: APP-2026-0042
   org_id: Types.ObjectId;
-  product_id: Types.ObjectId;
+  // Optional: an enquiry-created draft may not yet resolve to a catalog product.
+  // When absent, product_status is 'pending_validation' and a manager attaches
+  // the real product during triage — the customer still gets a Draft Application.
+  product_id?: Types.ObjectId;
+  product_status: 'validated' | 'pending_validation';
   workflow_id: string;                     // references Workflow._id (e.g. "wf_bis_crs_v1")
   cert_type: string;                       // "BIS_CRS", "EPR", "TEC_ETA", etc.
 
@@ -121,7 +125,9 @@ const ApplicationSchema = new Schema<IApplication>(
     // workflow (fee/duration defaults only; transitions use ALLOWED_TRANSITIONS) is
     // seeded, not always present. Same optional pattern as Payment/Inspection/Document.
     org_id:             { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
-    product_id:         { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
+    // Optional: enquiry-created drafts may await product validation (see IApplication).
+    product_id:         { type: Schema.Types.ObjectId, ref: 'Product', index: true },
+    product_status:     { type: String, enum: ['validated', 'pending_validation'], default: 'validated', index: true },
     workflow_id:        { type: String, index: true },
     cert_type:          { type: String, required: true, index: true },
 
