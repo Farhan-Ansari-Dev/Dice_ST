@@ -5,18 +5,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
-import Input from '../../components/common/Input';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import ProductCategorySelector from '../../components/certifications/ProductCategorySelector';
 import TargetMarketSelector from '../../components/certifications/TargetMarketSelector';
+import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../components/common/ToastProvider';
+import { useQueryClient } from '@tanstack/react-query';
+import leadsService from '../../services/leadsService';
 import api from '../../services/api';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Mock Data - In a real app, this would come from an API
 const ALL_PRODUCTS = [
   'Air Fryer', 'Action Camera', 'Air Purifier', 'Bluetooth Speaker', 'Blender', 'Coffee Maker',
   'Digital Camera', 'Drone', 'Electric Kettle', 'Electric Scooter', 'Electric Toothbrush',
@@ -31,12 +33,13 @@ const ALL_COUNTRIES = [
   'IN', 'AE', 'SA', 'US', 'GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CA', 'AU', 'JP', 'KR', 'SG', 'MY', 'TH', 'VN', 'ID', 'PH', 'ZA', 'BR', 'MX', 'CL', 'EG', 'KE', 'NG', 'TR', 'QA', 'OM', 'KW',
 ];
 
-const MARKET_RULES: Record<string, Record<string, any[]>> = {};
-
 const NewCertificationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { user } = useAuthStore();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   const [step, setStep] = useState(1);
@@ -46,11 +49,9 @@ const NewCertificationScreen: React.FC = () => {
   const [productSearch, setProductSearch] = useState('');
   const [marketSearch, setMarketSearch] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [recommendedCerts, setRecommendedCerts] = useState<any[]>([]);
-  const [productName, setProductName] = useState('');
-  const [hsCode, setHsCode] = useState('');
-  const [description, setDescription] = useState('');
 
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim();
@@ -106,20 +107,56 @@ const NewCertificationScreen: React.FC = () => {
     }
   };
 
-  const handleSubmit = () => {
-    if (!productName.trim()) {
-      Alert.alert('Required', 'Please enter product name.');
+  /** Create a Lead (which auto-creates a Draft Application on the backend),
+   *  then navigate to My Work so the customer can see and continue it. */
+  const handleApply = async () => {
+    if (!user?.email) {
+      showToast('Sign in required', 'Please sign in before applying.', 'error');
       return;
     }
-    navigation.navigate('UploadDocuments', {
-      mainCategory: 'Certifications',
-      selectedType: recommendedCerts[0]?.code || 'GENERAL',
-      productName,
-      hsCode,
-      description,
-      certs: recommendedCerts,
-      certificationId: 'some-id-from-rules' // This needs to be determined from the analysis step
-    });
+    if (recommendedCerts.length === 0) {
+      Alert.alert('Error', 'No certifications were recommended. Please go back and re-analyze.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const certType = recommendedCerts[0]?.code || selectedProduct || 'GENERAL';
+      await leadsService.create({
+        serviceId: certType,
+        serviceName: recommendedCerts.map((c: any) => c.name).join(', '),
+        contactName: user.name ?? user.email.split('@')[0],
+        contactEmail: user.email,
+        contactPhone: user.phone,
+        companyName: user.companyName,
+        productDescription: selectedProduct ?? undefined,
+        targetMarkets: selectedMarkets,
+        notes: `AI-analyzed certifications: ${recommendedCerts.map((c: any) => c.code).join(', ')}`,
+      });
+
+      // Invalidate My Work queries so the new Draft Application appears immediately
+      queryClient.invalidateQueries({ queryKey: ['mywork'] });
+
+      showToast(
+        'Application created',
+        'Your draft application is ready. Continue from My Work.',
+        'success',
+      );
+
+      // Navigate to My Work — the customer's single hub for all applications
+      navigation.navigate('MainTabs', {
+        screen: 'Home',
+        params: { screen: 'MyWork' },
+      });
+    } catch (err: any) {
+      showToast(
+        'Could not submit',
+        err?.response?.data?.message ?? 'Please check your connection and try again.',
+        'error',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -131,8 +168,8 @@ const NewCertificationScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={styles.headerTitle}>New Application</Text>
-          <Text style={styles.headerSub}>Step 1 of 3</Text>
+          <Text style={styles.headerTitle}>New Certification</Text>
+          <Text style={styles.headerSub}>{step === 1 ? 'Step 1 of 2 — Analyze' : 'Step 2 of 2 — Review & Apply'}</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
@@ -179,7 +216,7 @@ const NewCertificationScreen: React.FC = () => {
           </View>
         )}
 
-        {/* STEP 2 - RESULTS */}
+        {/* STEP 2 - AI Results + Apply */}
         {step === 2 && (
           <View>
             <Text style={styles.sectionLabel}>AI Recommended Certifications</Text>
@@ -198,14 +235,45 @@ const NewCertificationScreen: React.FC = () => {
               ))}
             </View>
 
-            <View style={[styles.formCard, { marginTop: 32, backgroundColor: isDark ? colors.bgCard : '#FFF' }]}>
-              <Text style={styles.sectionLabel}>Product Information</Text>
-              <Input label="Product Name *" value={productName} onChangeText={setProductName} placeholder="e.g. BassBooster 3000" />
-              <Input label="HS Code" value={hsCode} onChangeText={setHsCode} placeholder="e.g. 8504.40" />
-              <Input label="Description" value={description} onChangeText={setDescription} placeholder="Brief product description..." multiline numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
+            {/* Summary card */}
+            <View style={[styles.summaryCard, { backgroundColor: isDark ? colors.bgCard : '#FFF' }]}>
+              <View style={styles.summaryRow}>
+                <Ionicons name="cube-outline" size={18} color={colors.textSecondary} />
+                <Text style={styles.summaryLabel}>Product</Text>
+                <Text style={styles.summaryValue}>{selectedProduct}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Ionicons name="globe-outline" size={18} color={colors.textSecondary} />
+                <Text style={styles.summaryLabel}>Markets</Text>
+                <Text style={styles.summaryValue}>{selectedMarkets.join(', ')}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.textSecondary} />
+                <Text style={styles.summaryLabel}>Certifications</Text>
+                <Text style={styles.summaryValue}>{recommendedCerts.length}</Text>
+              </View>
             </View>
 
-            <Button title="Proceed to Document Upload" onPress={handleSubmit} size="lg" style={{ marginTop: 24 }} icon={<Ionicons name="arrow-forward" size={20} color="#FFFFFF" />} />
+            {/* What happens next */}
+            <View style={[styles.infoBox, { marginHorizontal: 20, marginTop: 24 }]}>
+              <View style={[styles.iconWrap, { backgroundColor: `${colors.success}20` }]}>
+                <Ionicons name="information-circle" size={20} color={colors.success} />
+              </View>
+              <Text style={styles.infoText}>
+                Applying creates a draft application that our certification team will review. You can upload documents, track progress, and communicate with your manager from My Work.
+              </Text>
+            </View>
+
+            <View style={{ paddingHorizontal: 20 }}>
+              <Button 
+                title={isSubmitting ? "Submitting..." : "Apply for Certification"} 
+                onPress={handleApply} 
+                size="lg" 
+                style={{ marginTop: 32 }}
+                icon={!isSubmitting && <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />}
+                disabled={isSubmitting}
+              />
+            </View>
           </View>
         )}
         
@@ -255,11 +323,30 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-  formCard: {
-    padding: 20,
-    borderRadius: 20,
+  summaryCard: {
     marginHorizontal: 20,
-    gap: 16,
+    marginTop: 24,
+    padding: 18,
+    borderRadius: 16,
+    gap: 14,
+    ...Shadows.sm,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    width: 100,
+  },
+  summaryValue: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });
 

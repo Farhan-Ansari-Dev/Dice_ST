@@ -111,7 +111,10 @@ const NotificationsScreen: React.FC = () => {
           </View>
         ) : (
           notifications.map((item) => {
-            const cfg = TYPE_CONFIG[item.type];
+            // Fall back to the 'system' style for any type the backend sends
+            // that isn't in TYPE_CONFIG — an unmapped type otherwise yields
+            // undefined and crashes on cfg.bg below.
+            const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.system;
             return (
               <TouchableOpacity
                 key={item.id}
@@ -119,6 +122,15 @@ const NotificationsScreen: React.FC = () => {
                 onPress={() => {
                   notificationsService.markRead(item.id).catch(() => {});
                   markAsRead(item.id);
+                  // Deep-link to the relevant destination using the context the
+                  // backend attaches to each notification.
+                  const appId = item.data?.applicationId;
+                  const ticketId = item.data?.ticketId;
+                  if (appId) {
+                    navigation.navigate('Applications', { screen: 'ApplicationDetail', params: { id: String(appId) } });
+                  } else if (ticketId) {
+                    navigation.navigate('Profile', { screen: 'LiveChat' });
+                  }
                 }}
                 activeOpacity={0.85}
               >

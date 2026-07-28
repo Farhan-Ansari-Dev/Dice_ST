@@ -89,7 +89,7 @@ router.post('/', authenticate, validate(createSchema), wrap(async (req: AuthRequ
   let application: any = null;
   const productId = b.product_id ?? b.productId;
   const certType =
-    b.cert_type ?? b.certType ?? (Array.isArray(b.certifications) ? b.certifications[0]?.code : undefined);
+    b.cert_type ?? b.certType ?? b.serviceId ?? (Array.isArray(b.certifications) ? b.certifications[0]?.code : undefined);
   if (certType) {
     try {
       application = await createDraftApplication({

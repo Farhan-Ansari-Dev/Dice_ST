@@ -21,6 +21,7 @@ import { formatDate, formatFileSize } from '../../utils/formatters';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import { useDebounce } from '../../hooks/useDebounce';
+import documentsService from '../../services/documentsService';
 
 const DocumentsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -87,6 +88,10 @@ const DocumentsScreen: React.FC = () => {
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
+        const mimeType = file.mimeType || 'application/octet-stream';
+        
+        await documentsService.uploadFromDevice(file.uri, file.name, mimeType);
+        
         Alert.alert(
           'Document Added',
           `"${file.name}" has been uploaded successfully.`,
@@ -94,8 +99,8 @@ const DocumentsScreen: React.FC = () => {
         );
         await refetch();
       }
-    } catch (err) {
-      Alert.alert('Error', 'Could not open document picker. Please try again.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.error || err?.message || 'Could not upload document. Please try again.');
     }
   };
 

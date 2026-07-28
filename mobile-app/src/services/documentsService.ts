@@ -47,6 +47,7 @@ const documentsService = {
     name: string,
     mimeType: string,
     docType: string = 'general',
+    applicationId?: string,
   ): Promise<Document> => {
     const info = await FileSystem.getInfoAsync(fileUri);
     if (!info.exists) throw new Error('The selected file could not be read.');
@@ -82,7 +83,7 @@ const documentsService = {
     // 3. Finalize — server verifies the object exists and records the Document.
     const finalized = await api.post<{ data: { document: Document; version: unknown } }>(
       '/documents/finalize',
-      { s3_key, name, doc_type: docType, mime_type: mimeType, size_bytes: sizeBytes, sha256 },
+      { s3_key, name, doc_type: docType, mime_type: mimeType, size_bytes: sizeBytes, sha256, application_id: applicationId },
     );
     return finalized.data.document;
   },

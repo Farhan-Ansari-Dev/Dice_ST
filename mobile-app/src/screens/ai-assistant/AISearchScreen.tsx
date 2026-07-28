@@ -82,15 +82,21 @@ const AISearchScreen: React.FC = () => {
       // plausible-looking wrong compliance answer is worse than a visible
       // outage, because the user cannot tell the difference.
       const unavailable = err?.name === 'AIUnavailableError';
+      // Read the error message into a plain local *before* setMessages. The
+      // updater below is a nested closure, and closing over the catch binding
+      // `err` from inside it throws "Property 'err' doesn't exist" on Hermes.
+      // Capturing the string here keeps `err` out of the closure.
+      const errorMessage = err?.message ?? 'Something went wrong. Please try again.';
+      const errorText = unavailable
+        ? `${errorMessage}\n\nIn the meantime, you can browse Certifications, Applications and Insights, or contact support@sanyogconformity.com.`
+        : errorMessage;
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== typingId),
         {
           id: Date.now().toString(),
           role: 'ai',
           isError: true,
-          text: unavailable
-            ? `${err.message}\n\nIn the meantime, you can browse Certifications, Applications and Insights, or contact support@sanyogconformity.com.`
-            : err?.message ?? 'Something went wrong. Please try again.',
+          text: errorText,
         },
       ]);
     } finally {

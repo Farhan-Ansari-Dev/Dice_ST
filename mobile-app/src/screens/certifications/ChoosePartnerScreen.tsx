@@ -12,7 +12,6 @@ import {
   Animated,
   FlatList,
   Image,
-  Modal,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +19,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
 import Button from '../../components/common/Button';
+import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../components/common/ToastProvider';
+import { useQueryClient } from '@tanstack/react-query';
+import leadsService from '../../services/leadsService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -39,11 +42,13 @@ const ChoosePartnerScreen: React.FC = () => {
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { user } = useAuthStore();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   const [partnerType, setPartnerType] = useState<'dice' | 'custom' | null>(null);
   const [selectedLabId, setSelectedLabId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isSuccessModalVisible, setSuccessModalVisible] = useState(false);
 
   // Animation values for Dice Hero Card
   const diceAnim = useMemo(() => new Animated.Value(0), []);
@@ -87,13 +92,50 @@ const ChoosePartnerScreen: React.FC = () => {
       Alert.alert('Required', 'Please select your preferred lab from the marketplace.');
       return;
     }
+    if (!user?.email) {
+      showToast('Sign in required', 'Please sign in before submitting.', 'error');
+      return;
+    }
 
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    setLoading(false);
-    
-    // Show custom success modal instead of native alert
-    setSuccessModalVisible(true);
+    try {
+      const { mainCategory, selectedType, productName } = route.params || {};
+      const partnerName = partnerType === 'dice'
+        ? 'Dice (Recommended)'
+        : LAB_MARKETPLACE.find(l => l.id === selectedLabId)?.name ?? selectedLabId;
+
+      await leadsService.create({
+        serviceId: selectedType || mainCategory || 'GENERAL',
+        serviceName: mainCategory || 'Certification',
+        contactName: user.name ?? user.email.split('@')[0],
+        contactEmail: user.email,
+        contactPhone: user.phone,
+        companyName: user.companyName,
+        productDescription: productName,
+        notes: `Partner preference: ${partnerName}`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['mywork'] });
+
+      showToast(
+        'Application created',
+        'Your draft application is ready. Continue from My Work.',
+        'success',
+      );
+
+      navigation.navigate('MainTabs', {
+        screen: 'Home',
+        params: { screen: 'MyWork' },
+      });
+    } catch (err: any) {
+      showToast(
+        'Could not submit',
+        err?.response?.data?.message ?? 'Please check your connection and try again.',
+        'error',
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
@@ -288,30 +330,6 @@ const ChoosePartnerScreen: React.FC = () => {
           icon={<Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />}
         />
       </View>
-
-      {/* CUSTOM SUCCESS MODAL */}
-      <Modal visible={isSuccessModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.successCard}>
-            <Text style={styles.successTitle}>Success!</Text>
-            <Text style={styles.successText}>
-              Application submitted! Our experts are reviewing your request and will generate a custom quotation shortly.
-            </Text>
-            
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity 
-                style={styles.modalPrimaryBtn}
-                onPress={() => {
-                  setSuccessModalVisible(false);
-                  navigation.goBack();
-                }}
-              >
-                <Text style={styles.modalPrimaryBtnText}>Go to Certifications</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -573,67 +591,6 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
       borderTopWidth: 1,
       borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
       ...Shadows.md,
-    },
-    
-    // Success Modal Styles
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 24,
-    },
-    successCard: {
-      width: '100%',
-      backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF',
-      borderRadius: 24, // Matching reference image roundness
-      paddingTop: 40,
-      paddingBottom: 32,
-      paddingHorizontal: 24,
-      alignItems: 'center',
-      ...Shadows.lg,
-      position: 'relative',
-    },
-    closeModalBtn: {
-      position: 'absolute',
-      top: 16,
-      right: 16,
-      padding: 8,
-    },
-    successTitle: {
-      fontSize: 24,
-      fontWeight: '800',
-      color: colors.textPrimary,
-      marginBottom: 12,
-      textAlign: 'center',
-    },
-    successText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      textAlign: 'center',
-      lineHeight: 20,
-      paddingHorizontal: 16,
-      marginBottom: 32,
-    },
-    modalActionRow: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      width: '100%',
-    },
-    modalPrimaryBtn: {
-      backgroundColor: '#10B981', // Using green from reference
-      paddingVertical: 14,
-      paddingHorizontal: 32,
-      borderRadius: 100, // Pill shape
-      width: '80%',
-      alignItems: 'center',
-      justifyContent: 'center',
-      ...Shadows.md,
-    },
-    modalPrimaryBtnText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '700',
     },
   });
 

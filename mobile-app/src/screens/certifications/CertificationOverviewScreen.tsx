@@ -19,6 +19,7 @@ import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../components/common/ToastProvider';
 import { getCertificationOverview } from '../../data/certificationOverviews';
+import { useQueryClient } from '@tanstack/react-query';
 import leadsService from '../../services/leadsService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -32,12 +33,12 @@ const CertificationOverviewScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
   const { user } = useAuthStore();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   const serviceId: string = route.params?.serviceId ?? 'pcoc_scoc';
   const overview = getCertificationOverview(serviceId);
 
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
@@ -74,8 +75,21 @@ const CertificationOverviewScreen: React.FC = () => {
         companyName: user.companyName,
         targetMarkets: [overview.market],
       });
-      setSubmitted(true);
-      showToast('Enquiry sent', 'Our certification team will contact you shortly.', 'success');
+
+      // Invalidate My Work queries so the new Draft Application appears
+      queryClient.invalidateQueries({ queryKey: ['mywork'] });
+
+      showToast(
+        'Application created',
+        'Your draft application is ready. Continue from My Work.',
+        'success',
+      );
+
+      // Navigate to My Work so the customer sees the Draft Application
+      navigation.navigate('MainTabs', {
+        screen: 'Home',
+        params: { screen: 'MyWork' },
+      });
     } catch (err: any) {
       showToast(
         'Could not send enquiry',
@@ -191,37 +205,26 @@ const CertificationOverviewScreen: React.FC = () => {
 
       {/* Apply */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        {submitted ? (
-          <View style={styles.submittedBox}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={styles.submittedText}>
-              Enquiry submitted. Our certification team will be in touch.
-            </Text>
-          </View>
-        ) : (
-          <>
-            <TouchableOpacity onPress={handleApply} disabled={submitting} activeOpacity={0.88}>
-              <LinearGradient
-                colors={overview.heroGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.applyBtn}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#FFF" />
-                ) : (
-                  <>
-                    <Text style={styles.applyText}>Apply for {overview.name}</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#FFF" />
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-            <Text style={styles.footerNote}>
-              Sends an enquiry to our certification team — no payment required
-            </Text>
-          </>
-        )}
+        <TouchableOpacity onPress={handleApply} disabled={submitting} activeOpacity={0.88}>
+          <LinearGradient
+            colors={overview.heroGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.applyBtn}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <>
+                <Text style={styles.applyText}>Apply for {overview.name}</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFF" />
+              </>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+        <Text style={styles.footerNote}>
+          Creates a draft application — no payment required
+        </Text>
       </View>
     </View>
   );
@@ -284,8 +287,6 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   applyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16, borderRadius: BorderRadius.xl },
   applyText: { color: '#FFF', fontSize: 15.5, fontWeight: '700' },
   footerNote: { textAlign: 'center', fontSize: 11, color: colors.textTertiary, marginTop: 9 },
-  submittedBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: `${colors.success}12`, borderColor: `${colors.success}40`, borderWidth: 1, padding: 14, borderRadius: BorderRadius.xl },
-  submittedText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.textPrimary },
 
   emptyText: { textAlign: 'center', color: colors.textSecondary, fontSize: 14, paddingHorizontal: 32 },
   backLink: { marginTop: 16, alignSelf: 'center' },

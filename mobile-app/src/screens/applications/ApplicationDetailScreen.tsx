@@ -17,8 +17,10 @@ import { useTheme, BorderRadius, Shadows } from '../../theme';
 import Badge, { getStatusVariant } from '../../components/common/Badge';
 import ProgressBar from '../../components/common/ProgressBar';
 import { formatDate, formatCurrency } from '../../utils/formatters';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
+import * as DocumentPicker from 'expo-document-picker';
+import documentsService from '../../services/documentsService';
 
 const STATUS_PROGRESS: Record<string, number> = {
   draft: 5,
@@ -61,6 +63,28 @@ const ApplicationDetailScreen: React.FC = () => {
     },
     enabled: !!appId,
   });
+
+  const queryClient = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+
+  // Pick a file from the device and upload it, linked to THIS application, so it
+  // appears in the Documents tab (backend /documents/finalize accepts application_id).
+  const handleUploadDoc = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: false, copyToCacheDirectory: true });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+      const file = result.assets[0];
+      const mimeType = file.mimeType || 'application/octet-stream';
+      setUploading(true);
+      await documentsService.uploadFromDevice(file.uri, file.name, mimeType, 'general', appId);
+      await queryClient.invalidateQueries({ queryKey: ['application-docs', appId] });
+      Alert.alert('Document Added', `"${file.name}" has been uploaded successfully.`);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.error || err?.message || 'Could not upload document. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
@@ -206,10 +230,15 @@ const ApplicationDetailScreen: React.FC = () => {
                 <Text style={styles.cardTitle}>Documents</Text>
                 <TouchableOpacity
                   style={styles.uploadBtn}
-                  onPress={() => navigation.navigate('UploadAdditionalDocuments', { applicationId: appId })}
+                  onPress={handleUploadDoc}
+                  disabled={uploading}
                 >
-                  <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
-                  <Text style={styles.uploadBtnText}>Upload</Text>
+                  {uploading ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
+                  )}
+                  <Text style={styles.uploadBtnText}>{uploading ? 'Uploading…' : 'Upload'}</Text>
                 </TouchableOpacity>
               </View>
               {(docsData && docsData.length > 0) ? docsData.map((doc: any) => (

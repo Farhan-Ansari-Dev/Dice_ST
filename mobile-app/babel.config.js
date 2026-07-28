@@ -14,6 +14,8 @@ module.exports = function (api) {
       ],
     ],
     plugins: [
+      ['@babel/plugin-transform-typescript', { isTSX: true, allExtensions: true, allowDeclareFields: true }],
+      'babel-plugin-transform-import-meta',
       // Order matters: class-properties BEFORE transform-classes
       // loose: true uses `this.prop = value` (simple assignment) — works for
       // most cases. Files that have non-writable prototype props (e.g. Event.js
