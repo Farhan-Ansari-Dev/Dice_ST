@@ -87,6 +87,62 @@ const WORKFLOWS: any[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════
+  // 1b. WPC ETA (Equipment Type Approval for wireless devices)
+  // ═══════════════════════════════════════════════════════════════
+  {
+    _id: 'wf_wpc_eta_v1',
+    cert_type: 'WPC_ETA',
+    display_name: 'WPC Equipment Type Approval (ETA)',
+    description: 'Self-declaration approval for wireless equipment operating in de-licensed frequency bands (Bluetooth, Wi-Fi) sold in India.',
+    version: 1,
+    active: true,
+    issuing_body: 'Wireless Planning & Coordination Wing, DoT',
+    country_code: 'IN',
+    estimated_duration_days: 12,
+    validity_period_months: 0, // ETA is valid for the equipment; no periodic renewal.
+    stages: [
+      {
+        id: 'submitted', label: 'Application Submitted', sla_days: 1, next_states: ['docs_review', 'cancelled'],
+        required_docs: [
+          { doc_type: 'rf_test_report', label: 'RF Test Report (accredited lab)', mandatory: true },
+          { doc_type: 'technical_specification', label: 'Technical Specification / Datasheet', mandatory: true },
+          { doc_type: 'product_brochure', label: 'Product Brochure / User Manual', mandatory: true },
+          { doc_type: 'self_declaration', label: 'Self-Declaration of Conformity', mandatory: true },
+          { doc_type: 'authorization_letter', label: 'Authorization Letter (if applicant is not the OEM)', mandatory: false },
+        ],
+      },
+      {
+        id: 'docs_review', label: 'Document Verification', sla_days: 3,
+        next_states: ['approval_pending', 'docs_required', 'rejected'],
+        required_docs: [],
+        assignee_role: 'consultant',
+      },
+      {
+        id: 'approval_pending', label: 'WPC Portal Grant', sla_days: 7,
+        next_states: ['approved', 'rejected', 'on_hold'],
+        required_docs: [],
+        assignee_role: 'admin',
+      },
+      {
+        id: 'approved', label: 'Approved — Awaiting ETA', sla_days: 1, next_states: ['cert_issued'],
+        required_docs: [], auto_advance: true,
+      },
+      {
+        id: 'cert_issued', label: 'ETA Certificate Issued', sla_days: 0, next_states: [], required_docs: [],
+      },
+    ],
+    fee_structure: {
+      application_fee_inr: 0, // No government fee for de-licensed band ETA.
+    },
+    customer_description: 'Required for any product with Bluetooth or Wi-Fi sold in India — speakers, earbuds, smart watches, action cameras.',
+    required_business_info: ['company_name', 'gst_number', 'iec_code'],
+    helpful_links: [
+      { label: 'Saral Sanchar Portal', url: 'https://saralsanchar.gov.in/' },
+      { label: 'WPC ETA Guidelines', url: 'https://dot.gov.in/spectrum-management/2457' },
+    ],
+  },
+
+  // ═══════════════════════════════════════════════════════════════
   // 2. EPR (Extended Producer Responsibility)
   // ═══════════════════════════════════════════════════════════════
   {
@@ -276,30 +332,36 @@ const WORKFLOWS: any[] = [
   },
 ];
 
-async function seed() {
-  console.log('🌱 Seeding workflows...');
-  await connectMongo();
-
+/**
+ * Idempotent upsert of all workflow definitions. Assumes an active Mongo
+ * connection so it can be reused by the CLI wrapper and by tests.
+ */
+export async function seedWorkflows(): Promise<void> {
   let inserted = 0, updated = 0;
   for (const wf of WORKFLOWS) {
     const existing = await Workflow.findById(wf._id);
     if (existing) {
       await Workflow.replaceOne({ _id: wf._id }, wf);
       updated++;
-      console.log(`  ↻ Updated: ${wf.cert_type} — ${wf.display_name}`);
     } else {
       await Workflow.create(wf);
       inserted++;
-      console.log(`  ✚ Inserted: ${wf.cert_type} — ${wf.display_name}`);
     }
   }
+  console.log(`[seed:workflows] ${inserted} inserted, ${updated} updated`);
+}
 
-  console.log(`\n✅ Done. ${inserted} inserted, ${updated} updated.`);
+async function main() {
+  console.log('🌱 Seeding workflows...');
+  await connectMongo();
+  await seedWorkflows();
   await disconnectMongo();
   process.exit(0);
 }
 
-seed().catch((err) => {
-  console.error('Seed failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Seed failed:', err);
+    process.exit(1);
+  });
+}

@@ -67,6 +67,18 @@ export interface IApplication extends Document {
     added_at: Date;
   }>;
 
+  // Certification Body handling this application (per certification). Default is
+  // Sanyog-managed; the same Workflow/lifecycle applies regardless of who the CB
+  // is — this is an attribute, not a separate workflow.
+  certification_body?: {
+    mode: 'sanyog_managed' | 'customer_selected' | 'recommended';
+    org_id?: Types.ObjectId;               // an approved Organization(type='cb')
+    name?: string;                         // free-text external CB (off-platform)
+    recommendation_reason?: string;        // populated by future AI ranking
+    selected_by?: Types.ObjectId;
+    selected_at?: Date;
+  };
+
   // Timeline
   submitted_at?: Date;
   estimated_completion_at?: Date;
@@ -153,6 +165,15 @@ const ApplicationSchema = new Schema<IApplication>(
         _id: false,
       },
     ],
+
+    certification_body: {
+      mode:                  { type: String, enum: ['sanyog_managed', 'customer_selected', 'recommended'], default: 'sanyog_managed' },
+      org_id:                { type: Schema.Types.ObjectId, ref: 'Organization' },
+      name:                  { type: String, trim: true },
+      recommendation_reason: { type: String, trim: true },
+      selected_by:           { type: Schema.Types.ObjectId, ref: 'User' },
+      selected_at:           { type: Date },
+    },
 
     submitted_at:            Date,
     estimated_completion_at: Date,

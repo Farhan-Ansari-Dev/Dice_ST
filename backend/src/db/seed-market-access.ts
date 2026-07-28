@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import mongoose from 'mongoose';
 import ProductCategory from '../models/ProductCategory';
 import MarketCertification from '../models/MarketCertification';
 import MarketRequirement from '../models/MarketRequirement';
@@ -7,125 +6,170 @@ import UserProduct from '../models/UserProduct';
 
 import { connectMongo, disconnectMongo } from './mongo';
 
-async function seed() {
-  await connectMongo();
+/**
+ * Curated compliance mappings — NOT random, NOT mock.
+ *
+ * Every mapping below reflects real Indian electronics certification rules.
+ * Certifications link to their Workflow via `workflow_cert_type` (the Workflow
+ * owns documents / business info / stages / fees / references). Markets or
+ * products with no verified mapping simply have no row here — the resolver then
+ * returns an honest "not catalogued" result instead of guessing.
+ */
 
+// Real product categories (electronics). Keywords support resolver fallback.
+const CATEGORIES: Array<{ name: string; keywords: string[] }> = [
+  { name: 'Power Bank', keywords: ['power bank', 'powerbank', 'portable charger', 'battery pack'] },
+  { name: 'Bluetooth Speaker', keywords: ['bluetooth speaker', 'wireless speaker', 'speaker'] },
+  { name: 'Action Camera', keywords: ['action camera', 'sports camera', 'gopro'] },
+  { name: 'Smart Watch', keywords: ['smart watch', 'smartwatch', 'wearable'] },
+  { name: 'Wireless Earbuds', keywords: ['wireless earbuds', 'earbuds', 'tws', 'earphones'] },
+  { name: 'Headphones', keywords: ['headphones', 'headset'] },
+  { name: 'Smart Speaker', keywords: ['smart speaker', 'voice assistant'] },
+  { name: 'Mobile Phone', keywords: ['mobile phone', 'smartphone', 'cell phone'] },
+  { name: 'Laptop', keywords: ['laptop', 'notebook'] },
+  { name: 'Tablet', keywords: ['tablet', 'ipad'] },
+  { name: 'LED Bulb', keywords: ['led bulb', 'led light', 'led lamp'] },
+  { name: 'Adapter', keywords: ['adapter', 'charger', 'power adapter'] },
+];
+
+// Real certifications. `workflow_cert_type` links to the seeded Workflow that
+// owns the documents/business-info/references. Non-India certs are real
+// definitions kept for future markets; they have no Workflow yet (honest empty
+// documents until authored).
+const CERTIFICATIONS: Array<{
+  name: string;
+  code: string;
+  country: string;
+  authority: string;
+  time: string;
+  cost: string;
+  renewal: string;
+  workflow_cert_type?: string;
+}> = [
+  {
+    name: 'BIS CRS', code: 'BIS_CRS', country: 'India',
+    authority: 'Bureau of Indian Standards (BIS)',
+    time: '25–45 days', cost: '₹25,000 – ₹60,000', renewal: 'Valid 2 years, renewable',
+    workflow_cert_type: 'BIS_CRS',
+  },
+  {
+    name: 'WPC ETA', code: 'WPC_ETA', country: 'India',
+    authority: 'Wireless Planning & Coordination Wing, DoT',
+    time: '7–15 days', cost: '₹5,000 – ₹15,000', renewal: 'Valid for the equipment (no periodic renewal)',
+    workflow_cert_type: 'WPC_ETA',
+  },
+  {
+    name: 'TEC MTCTE', code: 'TEC_MTCTE', country: 'India',
+    authority: 'Telecommunication Engineering Centre (TEC), DoT',
+    time: '30–60 days', cost: 'Varies by product category', renewal: 'As per certificate validity',
+    workflow_cert_type: 'TEC_ETA',
+  },
+  {
+    name: 'EPR (E-Waste)', code: 'EPR_EWASTE', country: 'India',
+    authority: 'Central Pollution Control Board (CPCB)',
+    time: '30–45 days', cost: 'Varies by scale', renewal: 'Valid 5 years',
+    workflow_cert_type: 'EPR',
+  },
+  { name: 'SASO SABER', code: 'SASO_SABER', country: 'Saudi Arabia', authority: 'SASO', time: '10–15 days', cost: 'Varies', renewal: 'Per shipment / annual' },
+  { name: 'ECAS', code: 'ECAS_MOIAT', country: 'UAE', authority: 'MoIAT', time: '15–20 days', cost: 'Varies', renewal: '1 year' },
+  { name: 'CE Marking', code: 'CE_MARK', country: 'Europe', authority: 'EU Notified Body', time: '30–60 days', cost: 'Varies', renewal: 'Self-declared / ongoing' },
+  { name: 'FCC', code: 'FCC_ID', country: 'USA', authority: 'FCC', time: '20–30 days', cost: 'Varies', renewal: 'One-time per device' },
+  { name: 'RoHS', code: 'ROHS_COMP', country: 'Europe', authority: 'EU (self-declaration)', time: '15–20 days', cost: 'Varies', renewal: 'Ongoing' },
+];
+
+// Real India requirements: product category → required certification codes.
+const INDIA_REQUIREMENTS: Record<string, string[]> = {
+  'Power Bank': ['BIS_CRS'],
+  'Bluetooth Speaker': ['BIS_CRS', 'WPC_ETA'],
+  'Action Camera': ['BIS_CRS', 'WPC_ETA'],
+  'Smart Watch': ['BIS_CRS', 'WPC_ETA'],
+  'Wireless Earbuds': ['BIS_CRS', 'WPC_ETA'],
+  'Smart Speaker': ['BIS_CRS', 'WPC_ETA'],
+  'Mobile Phone': ['BIS_CRS', 'WPC_ETA', 'TEC_MTCTE'],
+  'Laptop': ['BIS_CRS', 'WPC_ETA'],
+  'Tablet': ['BIS_CRS', 'WPC_ETA'],
+  'Headphones': ['BIS_CRS'],
+  'LED Bulb': ['BIS_CRS'],
+  'Adapter': ['BIS_CRS'],
+};
+
+/**
+ * Idempotent-by-replacement seed of the Market Access collections. Assumes an
+ * active Mongo connection (does not connect/disconnect) so it can be reused by
+ * the CLI wrapper and by tests.
+ */
+export async function seedMarketAccessData(): Promise<void> {
   await ProductCategory.deleteMany({});
   await MarketCertification.deleteMany({});
   await MarketRequirement.deleteMany({});
   await UserProduct.deleteMany({});
-  console.log('Cleared existing Market Access collections');
 
-  const categories = [
-    'Bluetooth Speaker', 'Mobile Phone', 'Power Bank', 'LED Light', 'Smart Watch',
-    'Laptop', 'Adapter', 'Battery', 'Wireless Earbuds', 'Tablet',
-  ];
-
-  for (let i = categories.length; i < 50; i++) {
-    categories.push(`Generic Device Type ${i + 1}`);
-  }
-
-  const categoryDocs = [];
-  for (const name of categories) {
+  const categoryByName = new Map<string, any>();
+  for (const c of CATEGORIES) {
     const doc = await ProductCategory.create({
-      categoryName: name,
-      keywords: [name.toLowerCase(), 'electronics'],
+      categoryName: c.name,
+      keywords: c.keywords,
       industry: 'Electronics',
-      description: `Description for ${name}`
+      description: `${c.name} — consumer electronics product category.`,
     });
-    categoryDocs.push(doc);
-  }
-  console.log('Created 50 Product Categories');
-
-  const countries = [
-    'India', 'Saudi Arabia', 'UAE', 'Europe', 'USA', 'Canada', 'Australia', 'Japan',
-    'South Korea', 'Brazil', 'Mexico', 'South Africa', 'UK', 'Singapore', 'Malaysia',
-    'Indonesia', 'Vietnam', 'Thailand', 'Philippines', 'New Zealand'
-  ];
-
-  const certData = [
-    { name: 'BIS', code: 'BIS_CRS', country: 'India', auth: 'Bureau of Indian Standards', time: '30-45 days', cost: '$1000' },
-    { name: 'WPC', code: 'WPC_ETA', country: 'India', auth: 'WPC', time: '15-20 days', cost: '$500' },
-    { name: 'TEC', code: 'TEC_MTCTE', country: 'India', auth: 'TEC', time: '60 days', cost: '$2000' },
-    { name: 'EPR', code: 'EPR_EWASTE', country: 'India', auth: 'CPCB', time: '45 days', cost: '$1200' },
-    { name: 'SASO', code: 'SASO_SABER', country: 'Saudi Arabia', auth: 'SASO', time: '15 days', cost: '$800' },
-    { name: 'ECAS', code: 'ECAS_MOIAT', country: 'UAE', auth: 'MoIAT', time: '20 days', cost: '$1500' },
-    { name: 'CE', code: 'CE_MARK', country: 'Europe', auth: 'EU Notified Body', time: '60 days', cost: '$3000' },
-    { name: 'FCC', code: 'FCC_ID', country: 'USA', auth: 'FCC', time: '30 days', cost: '$2500' },
-    { name: 'RoHS', code: 'ROHS_COMP', country: 'Europe', auth: 'Various', time: '20 days', cost: '$800' },
-  ];
-
-  for (let i = certData.length; i < 50; i++) {
-    certData.push({
-      name: `CERT-${i+1}`,
-      code: `CODE_${i+1}`,
-      country: countries[i % countries.length],
-      auth: `Auth ${i+1}`,
-      time: '30 days',
-      cost: '$1000'
-    });
+    categoryByName.set(c.name, doc);
   }
 
-  const certDocs = [];
-  for (const c of certData) {
+  const certByCode = new Map<string, any>();
+  for (const c of CERTIFICATIONS) {
     const doc = await MarketCertification.create({
       certificationName: c.name,
       code: c.code,
       country: c.country,
-      authority: c.auth,
+      authority: c.authority,
       estimatedTimeline: c.time,
       estimatedCost: c.cost,
-      renewalCycle: '1 Year'
+      renewalCycle: c.renewal,
+      workflow_cert_type: c.workflow_cert_type,
     });
-    certDocs.push(doc);
+    certByCode.set(c.code, doc);
   }
-  console.log('Created 50 Certifications');
 
-  let rulesCreated = 0;
-  for (let i = 0; i < 200; i++) {
-    const cat = categoryDocs[i % categoryDocs.length];
-    const country = countries[i % countries.length];
-    
-    const countryCerts = certDocs.filter(c => c.country === country);
-    if (countryCerts.length === 0) continue;
+  let rules = 0;
+  for (const [categoryName, certCodes] of Object.entries(INDIA_REQUIREMENTS)) {
+    const category = categoryByName.get(categoryName);
+    if (!category) continue;
+    const requiredCertifications = certCodes
+      .map((code) => certByCode.get(code)?._id)
+      .filter(Boolean);
+    if (requiredCertifications.length === 0) continue;
 
-    const numRequired = Math.min(Math.floor(Math.random() * 3) + 1, countryCerts.length);
-    const required = countryCerts.slice(0, numRequired).map(c => c._id);
-
-    try {
-      await MarketRequirement.create({
-        country: country,
-        productCategoryId: cat._id,
-        requiredCertifications: required,
+    await MarketRequirement.findOneAndUpdate(
+      { country: 'India', productCategoryId: category._id },
+      {
+        country: 'India',
+        productCategoryId: category._id,
+        requiredCertifications,
         optionalCertifications: [],
-        marketReadinessRules: `Must comply with local regulations in ${country}`
-      });
-      rulesCreated++;
-    } catch (e) {
-      // Ignore unique constraint duplicates
-    }
+        marketReadinessRules: 'Mandatory certifications required before sale in India.',
+      },
+      { upsert: true },
+    );
+    rules++;
   }
 
-  const btSpeaker = categoryDocs.find(c => c.categoryName === 'Bluetooth Speaker');
-  if (btSpeaker) {
-    const bis = certDocs.find(c => c.code === 'BIS_CRS')?._id;
-    const wpc = certDocs.find(c => c.code === 'WPC_ETA')?._id;
-    const saso = certDocs.find(c => c.code === 'SASO_SABER')?._id;
-    const ecas = certDocs.find(c => c.code === 'ECAS_MOIAT')?._id;
-    const ce = certDocs.find(c => c.code === 'CE_MARK')?._id;
-    const fcc = certDocs.find(c => c.code === 'FCC_ID')?._id;
+  console.log(
+    `[seed:market-access] ${categoryByName.size} categories, ${certByCode.size} certifications, ${rules} India requirement rules`,
+  );
+}
 
-    if (bis && wpc) await MarketRequirement.findOneAndUpdate({ country: 'India', productCategoryId: btSpeaker._id }, { requiredCertifications: [bis, wpc] }, { upsert: true });
-    if (saso) await MarketRequirement.findOneAndUpdate({ country: 'Saudi Arabia', productCategoryId: btSpeaker._id }, { requiredCertifications: [saso] }, { upsert: true });
-    if (ecas) await MarketRequirement.findOneAndUpdate({ country: 'UAE', productCategoryId: btSpeaker._id }, { requiredCertifications: [ecas] }, { upsert: true });
-    if (ce) await MarketRequirement.findOneAndUpdate({ country: 'Europe', productCategoryId: btSpeaker._id }, { requiredCertifications: [ce] }, { upsert: true });
-    if (fcc) await MarketRequirement.findOneAndUpdate({ country: 'USA', productCategoryId: btSpeaker._id }, { requiredCertifications: [fcc] }, { upsert: true });
-  }
-
-  console.log(`Created ${rulesCreated} Market Requirement Rules`);
+// CLI entry point — connects, seeds, disconnects.
+async function main() {
+  await connectMongo();
+  await seedMarketAccessData();
   console.log('Seed Complete!');
   await disconnectMongo();
   process.exit(0);
 }
 
-seed().catch(console.error);
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

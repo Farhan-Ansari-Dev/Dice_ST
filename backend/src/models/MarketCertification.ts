@@ -9,6 +9,12 @@ export interface IMarketCertification extends Document {
   estimatedTimeline: string;
   estimatedCost: string;
   renewalCycle: string;
+  /**
+   * Links this market certification to its Workflow (the single source of truth
+   * for required documents, business info, stages, fees and references). When
+   * absent, the resolver falls back to matching Workflow.cert_type === code.
+   */
+  workflow_cert_type?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +28,7 @@ const MarketCertificationSchema: Schema = new Schema({
   estimatedTimeline: { type: String, required: true },
   estimatedCost: { type: String, required: true },
   renewalCycle: { type: String, required: true },
+  workflow_cert_type: { type: String, index: true },
 }, { timestamps: true });
 
 export default mongoose.model<IMarketCertification>('MarketCertification', MarketCertificationSchema);

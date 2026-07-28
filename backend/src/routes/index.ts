@@ -31,6 +31,7 @@ import consultantsRoutes from './v2/consultants';
 import productsRoutes from './v2/products';
 import leadsRoutes from './v2/leads';
 import partnersRoutes from './v2/partners';
+import certificationBodiesRoutes from './v2/certificationBodies';
 
 // Stubs removed
 
@@ -49,6 +50,7 @@ router.use('/applications', applicationsRoutes);
 router.use('/products', productsRoutes);
 router.use('/leads', leadsRoutes);
 router.use('/partners', partnersRoutes);
+router.use('/certification-bodies', certificationBodiesRoutes);
 router.use('/documents', uploadLimiter, documentsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/workflows', workflowsRoutes);

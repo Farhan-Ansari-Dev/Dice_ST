@@ -8,6 +8,7 @@ import { RemoteConfig } from '../models/RemoteConfig'
 import { getProviderKey } from './ai/credentialService'
 import type { ProviderName } from '../models/AIProviderCredential'
 import { PROVIDERS, isKnownProvider, isProviderAllowedHere } from './ai/providerRegistry'
+import { MarketAccessService } from './marketAccessService'
 
 /**
  * Resolves the configured OpenAI-compatible client.
@@ -330,13 +331,38 @@ export const aiService = {
     return risks;
   },
 
-  async analyzeCertifications(productName: string, markets: string[]): Promise<{ isValid: boolean; message?: string; certifications?: Array<{ code: string; name: string; market: string }> }> {
+  /**
+   * Certification analysis is DATA-driven, never LLM-driven. It delegates to the
+   * single canonical resolver (MarketAccessService), which reads only the
+   * compliance database. The LLM is not involved in deciding certifications.
+   *
+   * Backward-compatible: keeps `{ isValid, certifications:[{code,name,market}] }`
+   * and adds the richer `intelligence` payload plus `productValidationRequired`.
+   */
+  async analyzeCertifications(productName: string, markets: string[]): Promise<any> {
+    const intelligence = await MarketAccessService.resolveCertifications(productName, markets);
+
+    const certifications: Array<{ code: string; name: string; market: string }> = [];
+    for (const m of intelligence.markets) {
+      for (const c of m.requiredCertifications) {
+        certifications.push({ code: c.code, name: c.name, market: m.marketCode });
+      }
+    }
+
+    const hasVerified = intelligence.markets.some(
+      (m) => m.verified && m.requiredCertifications.length > 0,
+    );
+
     return {
+      // Never block draft creation on analysis — unknown products proceed and
+      // are flagged for a specialist to validate.
       isValid: true,
-      certifications: [
-        { code: 'FCC', name: 'Federal Communications Commission', market: 'US' },
-        { code: 'UL', name: 'Underwriters Laboratories', market: 'US' }
-      ]
+      productValidationRequired: intelligence.productValidationRequired || !hasVerified,
+      message: hasVerified
+        ? undefined
+        : "We don't currently have a verified compliance mapping for this product and market. A certification specialist will review it.",
+      certifications,
+      intelligence,
     };
   },
 

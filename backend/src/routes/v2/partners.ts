@@ -11,12 +11,46 @@ import { validate } from '../../middleware/validate';
 import { PartnerApplication, PARTNER_STATUSES } from '../../models/PartnerApplication';
 import { Notification } from '../../models/Notification';
 import { User } from '../../models/User';
+import { Organization } from '../../models/Organization';
 import { notificationService } from '../../services/notificationService';
 import { audit } from '../../models/AuditLog';
 import { logger } from '../../utils/logger';
 
 const router = Router();
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next);
+
+// Partner type → the Organization type + User role it materialises into.
+const PARTNER_MATERIALISATION: Record<string, { orgType: 'cb' | 'lab' | 'other'; userRole: 'cb' | 'lab' | 'ib' }> = {
+  'Certification Body':  { orgType: 'cb',    userRole: 'cb' },
+  'Testing Laboratory':  { orgType: 'lab',   userRole: 'lab' },
+  'Inspection Body':     { orgType: 'other', userRole: 'ib' },
+};
+
+/**
+ * On approval, materialise the partner into the live catalogue: create an
+ * Organization (e.g. type='cb') owned by the applicant and promote the
+ * applicant's User role. Idempotent — re-approving does not create duplicates.
+ * Consultants are internal and are not materialised as CB/lab organisations.
+ */
+async function materialiseApprovedPartner(application: any): Promise<void> {
+  const mapping = PARTNER_MATERIALISATION[application.partner_type];
+  if (!mapping) return; // e.g. 'Consultant' — nothing to materialise here.
+
+  const ownerId = application.user_id?._id ?? application.user_id;
+  if (!ownerId) return;
+
+  let org = await Organization.findOne({ type: mapping.orgType, owner_user_id: ownerId });
+  if (!org) {
+    org = await Organization.create({
+      name: application.company_name,
+      type: mapping.orgType,
+      owner_user_id: ownerId,
+      settings: { allowed_cert_types: [] }, // empty = handles all cert types until scoped
+    });
+  }
+
+  await User.updateOne({ _id: ownerId }, { $set: { role: mapping.userRole, org_id: org._id } });
+}
 
 const createSchema = {
   body: z.object({
@@ -127,6 +161,15 @@ router.put('/applications/:id/status', authenticate, requireRole(...ADMIN_ROLES)
   application.decided_at = new Date();
   if (reason) application.decision_reason = reason;
   await application.save();
+
+  // Approving a CB/lab/inspection partner adds them to the live catalogue.
+  if (status === 'approved') {
+    try {
+      await materialiseApprovedPartner(application);
+    } catch (e) {
+      logger.warn(`[partners] partner materialisation failed: ${String(e)}`);
+    }
+  }
 
   await audit({
     actor: req.user!._id as any,

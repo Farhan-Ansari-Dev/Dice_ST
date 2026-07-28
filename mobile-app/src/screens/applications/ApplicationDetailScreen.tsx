@@ -217,6 +217,37 @@ const ApplicationDetailScreen: React.FC = () => {
                 </LinearGradient>
               </View>
             )}
+
+            <View style={[styles.card, Shadows.sm]}>
+              <LinearGradient
+                colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
+                style={styles.cardInner}
+              >
+                <View style={styles.cardTitleRow}>
+                  <Text style={styles.cardTitle}>Certification Body</Text>
+                    <TouchableOpacity
+                      style={styles.uploadBtn}
+                      onPress={() => navigation.navigate('ChoosePartner', {
+                        applicationId: appId,
+                        certType: app.cert_type,
+                        certName: app.cert_type?.replace(/_/g, ' '),
+                      })}
+                    >
+                      <Ionicons name="options-outline" size={16} color={colors.primary} />
+                      <Text style={styles.uploadBtnText}>
+                        {app.certification_body?.mode ? 'Change' : 'Choose'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.docSize}>
+                    {app.certification_body?.mode === 'customer_selected'
+                      ? `Your CB: ${app.certification_body.name}`
+                      : app.certification_body?.mode === 'recommended'
+                      ? `Recommended: ${app.certification_body.name}`
+                      : 'Sanyog will manage this certification (recommended).'}
+                  </Text>
+                </LinearGradient>
+              </View>
           </>
         )}
 

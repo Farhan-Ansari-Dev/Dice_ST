@@ -1,597 +1,269 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   ScrollView,
   TouchableOpacity,
-  Alert,
-  Platform,
-  UIManager,
-  LayoutAnimation,
-  Animated,
-  FlatList,
-  Image,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
 import Button from '../../components/common/Button';
-import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../components/common/ToastProvider';
 import { useQueryClient } from '@tanstack/react-query';
-import leadsService from '../../services/leadsService';
+import { api } from '../../services/api';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
+type Mode = 'sanyog_managed' | 'customer_selected' | 'recommended';
+
+interface RecommendedCB {
+  id: string;
+  name: string;
+  legal_name?: string;
+  allowed_cert_types: string[];
 }
 
-const LAB_MARKETPLACE = [
-  { id: 'bureau-veritas', name: 'Bureau Veritas', type: 'CB', rating: 4.9, reviews: '18.4k', time: '15-20 days', price: 'From ₹45k' },
-  { id: 'sgs', name: 'SGS', type: 'CB', rating: 4.8, reviews: '22.1k', time: '12-18 days', price: 'From ₹40k' },
-  { id: 'intertek', name: 'Intertek', type: 'CB', rating: 4.7, reviews: '12.7k', time: '10-15 days', price: 'From ₹42k' },
-  { id: 'tuv-sud', name: 'TUV SUD', type: 'CB', rating: 4.8, reviews: '15.2k', time: '14-21 days', price: 'From ₹48k' },
-  { id: 'ul', name: 'UL Solutions', type: 'CB', rating: 4.9, reviews: '10.8k', time: '18-24 days', price: 'From ₹52k' },
-  { id: 'dekra', name: 'DEKRA', type: 'CB', rating: 4.6, reviews: '9.3k', time: '16-20 days', price: 'From ₹38k' },
-];
+interface CBInfo {
+  whyRequired: string;
+  factors: Array<{ key: string; label: string; detail: string }>;
+  available: boolean;
+  certificationBodies: RecommendedCB[];
+  message?: string;
+}
 
+/**
+ * Certification Body selection — the integrated, mock-free flow. Default is
+ * always Sanyog-managed. "Help me choose" first explains why a CB is needed and
+ * what factors matter, then lists ONLY real approved certification bodies (or an
+ * honest empty state). CB choice is recorded on the Application (per cert).
+ */
 const ChoosePartnerScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { user } = useAuthStore();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
-  const [partnerType, setPartnerType] = useState<'dice' | 'custom' | null>(null);
-  const [selectedLabId, setSelectedLabId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const applicationId: string | undefined = route.params?.applicationId;
+  const certType: string | undefined = route.params?.certType;
+  const certName: string = route.params?.certName ?? certType ?? 'this certification';
 
-  // Animation values for Dice Hero Card
-  const diceAnim = useMemo(() => new Animated.Value(0), []);
-  const flowAnim = useMemo(() => new Animated.Value(0), []);
+  const [mode, setMode] = useState<Mode>('sanyog_managed');
+  const [externalName, setExternalName] = useState('');
+  const [selectedCbId, setSelectedCbId] = useState<string | null>(null);
+  const [info, setInfo] = useState<CBInfo | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Load the explanation + real CB list only when the customer chooses to.
+  const loadInfo = useCallback(async () => {
+    if (info || !certType) return;
+    setLoadingInfo(true);
+    try {
+      const body: any = await api.get(`/certification-bodies?cert_type=${encodeURIComponent(certType)}`);
+      setInfo(body?.data ?? null);
+    } catch {
+      setInfo(null);
+    } finally {
+      setLoadingInfo(false);
+    }
+  }, [certType, info]);
 
   useEffect(() => {
-    Animated.timing(diceAnim, {
-      toValue: partnerType === 'dice' ? 1 : 0,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    if (mode === 'recommended') loadInfo();
+  }, [mode, loadInfo]);
 
-    // Start continuous flowing animation
-    Animated.loop(
-      Animated.timing(flowAnim, {
-        toValue: 1,
-        duration: 3000,
-        useNativeDriver: false, // Must be false for percentage-based translateX
-      })
-    ).start();
-  }, [partnerType]);
+  const canContinue =
+    mode === 'sanyog_managed' ||
+    (mode === 'customer_selected' && externalName.trim().length > 0) ||
+    (mode === 'recommended' && !!selectedCbId);
 
-  const handleDiceSelect = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setPartnerType('dice');
-    setSelectedLabId(null);
-  };
-
-  const handleLabSelect = (labId: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setPartnerType('custom');
-    setSelectedLabId(labId);
-  };
-
-  const handleSubmit = async () => {
-    if (!partnerType) {
-      Alert.alert('Required', 'Please select a partner option.');
-      return;
-    }
-    if (partnerType === 'custom' && !selectedLabId) {
-      Alert.alert('Required', 'Please select your preferred lab from the marketplace.');
-      return;
-    }
-    if (!user?.email) {
-      showToast('Sign in required', 'Please sign in before submitting.', 'error');
-      return;
-    }
-
-    setLoading(true);
+  const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
-      const { mainCategory, selectedType, productName } = route.params || {};
-      const partnerName = partnerType === 'dice'
-        ? 'Dice (Recommended)'
-        : LAB_MARKETPLACE.find(l => l.id === selectedLabId)?.name ?? selectedLabId;
+      const payload: any = { mode };
+      if (mode === 'customer_selected') payload.name = externalName.trim();
+      if (mode === 'recommended') payload.org_id = selectedCbId;
 
-      await leadsService.create({
-        serviceId: selectedType || mainCategory || 'GENERAL',
-        serviceName: mainCategory || 'Certification',
-        contactName: user.name ?? user.email.split('@')[0],
-        contactEmail: user.email,
-        contactPhone: user.phone,
-        companyName: user.companyName,
-        productDescription: productName,
-        notes: `Partner preference: ${partnerName}`,
-      });
-
+      if (applicationId) {
+        await api.put(`/certification-bodies/application/${applicationId}`, payload);
+        queryClient.invalidateQueries({ queryKey: ['application', applicationId] });
+      }
       queryClient.invalidateQueries({ queryKey: ['mywork'] });
 
       showToast(
-        'Application created',
-        'Your draft application is ready. Continue from My Work.',
+        'Saved',
+        mode === 'sanyog_managed'
+          ? 'Sanyog will manage this certification for you.'
+          : 'Your certification body preference has been recorded.',
         'success',
       );
-
-      navigation.navigate('MainTabs', {
-        screen: 'Home',
-        params: { screen: 'MyWork' },
-      });
+      navigation.goBack();
     } catch (err: any) {
-      showToast(
-        'Could not submit',
-        err?.response?.data?.message ?? 'Please check your connection and try again.',
-        'error',
-      );
+      showToast('Not saved', err?.response?.data?.message ?? 'Please try again.', 'error');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+  const Option = ({ value, title, subtitle, icon }: { value: Mode; title: string; subtitle: string; icon: any }) => {
+    const active = mode === value;
+    return (
+      <TouchableOpacity
+        style={[styles.option, active && styles.optionActive, Shadows.sm]}
+        onPress={() => setMode(value)}
+        activeOpacity={0.85}
+      >
+        <View style={[styles.radio, active && styles.radioActive]}>
+          {active && <View style={styles.radioDot} />}
+        </View>
+        <Ionicons name={icon} size={22} color={active ? colors.primary : colors.textSecondary} style={{ marginHorizontal: 12 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.optionTitle}>{title}</Text>
+          <Text style={styles.optionSub}>{subtitle}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient
-        colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#F8FAFC']}
-        style={StyleSheet.absoluteFill}
-      />
-
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={styles.headerTitle}>Select Partner</Text>
-          <Text style={styles.headerSub}>Step 3 of 3</Text>
-        </View>
+        <Text style={styles.headerTitle}>Certification Body</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        
-        {/* DICE HERO CARD */}
-        <Text style={styles.sectionLabel}>The Recommended Path</Text>
-        <TouchableOpacity activeOpacity={0.9} onPress={handleDiceSelect}>
-          <Animated.View style={[
-            styles.premiumCard,
-            {
-              borderColor: diceAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', colors.primary]
-              }),
-              shadowColor: colors.primary,
-              shadowOpacity: diceAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.4] }),
-              shadowRadius: diceAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 15] }),
-              elevation: partnerType === 'dice' ? 10 : 0,
-            }
-          ]}>
-            {/* Continuous Flowing Gradient Animation */}
-            <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', borderRadius: 24 }]}>
-              <Animated.View style={{
-                width: '300%',
-                height: '100%',
-                opacity: diceAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.6, 1] // Increased base opacity to 60% so it's always visible
-                }),
-                transform: [{
-                  translateX: flowAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['-66%', '0%']
-                  })
-                }]
-              }}>
-                <LinearGradient
-                  colors={isDark ? 
-                    [colors.bgCardLight, `${colors.primary}40`, colors.bgCardLight, `${colors.primary}40`] : 
-                    ['#FFFFFF', '#E0E7FF', '#FFFFFF', '#E0E7FF'] // Much stronger light-blue flow
-                  }
-                  style={{ flex: 1 }}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                />
-              </Animated.View>
-            </View>
-            
-            <View style={styles.cardHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <View style={[styles.iconWrap, { backgroundColor: partnerType === 'dice' ? colors.primary : (isDark ? 'rgba(255,255,255,0.05)' : '#EEF2FF') }]}>
-                  <Image source={require('../../../assets/logo.png')} style={{ width: 44, height: 44, resizeMode: 'contain', tintColor: partnerType === 'dice' ? '#FFF' : colors.primary }} />
-                </View>
-                <View style={{ marginLeft: 16, flex: 1 }}>
-                  <Text style={styles.optionTitle}>Go with Dice</Text>
-                  <View style={styles.recommendedBadge}>
-                    <Ionicons name="star" size={12} color="#10B981" style={{ marginRight: 4 }} />
-                    <Text style={styles.recommendedText}>Recommended</Text>
-                  </View>
-                </View>
-                {/* Radio Circle right aligned in the header so it feels like an option */}
-                <View style={[styles.unselectedCircle, partnerType === 'dice' && { borderColor: colors.primary, backgroundColor: colors.primary, borderWidth: 0 }]}>
-                  {partnerType === 'dice' && <Ionicons name="checkmark" size={18} color="#FFF" />}
-                </View>
-              </View>
-            </View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Text style={styles.h1}>How would you like to proceed?</Text>
+        <Text style={styles.h1sub}>For {certName}</Text>
 
-            <Text style={styles.optionDesc}>
-              Let our Dice experts handle the entire process. Guaranteed fastest turnaround time, zero stress, and complete regulatory assurance.
-            </Text>
-          </Animated.View>
-        </TouchableOpacity>
-
-        {/* OR DIVIDER */}
-        <View style={styles.dividerContainer}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR BROWSE MARKETPLACE</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        {/* LAB MARKETPLACE CAROUSEL */}
-        <View style={styles.marketplaceSection}>
-          <View style={styles.marketplaceHeader}>
-            <Text style={styles.marketplaceTitle}>Choose a specific Lab / Body</Text>
-            <Text style={styles.marketplaceSub}>Swipe to browse verified global partners</Text>
-          </View>
-
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.carouselContainer}
-            snapToInterval={280 + 16} // card width + margin
-            decelerationRate="fast"
-            data={LAB_MARKETPLACE}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => {
-              const isSelected = selectedLabId === item.id;
-              return (
-                <TouchableOpacity 
-                  activeOpacity={0.9} 
-                  onPress={() => handleLabSelect(item.id)}
-                  style={[
-                    styles.labCard,
-                    isSelected && styles.labCardActive
-                  ]}
-                >
-                  {isSelected && (
-                    <LinearGradient
-                      colors={[colors.primary, colors.secondary]}
-                      style={[StyleSheet.absoluteFill, { borderRadius: 20, opacity: 0.05 }]}
-                    />
-                  )}
-                  
-                  {/* Lab Card Header */}
-                  <View style={styles.labCardHeader}>
-                    <View style={styles.labIconBox}>
-                      <Ionicons name="flask" size={20} color={isSelected ? colors.primary : colors.textTertiary} />
-                    </View>
-                    <View style={styles.labTypeBadge}>
-                      <Text style={styles.labTypeText}>{item.type}</Text>
-                    </View>
-                  </View>
-
-                  {/* Lab Details */}
-                  <Text style={styles.labName} numberOfLines={1}>{item.name}</Text>
-                  
-                  <View style={styles.labStatsRow}>
-                    <View style={styles.statBox}>
-                      <Ionicons name="star" size={14} color="#F59E0B" />
-                      <Text style={styles.statTextHighlight}>{item.rating}</Text>
-                      <Text style={styles.statTextSub}>({item.reviews})</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.labInfoGrid}>
-                    <View style={styles.infoCol}>
-                      <Text style={styles.infoLabel}>Est. Time</Text>
-                      <Text style={styles.infoValue}>{item.time}</Text>
-                    </View>
-                    <View style={styles.infoCol}>
-                      <Text style={styles.infoLabel}>Pricing</Text>
-                      <Text style={styles.infoValue}>{item.price}</Text>
-                    </View>
-                  </View>
-
-                  {/* Selection Indicator */}
-                  <View style={[styles.labSelectBtn, isSelected && styles.labSelectBtnActive]}>
-                    <Text style={[styles.labSelectBtnText, isSelected && styles.labSelectBtnTextActive]}>
-                      {isSelected ? 'Selected' : 'Select Partner'}
-                    </Text>
-                    {isSelected && <Ionicons name="checkmark" size={16} color="#FFF" style={{ marginLeft: 6 }} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </View>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
-
-      {/* STICKY FOOTER */}
-      <View style={[styles.stickyFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <Button
-          title={partnerType === 'dice' ? 'Proceed with Dice' : 'Confirm Selected Partner'}
-          onPress={handleSubmit}
-          loading={loading}
-          disabled={!partnerType || (partnerType === 'custom' && !selectedLabId)}
-          fullWidth
-          size="lg"
-          icon={<Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />}
+        <Option
+          value="sanyog_managed"
+          title="Let Sanyog handle everything"
+          subtitle="Recommended — we manage the certification body end to end."
+          icon="shield-checkmark"
         />
-      </View>
+        <Option
+          value="customer_selected"
+          title="I already have a Certification Body"
+          subtitle="Tell us the CB you already work with."
+          icon="business"
+        />
+        <Option
+          value="recommended"
+          title="Help me choose a Certification Body"
+          subtitle="Understand your options and pick the right one."
+          icon="sparkles"
+        />
+
+        {mode === 'customer_selected' && (
+          <View style={styles.panel}>
+            <Text style={styles.panelLabel}>Your Certification Body</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Certification body name"
+              placeholderTextColor={colors.textTertiary}
+              value={externalName}
+              onChangeText={setExternalName}
+            />
+          </View>
+        )}
+
+        {mode === 'recommended' && (
+          <View style={styles.panel}>
+            {loadingInfo ? (
+              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 20 }} />
+            ) : info ? (
+              <>
+                <Text style={styles.why}>{info.whyRequired}</Text>
+                <Text style={styles.panelLabel}>What matters</Text>
+                {info.factors.map((f) => (
+                  <View key={f.key} style={styles.factorRow}>
+                    <Ionicons name="ellipse" size={7} color={colors.primary} style={{ marginTop: 7 }} />
+                    <Text style={styles.factorText}>
+                      <Text style={{ fontWeight: '700' }}>{f.label}. </Text>{f.detail}
+                    </Text>
+                  </View>
+                ))}
+
+                <Text style={[styles.panelLabel, { marginTop: 16 }]}>Suitable certification bodies</Text>
+                {info.available ? (
+                  info.certificationBodies.map((cb) => {
+                    const active = selectedCbId === cb.id;
+                    return (
+                      <TouchableOpacity
+                        key={cb.id}
+                        style={[styles.cbCard, active && styles.optionActive]}
+                        onPress={() => setSelectedCbId(cb.id)}
+                        activeOpacity={0.85}
+                      >
+                        <View style={[styles.radio, active && styles.radioActive]}>
+                          {active && <View style={styles.radioDot} />}
+                        </View>
+                        <Text style={styles.cbName}>{cb.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  <View style={styles.emptyBox}>
+                    <Text style={styles.emptyText}>
+                      {info.message ?? 'No accredited Certification Body is currently available for this certification.'}
+                    </Text>
+                    <TouchableOpacity onPress={() => setMode('sanyog_managed')}>
+                      <Text style={styles.emptyCta}>Let Sanyog manage this certification →</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            ) : (
+              <Text style={styles.emptyText}>Could not load certification body information.</Text>
+            )}
+          </View>
+        )}
+
+        <View style={{ height: 24 }} />
+        <Button title="Continue" onPress={submit} disabled={!canContinue || submitting} loading={submitting} />
+      </ScrollView>
     </View>
   );
 };
 
-const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
+const makeStyles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 20,
-      paddingTop: 12,
-      paddingBottom: 24,
-    },
-    backBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: isDark ? 0 : 1,
-      borderColor: 'rgba(0,0,0,0.05)',
-      ...Shadows.sm,
-    },
-    headerTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
-    headerSub: { fontSize: 13, fontWeight: '600', color: colors.primary, marginTop: 4, letterSpacing: 0.5 },
-    content: { paddingBottom: 40 },
-    
-    sectionLabel: {
-      fontSize: 13,
-      fontWeight: '800',
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 1.2,
-      marginBottom: 16,
-      paddingHorizontal: 20,
-    },
-    
-    // Premium Card Styles
-    premiumCard: {
-      backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF',
-      borderRadius: 24,
-      padding: 24,
-      marginHorizontal: 20,
-      borderWidth: 2,
-      borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-      overflow: 'hidden',
-      position: 'relative',
-    },
-    cardHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-      marginBottom: 20,
-    },
-    iconWrap: {
-      width: 56,
-      height: 56,
-      borderRadius: 18,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    recommendedBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: 'rgba(16, 185, 129, 0.1)',
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: 'rgba(16, 185, 129, 0.2)',
-      alignSelf: 'flex-start',
-    },
-    recommendedText: {
-      color: '#10B981',
-      fontSize: 10,
-      fontWeight: '800',
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-    },
-    optionTitle: {
-      fontSize: 20,
-      fontWeight: '800',
-      color: colors.textPrimary,
-      marginBottom: 6,
-    },
-    optionDesc: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      lineHeight: 22,
-    },
-    unselectedCircle: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      borderWidth: 2,
-      borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    // Divider
-    dividerContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 20,
-      marginVertical: 32,
-    },
-    dividerLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-    },
-    dividerText: {
-      paddingHorizontal: 16,
-      fontSize: 12,
-      fontWeight: '800',
-      color: colors.textTertiary,
-      letterSpacing: 1.5,
-    },
-
-    // Marketplace Styles
-    marketplaceSection: {
-      // Full width section
-    },
-    marketplaceHeader: {
-      paddingHorizontal: 20,
-      marginBottom: 20,
-    },
-    marketplaceTitle: {
-      fontSize: 18,
-      fontWeight: '800',
-      color: colors.textPrimary,
-      marginBottom: 4,
-    },
-    marketplaceSub: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    carouselContainer: {
-      paddingHorizontal: 20,
-      paddingBottom: 20, // For shadow
-    },
-    labCard: {
-      width: 280,
-      backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF',
-      borderRadius: 20,
-      padding: 20,
-      marginRight: 16,
-      borderWidth: 2,
-      borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-      ...Shadows.md,
-    },
-    labCardActive: {
-      borderColor: colors.primary,
-    },
-    labCardHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-      marginBottom: 16,
-    },
-    labIconBox: {
-      width: 44,
-      height: 44,
-      borderRadius: 12,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    labTypeBadge: {
-      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 8,
-    },
-    labTypeText: {
-      fontSize: 10,
-      fontWeight: '700',
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-    },
-    labName: {
-      fontSize: 18,
-      fontWeight: '800',
-      color: colors.textPrimary,
-      marginBottom: 8,
-    },
-    labStatsRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 20,
-    },
-    statBox: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB',
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 8,
-    },
-    statTextHighlight: {
-      fontSize: 14,
-      fontWeight: '800',
-      color: '#F59E0B',
-      marginLeft: 6,
-      marginRight: 4,
-    },
-    statTextSub: {
-      fontSize: 12,
-      color: colors.textSecondary,
-    },
-    labInfoGrid: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : '#F8FAFC',
-      padding: 12,
-      borderRadius: 12,
-      marginBottom: 20,
-    },
-    infoCol: {},
-    infoLabel: {
-      fontSize: 11,
-      color: colors.textTertiary,
-      textTransform: 'uppercase',
-      fontWeight: '700',
-      marginBottom: 4,
-    },
-    infoValue: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: colors.textPrimary,
-    },
-    labSelectBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 12,
-      borderRadius: 12,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
-    },
-    labSelectBtnActive: {
-      backgroundColor: colors.primary,
-    },
-    labSelectBtnText: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: colors.textSecondary,
-    },
-    labSelectBtnTextActive: {
-      color: '#FFFFFF',
-    },
-
-    stickyFooter: {
-      paddingHorizontal: 20,
-      paddingTop: 16,
-      backgroundColor: isDark ? colors.bgDark : '#FFFFFF',
-      borderTopWidth: 1,
-      borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-      ...Shadows.md,
-    },
+    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
+    backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.border, alignItems: 'center', justifyContent: 'center' },
+    headerTitle: { flex: 1, fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+    content: { paddingHorizontal: 20, paddingBottom: 40 },
+    h1: { fontSize: 22, fontWeight: '800', color: colors.textPrimary, marginTop: 8 },
+    h1sub: { fontSize: 14, color: colors.textSecondary, marginBottom: 20 },
+    option: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bgCard, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: 'transparent' },
+    optionActive: { borderColor: colors.primary },
+    radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.textTertiary, alignItems: 'center', justifyContent: 'center' },
+    radioActive: { borderColor: colors.primary },
+    radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+    optionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+    optionSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
+    panel: { backgroundColor: colors.bgCard, borderRadius: 16, padding: 16, marginTop: 4, marginBottom: 4 },
+    panelLabel: { fontSize: 12, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
+    input: { backgroundColor: isDark ? colors.bgCardLight : colors.bgDark, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.textPrimary },
+    why: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
+    factorRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+    factorText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+    cbCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: isDark ? colors.bgCardLight : colors.bgDark, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent' },
+    cbName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+    emptyBox: { paddingVertical: 12 },
+    emptyText: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 20 },
+    emptyCta: { fontSize: 14, fontWeight: '700', color: colors.primary, marginTop: 12 },
   });
 
 export default ChoosePartnerScreen;
