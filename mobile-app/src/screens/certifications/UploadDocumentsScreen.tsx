@@ -60,14 +60,10 @@ const UploadDocumentsScreen: React.FC = () => {
   });  
 
   const handleNext = () => {
-    navigation.navigate('ChoosePartner', {
-      mainCategory,
-      selectedType,
-      productName,
-      hsCode,
-      description,
-      documents: Object.values(uploadedFiles),
-    });
+    // Certification Body selection is no longer part of the apply flow — the
+    // Draft Application is created first, then the customer sets a preferred CB
+    // from Application Detail. Send them to My Work to continue.
+    navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'MyWork' } });
   };
 
   const handlePickDocument = async (docName: string) => {

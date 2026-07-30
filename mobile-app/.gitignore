@@ -1,1 +1,4 @@
 .env
+
+# Committed Metro bundle artifact (should not be tracked or type-checked)
+bundle.js

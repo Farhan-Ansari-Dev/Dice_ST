@@ -126,7 +126,7 @@ const ApplicationsScreen: React.FC = () => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => navigation.navigate('NewApplication')}
+            onPress={() => navigation.navigate('MainTabs', { screen: 'Certifications', params: { screen: 'NewCertification' } })}
           >
             <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.addButtonGradient}>
               <Ionicons name="add" size={22} color="#FFFFFF" />
@@ -222,7 +222,7 @@ const ApplicationsScreen: React.FC = () => {
               title="No applications found"
               subtitle="Submit a new certification application to get started"
               actionLabel="New Application"
-              onAction={() => navigation.navigate('NewApplication')}
+              onAction={() => navigation.navigate('MainTabs', { screen: 'Certifications', params: { screen: 'NewCertification' } })}
             />
           }
           renderItem={({ item }) => (

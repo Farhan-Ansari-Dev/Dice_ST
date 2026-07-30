@@ -242,9 +242,7 @@ const ApplicationDetailScreen: React.FC = () => {
                   <Text style={styles.docSize}>
                     {app.certification_body?.mode === 'customer_selected'
                       ? `Your CB: ${app.certification_body.name}`
-                      : app.certification_body?.mode === 'recommended'
-                      ? `Recommended: ${app.certification_body.name}`
-                      : 'Sanyog will manage this certification (recommended).'}
+                      : 'Sanyog will manage this certification.'}
                   </Text>
                 </LinearGradient>
               </View>

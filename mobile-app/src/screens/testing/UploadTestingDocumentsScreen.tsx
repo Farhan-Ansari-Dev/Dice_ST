@@ -33,7 +33,14 @@ const UploadTestingDocumentsScreen: React.FC = () => {
   const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
-    const docs: any[] = [];
+    // Simulated AI determination of required technical documents based on selected tests
+    const docs = [
+      'Product Images',
+      'Product Datasheet / Technical Specification',
+      'User Manual',
+      'Product Label / Nameplate Artwork',
+      'Manufacturer / Factory Information',
+    ];
 
     const parsedDocs = docs.map((name, index) => ({
       id: index,

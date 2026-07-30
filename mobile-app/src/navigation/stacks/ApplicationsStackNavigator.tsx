@@ -2,7 +2,6 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import ApplicationsScreen from '../../screens/applications/ApplicationsScreen';
 import ApplicationDetailScreen from '../../screens/applications/ApplicationDetailScreen';
-import NewApplicationScreen from '../../screens/applications/NewApplicationScreen';
 import UploadDocumentsScreen from '../../screens/certifications/UploadDocumentsScreen';
 import ChoosePartnerScreen from '../../screens/certifications/ChoosePartnerScreen';
 import TermsAndConditionsScreen from '../../screens/certifications/TermsAndConditionsScreen';
@@ -28,7 +27,6 @@ const ApplicationsStackNavigator: React.FC = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="ApplicationsList" component={ApplicationsScreen} />
     <Stack.Screen name="ApplicationDetail" component={ApplicationDetailScreen} />
-    <Stack.Screen name="NewApplication" component={NewApplicationScreen} />
     <Stack.Screen name="UploadDocuments" component={UploadDocumentsScreen} />
     <Stack.Screen name="ChoosePartner" component={ChoosePartnerScreen} />
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={{ presentation: 'modal' }} />

@@ -52,6 +52,16 @@ export interface IOrganization extends Document {
     notification_preferences: Record<string, boolean>;
   };
 
+  // Certification-Body profile (only meaningful when type='cb'). Powers the
+  // "Find a Certification Body" search filters. `settings.allowed_cert_types`
+  // remains the hard eligibility filter (which certifications this CB can issue).
+  cb_profile?: {
+    accreditations: string[];
+    scope?: string;
+    countries: string[];               // ISO codes the CB is recognised in
+    product_categories: string[];
+  };
+
   deleted_at?: Date;
   created_at: Date;
   updated_at: Date;
@@ -103,6 +113,13 @@ const OrganizationSchema = new Schema<IOrganization>(
       require_2fa_for_admins:   { type: Boolean, default: false },
       allowed_cert_types:       { type: [String], default: [] },
       notification_preferences: { type: Schema.Types.Mixed, default: {} },
+    },
+
+    cb_profile: {
+      accreditations:     { type: [String], default: [] },
+      scope:              { type: String, trim: true },
+      countries:          { type: [String], default: [] },
+      product_categories: { type: [String], default: [] },
     },
 
     deleted_at: { type: Date, index: true },

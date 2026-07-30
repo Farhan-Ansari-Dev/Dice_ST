@@ -56,9 +56,6 @@ const authService = {
     };
   },
 
-  register: (data: RegisterRequest) =>
-    api.post<AuthResponse>('/auth/register', data),
-
   refreshToken: (refreshToken: string) =>
     api.post<{ token: string }>('/auth/refresh', { refreshToken }),
 
@@ -81,9 +78,6 @@ const authService = {
 
   logout: () =>
     api.post<{ message: string }>('/auth/logout'),
-
-  deleteAccount: () =>
-    api.delete<{ message: string }>('/auth/account'),
 };
 
 export default authService;

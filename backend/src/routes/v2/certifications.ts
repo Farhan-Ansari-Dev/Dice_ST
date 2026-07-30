@@ -5,6 +5,7 @@ import { Certification } from '../../models/Certification'
 import { Application } from '../../models/Application'
 import { sendSuccess, sendError } from '../../utils/response'
 import { stripProtected } from '../../utils/sanitize'
+import { documentService } from '../../services/documentService'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -51,7 +52,10 @@ const certScope = (req: AuthRequest): any => {
 
 router.get('/:id', authenticate, authorize(['admin','employee','super_admin','client']), wrap(async (req: AuthRequest, res: Response) => {
   const filter = { ...(await certOwnershipFilter(req)), _id: req.params.id }
-  const cert = await Certification.findOne(filter).lean()
+  const cert = await Certification.findOne(filter)
+    .populate('org_id', 'name')
+    .populate('product_id', 'name')
+    .lean()
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert)
 }))
@@ -109,6 +113,25 @@ router.post('/:id/restore', authenticate, authorize(['admin','super_admin']), wr
   ).setOptions({ includeDeleted: true } as any)
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert, 'Restored successfully')
+}))
+
+// Download the official certificate PDF. Resolves the linked Document
+// (certificate_document_id) to a short-lived presigned URL, reusing the same
+// documentService the /documents routes use. Ownership is enforced by
+// certOwnershipFilter (clients can only reach certs from their own applications).
+router.get('/:id/download', authenticate, authorize(['admin','employee','super_admin','client']), wrap(async (req: AuthRequest, res: Response) => {
+  const filter = { ...(await certOwnershipFilter(req)), _id: req.params.id }
+  const cert = await Certification.findOne(filter).lean()
+  if (!cert) return sendError(res, 'Not found', 404)
+  if (!cert.certificate_document_id) {
+    return sendError(res, 'Certificate document is not available yet', 409)
+  }
+  const url = await documentService.getDownloadUrl(
+    cert.certificate_document_id as any,
+    undefined,
+    req.user!._id as any,
+  )
+  return sendSuccess(res, { url, expires_in: 900 })
 }))
 
 export default router

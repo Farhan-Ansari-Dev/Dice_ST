@@ -110,17 +110,18 @@ describe('CB selection on an application', () => {
     expect(res.body.data.name).toBe('My Existing CB Ltd');
   });
 
-  it('Recommended — choose a real approved CB org', async () => {
+  it('Find a CB — choose an eligible approved CB org', async () => {
     const { Organization } = await import('../models');
-    const cb: any = await Organization.findOne({ type: 'cb' });
+    const cb: any = await Organization.findOne({ type: 'cb', 'settings.allowed_cert_types': 'BIS_CRS' });
     const res = await request(app)
       .put(`/api/v2/certification-bodies/application/${applicationId}`)
       .set('Authorization', `Bearer ${clientToken}`)
-      .send({ mode: 'recommended', org_id: String(cb._id) });
+      .send({ mode: 'customer_selected', org_id: String(cb._id) });
     expect(res.status).toBe(200);
-    expect(res.body.data.mode).toBe('recommended');
+    expect(res.body.data.mode).toBe('customer_selected');
+    expect(res.body.data.status).toBe('pending');
+    expect(res.body.data.source).toBe('customer');
     expect(String(res.body.data.org_id)).toBe(String(cb._id));
-    expect(res.body.data.name).toBe(cb.name);
   });
 
   it('rejects an org_id that is not a CB', async () => {
@@ -131,12 +132,108 @@ describe('CB selection on an application', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a CB that is not eligible for this certification', async () => {
+    const { User, Organization } = await import('../models');
+    const owner = await User.create({ email: 'ce-cb@cb.test', name: 'CE CB', role: 'cb', otp_attempts: 0 });
+    const ceCb = await Organization.create({
+      name: 'CE-only Body', type: 'cb', owner_user_id: owner._id,
+      settings: { allowed_cert_types: ['CE_MARK'] },
+    });
+    const res = await request(app)
+      .put(`/api/v2/certification-bodies/application/${applicationId}`)
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({ mode: 'customer_selected', org_id: String(ceCb._id) });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/not eligible/i);
+  });
+
   it('another user cannot set a CB on someone else’s application', async () => {
     const res = await request(app)
       .put(`/api/v2/certification-bodies/application/${applicationId}`)
       .set('Authorization', `Bearer ${otherToken}`)
       .send({ mode: 'sanyog_managed' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('Find a CB — filtering & eligibility', () => {
+  it('never returns a CB that cannot issue the certification', async () => {
+    // Only the BIS-scoped CB exists for BIS_CRS; a CE-only body must not appear.
+    const res = await request(app)
+      .get('/api/v2/certification-bodies?cert_type=BIS_CRS')
+      .set('Authorization', `Bearer ${clientToken}`);
+    const names = res.body.data.certificationBodies.map((c: any) => c.name);
+    expect(names).toContain('BIS Certified Labs Pvt Ltd');
+    expect(names).not.toContain('CE-only Body');
+  });
+
+  it('text search narrows the results', async () => {
+    const hit = await request(app)
+      .get('/api/v2/certification-bodies?cert_type=BIS_CRS&q=BIS%20Certified')
+      .set('Authorization', `Bearer ${clientToken}`);
+    expect(hit.body.data.certificationBodies.length).toBeGreaterThan(0);
+
+    const miss = await request(app)
+      .get('/api/v2/certification-bodies?cert_type=BIS_CRS&q=ZZZ-no-such-cb')
+      .set('Authorization', `Bearer ${clientToken}`);
+    expect(miss.body.data.certificationBodies).toHaveLength(0);
+  });
+});
+
+describe('Manager review (accept / override / assign)', () => {
+  it('a customer cannot review', async () => {
+    const res = await request(app)
+      .put(`/api/v2/certification-bodies/application/${applicationId}/review`)
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({ action: 'accept' });
+    expect(res.status).toBe(403);
+  });
+
+  it('manager accepts the customer choice', async () => {
+    const res = await request(app)
+      .put(`/api/v2/certification-bodies/application/${applicationId}/review`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'accept' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('accepted');
+  });
+
+  it('override requires a reason', async () => {
+    const res = await request(app)
+      .put(`/api/v2/certification-bodies/application/${applicationId}/review`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'override', name: 'Different CB' });
+    expect(res.status).toBe(400);
+  });
+
+  it('manager overrides with a reason', async () => {
+    const res = await request(app)
+      .put(`/api/v2/certification-bodies/application/${applicationId}/review`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'override', name: 'Preferred Partner CB', reason: 'Faster turnaround for this product.' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('overridden');
+    expect(res.body.data.source).toBe('staff');
+    expect(res.body.data.review_reason).toMatch(/turnaround/i);
+    expect(res.body.data.name).toBe('Preferred Partner CB');
+  });
+
+  it('staff assign a CB for a Sanyog-managed application', async () => {
+    const { Application, Organization } = await import('../models');
+    const appDoc = await Application.create({
+      application_number: 'APP-TEST-CB-2', cert_type: 'BIS_CRS',
+      created_by: new mongoose.Types.ObjectId(), status: 'draft', current_stage: 'draft',
+      certification_body: { mode: 'sanyog_managed', status: 'pending' },
+    });
+    const cb: any = await Organization.findOne({ type: 'cb', 'settings.allowed_cert_types': 'BIS_CRS' });
+    const res = await request(app)
+      .put(`/api/v2/certification-bodies/application/${appDoc._id}/review`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ action: 'assign', org_id: String(cb._id) });
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('accepted');
+    expect(res.body.data.source).toBe('staff');
+    expect(String(res.body.data.org_id)).toBe(String(cb._id));
   });
 });
 

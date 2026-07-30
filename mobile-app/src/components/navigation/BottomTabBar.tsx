@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius } from '../../theme';
 import * as Haptics from 'expo-haptics';
 import { useNotificationStore } from '../../store/notificationStore';
+import ParticleSphere from './ParticleSphere';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -172,7 +173,7 @@ const CertificationsFab: React.FC<{ onPress: () => void, isDark: boolean, colors
           backgroundColor: '#6366F1', 
           borderColor: isDark ? 'rgba(10,11,15,1)' : '#fff',
         }]}>
-          <Ionicons name="shield-checkmark" size={34} color="#fff" />
+          <ParticleSphere size={46} />
         </View>
       </View>
       <Text style={[styles.fabLabel, { color: '#6366F1' }]}>Certifications</Text>

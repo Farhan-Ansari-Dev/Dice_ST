@@ -161,23 +161,7 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/google — Google OAuth (mobile + web)
 // ═══════════════════════════════════════════════════════════════
-router.post(
-  '/google',
-  (req: Request, res: Response, next) => {
-    console.log('========== GOOGLE REQUEST ==========');
-    console.log('Content-Type:', req.headers['content-type']);
-    console.log('Content-Length:', req.headers['content-length']);
-    console.log('Body:', req.body);
-    console.log('JSON:', JSON.stringify(req.body));
-    console.log('typeof idToken:', typeof req.body?.idToken);
-    console.log('idToken === null:', req.body?.idToken === null);
-    console.log('idToken length:', req.body?.idToken?.length);
-    console.log('====================================');
-
-    next();
-  },
-  validate(googleSchema),
-  async (req: Request, res: Response) => {
+router.post('/google', validate(googleSchema), async (req: Request, res: Response) => {
     const { idToken } = req.body;
     if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
 

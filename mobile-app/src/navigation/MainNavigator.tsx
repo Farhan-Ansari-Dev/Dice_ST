@@ -24,7 +24,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const TAB_ICONS: Record<string, { active: any; inactive: any }> = {
   Home:           { active: 'home-outline',              inactive: 'home-outline' },
   Insights:       { active: 'newspaper',                 inactive: 'newspaper-outline' },
-  Certifications: { active: 'shield-checkmark',          inactive: 'shield-checkmark-outline' },
+  Certifications: { active: 'document-text',             inactive: 'document-text-outline' },
   Identifier:     { active: 'scan',                      inactive: 'scan-outline' },
   Profile:        { active: 'person-outline',            inactive: 'person-outline' },
 };

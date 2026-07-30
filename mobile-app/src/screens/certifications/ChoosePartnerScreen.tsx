@@ -17,28 +17,26 @@ import { useToast } from '../../components/common/ToastProvider';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 
-type Mode = 'sanyog_managed' | 'customer_selected' | 'recommended';
+type UiChoice = 'sanyog' | 'manual' | 'find';
 
-interface RecommendedCB {
+interface CertBody {
   id: string;
   name: string;
-  legal_name?: string;
-  allowed_cert_types: string[];
+  accreditations: string[];
+  countries: string[];
+  scope?: string;
 }
 
 interface CBInfo {
   whyRequired: string;
   factors: Array<{ key: string; label: string; detail: string }>;
-  available: boolean;
-  certificationBodies: RecommendedCB[];
-  message?: string;
 }
 
 /**
- * Certification Body selection — the integrated, mock-free flow. Default is
- * always Sanyog-managed. "Help me choose" first explains why a CB is needed and
- * what factors matter, then lists ONLY real approved certification bodies (or an
- * honest empty state). CB choice is recorded on the Application (per cert).
+ * Preferred Certification Body — chosen from inside Application Detail (never in
+ * the apply flow). Default is Sanyog-managed (no further customer action; staff
+ * assign the CB). The customer may also enter a CB they already use, or search
+ * the real, eligible catalogue. No mock CBs; ineligible CBs are never shown.
  */
 const ChoosePartnerScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -53,55 +51,68 @@ const ChoosePartnerScreen: React.FC = () => {
   const certType: string | undefined = route.params?.certType;
   const certName: string = route.params?.certName ?? certType ?? 'this certification';
 
-  const [mode, setMode] = useState<Mode>('sanyog_managed');
+  const [choice, setChoice] = useState<UiChoice>('sanyog');
   const [externalName, setExternalName] = useState('');
+  const [query, setQuery] = useState('');
   const [selectedCbId, setSelectedCbId] = useState<string | null>(null);
   const [info, setInfo] = useState<CBInfo | null>(null);
-  const [loadingInfo, setLoadingInfo] = useState(false);
+  const [list, setList] = useState<CertBody[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
 
-  // Load the explanation + real CB list only when the customer chooses to.
-  const loadInfo = useCallback(async () => {
-    if (info || !certType) return;
-    setLoadingInfo(true);
+  // Search the real eligible catalogue (cert eligibility is enforced server-side).
+  const search = useCallback(async (q: string) => {
+    if (!certType) return;
+    setLoadingList(true);
     try {
-      const body: any = await api.get(`/certification-bodies?cert_type=${encodeURIComponent(certType)}`);
-      setInfo(body?.data ?? null);
+      const url = `/certification-bodies?cert_type=${encodeURIComponent(certType)}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+      const body: any = await api.get(url);
+      const d = body?.data ?? {};
+      setInfo({ whyRequired: d.whyRequired, factors: d.factors ?? [] });
+      setList(d.certificationBodies ?? []);
     } catch {
-      setInfo(null);
+      setList([]);
     } finally {
-      setLoadingInfo(false);
+      setLoadingList(false);
     }
-  }, [certType, info]);
+  }, [certType]);
 
+  // Load once when the customer opens "Find", then debounce on typing.
   useEffect(() => {
-    if (mode === 'recommended') loadInfo();
-  }, [mode, loadInfo]);
+    if (choice !== 'find') return;
+    const t = setTimeout(() => search(query), info ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [choice, query, search, info]);
 
   const canContinue =
-    mode === 'sanyog_managed' ||
-    (mode === 'customer_selected' && externalName.trim().length > 0) ||
-    (mode === 'recommended' && !!selectedCbId);
+    choice === 'sanyog' ||
+    (choice === 'manual' && externalName.trim().length > 0) ||
+    (choice === 'find' && !!selectedCbId);
 
   const submit = async () => {
-    if (submitting) return;
+    if (submitting || !applicationId) {
+      if (!applicationId) showToast('Not available', 'Open this from an application to set its certification body.', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
-      const payload: any = { mode };
-      if (mode === 'customer_selected') payload.name = externalName.trim();
-      if (mode === 'recommended') payload.org_id = selectedCbId;
+      const payload: any =
+        choice === 'sanyog'
+          ? { mode: 'sanyog_managed' }
+          : choice === 'manual'
+          ? { mode: 'customer_selected', name: externalName.trim() }
+          : { mode: 'customer_selected', org_id: selectedCbId };
 
-      if (applicationId) {
-        await api.put(`/certification-bodies/application/${applicationId}`, payload);
-        queryClient.invalidateQueries({ queryKey: ['application', applicationId] });
-      }
+      await api.put(`/certification-bodies/application/${applicationId}`, payload);
+      queryClient.invalidateQueries({ queryKey: ['application', applicationId] });
       queryClient.invalidateQueries({ queryKey: ['mywork'] });
 
       showToast(
         'Saved',
-        mode === 'sanyog_managed'
+        choice === 'sanyog'
           ? 'Sanyog will manage this certification for you.'
-          : 'Your certification body preference has been recorded.',
+          : 'Your certification body preference has been sent for review.',
         'success',
       );
       navigation.goBack();
@@ -112,17 +123,11 @@ const ChoosePartnerScreen: React.FC = () => {
     }
   };
 
-  const Option = ({ value, title, subtitle, icon }: { value: Mode; title: string; subtitle: string; icon: any }) => {
-    const active = mode === value;
+  const Option = ({ value, title, subtitle, icon }: { value: UiChoice; title: string; subtitle: string; icon: any }) => {
+    const active = choice === value;
     return (
-      <TouchableOpacity
-        style={[styles.option, active && styles.optionActive, Shadows.sm]}
-        onPress={() => setMode(value)}
-        activeOpacity={0.85}
-      >
-        <View style={[styles.radio, active && styles.radioActive]}>
-          {active && <View style={styles.radioDot} />}
-        </View>
+      <TouchableOpacity style={[styles.option, active && styles.optionActive, Shadows.sm]} onPress={() => setChoice(value)} activeOpacity={0.85}>
+        <View style={[styles.radio, active && styles.radioActive]}>{active && <View style={styles.radioDot} />}</View>
         <Ionicons name={icon} size={22} color={active ? colors.primary : colors.textSecondary} style={{ marginHorizontal: 12 }} />
         <View style={{ flex: 1 }}>
           <Text style={styles.optionTitle}>{title}</Text>
@@ -138,94 +143,67 @@ const ChoosePartnerScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Certification Body</Text>
+        <Text style={styles.headerTitle}>Preferred Certification Body</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={styles.h1}>How would you like to proceed?</Text>
         <Text style={styles.h1sub}>For {certName}</Text>
 
-        <Option
-          value="sanyog_managed"
-          title="Let Sanyog handle everything"
-          subtitle="Recommended — we manage the certification body end to end."
-          icon="shield-checkmark"
-        />
-        <Option
-          value="customer_selected"
-          title="I already have a Certification Body"
-          subtitle="Tell us the CB you already work with."
-          icon="business"
-        />
-        <Option
-          value="recommended"
-          title="Help me choose a Certification Body"
-          subtitle="Understand your options and pick the right one."
-          icon="sparkles"
-        />
+        <Option value="sanyog" title="Let Sanyog handle everything" subtitle="Recommended — we assign and manage the certification body for you." icon="shield-checkmark" />
+        <Option value="manual" title="I already have a Certification Body" subtitle="Tell us the CB you already work with." icon="business" />
+        <Option value="find" title="Find a Certification Body" subtitle="Search accredited bodies eligible for this certification." icon="search" />
 
-        {mode === 'customer_selected' && (
+        {choice === 'manual' && (
           <View style={styles.panel}>
             <Text style={styles.panelLabel}>Your Certification Body</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Certification body name"
-              placeholderTextColor={colors.textTertiary}
-              value={externalName}
-              onChangeText={setExternalName}
-            />
+            <TextInput style={styles.input} placeholder="Certification body name" placeholderTextColor={colors.textTertiary} value={externalName} onChangeText={setExternalName} />
           </View>
         )}
 
-        {mode === 'recommended' && (
+        {choice === 'find' && (
           <View style={styles.panel}>
-            {loadingInfo ? (
-              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 20 }} />
-            ) : info ? (
+            {info && (
               <>
                 <Text style={styles.why}>{info.whyRequired}</Text>
                 <Text style={styles.panelLabel}>What matters</Text>
                 {info.factors.map((f) => (
                   <View key={f.key} style={styles.factorRow}>
                     <Ionicons name="ellipse" size={7} color={colors.primary} style={{ marginTop: 7 }} />
-                    <Text style={styles.factorText}>
-                      <Text style={{ fontWeight: '700' }}>{f.label}. </Text>{f.detail}
-                    </Text>
+                    <Text style={styles.factorText}><Text style={{ fontWeight: '700' }}>{f.label}. </Text>{f.detail}</Text>
                   </View>
                 ))}
-
-                <Text style={[styles.panelLabel, { marginTop: 16 }]}>Suitable certification bodies</Text>
-                {info.available ? (
-                  info.certificationBodies.map((cb) => {
-                    const active = selectedCbId === cb.id;
-                    return (
-                      <TouchableOpacity
-                        key={cb.id}
-                        style={[styles.cbCard, active && styles.optionActive]}
-                        onPress={() => setSelectedCbId(cb.id)}
-                        activeOpacity={0.85}
-                      >
-                        <View style={[styles.radio, active && styles.radioActive]}>
-                          {active && <View style={styles.radioDot} />}
-                        </View>
-                        <Text style={styles.cbName}>{cb.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                ) : (
-                  <View style={styles.emptyBox}>
-                    <Text style={styles.emptyText}>
-                      {info.message ?? 'No accredited Certification Body is currently available for this certification.'}
-                    </Text>
-                    <TouchableOpacity onPress={() => setMode('sanyog_managed')}>
-                      <Text style={styles.emptyCta}>Let Sanyog manage this certification →</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
               </>
+            )}
+
+            <View style={styles.searchBox}>
+              <Ionicons name="search" size={18} color={colors.textTertiary} />
+              <TextInput style={styles.searchInput} placeholder="Search by name, accreditation…" placeholderTextColor={colors.textTertiary} value={query} onChangeText={setQuery} />
+            </View>
+
+            {loadingList ? (
+              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 16 }} />
+            ) : list.length > 0 ? (
+              list.map((cb) => {
+                const active = selectedCbId === cb.id;
+                return (
+                  <TouchableOpacity key={cb.id} style={[styles.cbCard, active && styles.optionActive]} onPress={() => setSelectedCbId(cb.id)} activeOpacity={0.85}>
+                    <View style={[styles.radio, active && styles.radioActive]}>{active && <View style={styles.radioDot} />}</View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.cbName}>{cb.name}</Text>
+                      {cb.accreditations?.length > 0 && <Text style={styles.cbMeta}>{cb.accreditations.join(' · ')}</Text>}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
             ) : (
-              <Text style={styles.emptyText}>Could not load certification body information.</Text>
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>No accredited Certification Body is currently available for this certification.</Text>
+                <TouchableOpacity onPress={() => setChoice('sanyog')}>
+                  <Text style={styles.emptyCta}>Let Sanyog manage this certification →</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         )}
@@ -256,11 +234,14 @@ const makeStyles = (colors: any, isDark: boolean) =>
     panel: { backgroundColor: colors.bgCard, borderRadius: 16, padding: 16, marginTop: 4, marginBottom: 4 },
     panelLabel: { fontSize: 12, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
     input: { backgroundColor: isDark ? colors.bgCardLight : colors.bgDark, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.textPrimary },
+    searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? colors.bgCardLight : colors.bgDark, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginTop: 8, marginBottom: 12 },
+    searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, padding: 0 },
     why: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 20, marginBottom: 16 },
     factorRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
     factorText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
-    cbCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: isDark ? colors.bgCardLight : colors.bgDark, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent' },
+    cbCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? colors.bgCardLight : colors.bgDark, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent' },
     cbName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+    cbMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
     emptyBox: { paddingVertical: 12 },
     emptyText: { fontSize: 13.5, color: colors.textSecondary, lineHeight: 20 },
     emptyCta: { fontSize: 14, fontWeight: '700', color: colors.primary, marginTop: 12 },

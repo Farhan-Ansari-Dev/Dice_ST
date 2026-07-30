@@ -22,9 +22,24 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // -------------------------------------------------------------
 // HARDCODED DEMO DATA
 // -------------------------------------------------------------
-const ALL_PRODUCTS: any[] = [];
+const ALL_PRODUCTS = [
+  'Air Fryer', 'Action Camera', 'Air Purifier', 'Bluetooth Speaker', 'Blender', 'Coffee Maker',
+  'Digital Camera', 'Drone', 'Electric Kettle', 'Electric Scooter', 'Electric Toothbrush',
+  'Fitness Tracker', 'Gaming Console', 'Hair Dryer', 'Headphones', 'Induction Cooktop',
+  'Iron', 'Juicer', 'Laptop', 'LED Bulb', 'LED TV', 'Microwave Oven', 'Mobile Phone',
+  'Power Bank', 'Pressure Cooker', 'Projector', 'Refrigerator', 'Rice Cooker',
+  'Smart Watch', 'Smart Speaker', 'Tablet', 'Vacuum Cleaner', 'Washing Machine', 'Wireless Earbuds',
+  'Xylophone', 'X-Ray Machine', 'Yoga Mat',
+];
 
-const ALL_COUNTRIES: any[] = [];
+const ALL_COUNTRIES = [
+  '🇮🇳 India', '🇦🇪 United Arab Emirates', '🇸🇦 Saudi Arabia', '🇺🇸 United States', '🇬🇧 United Kingdom',
+  '🇩🇪 Germany', '🇫🇷 France', '🇮🇹 Italy', '🇪🇸 Spain', '🇳🇱 Netherlands',
+  '🇨🇦 Canada', '🇦🇺 Australia', '🇯🇵 Japan', '🇰🇷 South Korea', '🇸🇬 Singapore',
+  '🇲🇾 Malaysia', '🇹🇭 Thailand', '🇻🇳 Vietnam', '🇮🇩 Indonesia', '🇵🇭 Philippines',
+  '🇿🇦 South Africa', '🇧🇷 Brazil', '🇲🇽 Mexico', '🇨🇱 Chile', '🇪🇬 Egypt',
+  '🇰🇪 Kenya', '🇳🇬 Nigeria', '🇹🇷 Turkey', '🇶🇦 Qatar', '🇴🇲 Oman', '🇰🇼 Kuwait',
+];
 
 const MARKET_RULES: Record<string, Record<string, any[]>> = {};
 
@@ -87,7 +102,7 @@ const NewInspectionScreen: React.FC = () => {
           inspections.push({ ...i, market });
         });
       } else {
-        inspections.push({ code: `INSP_PSI`, name: `Pre-Shipment Inspection (${market})`, market });
+        inspections.push({ code: `INSP_PSI`, name: `Pre-Shipment Inspection`, market });
         inspections.push({ code: `INSP_FA`, name: `Factory Audit`, market });
       }
     });
@@ -249,6 +264,13 @@ const NewInspectionScreen: React.FC = () => {
             <FlatList
               data={filteredProducts}
               keyExtractor={item => item}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={15}
+              maxToRenderPerBatch={15}
+              windowSize={10}
+              bounces={true}
+              overScrollMode="never"
               renderItem={({ item }) => (
                 <TouchableOpacity 
                   style={styles.modalListItem}
@@ -293,6 +315,13 @@ const NewInspectionScreen: React.FC = () => {
             <FlatList
               data={filteredMarkets}
               keyExtractor={item => item}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={15}
+              maxToRenderPerBatch={15}
+              windowSize={10}
+              bounces={true}
+              overScrollMode="never"
               renderItem={({ item }) => {
                 const isSelected = selectedMarkets.includes(item);
                 return (

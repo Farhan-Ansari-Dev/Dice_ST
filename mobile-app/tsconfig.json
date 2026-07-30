@@ -14,5 +14,6 @@
       "@services/*": ["src/services/*"],
       "@utils/*": ["src/utils/*"]
     }
-  }
+  },
+  "exclude": ["node_modules", "bundle.js", "dist", "android", "ios"]
 }

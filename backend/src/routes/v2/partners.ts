@@ -26,6 +26,15 @@ const PARTNER_MATERIALISATION: Record<string, { orgType: 'cb' | 'lab' | 'other';
   'Inspection Body':     { orgType: 'other', userRole: 'ib' },
 };
 
+/** Split a free-text list (comma / newline separated) into trimmed entries. */
+function splitList(v?: string): string[] {
+  if (!v) return [];
+  return String(v)
+    .split(/[,\n;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 /**
  * On approval, materialise the partner into the live catalogue: create an
  * Organization (e.g. type='cb') owned by the applicant and promote the
@@ -46,6 +55,12 @@ async function materialiseApprovedPartner(application: any): Promise<void> {
       type: mapping.orgType,
       owner_user_id: ownerId,
       settings: { allowed_cert_types: [] }, // empty = handles all cert types until scoped
+      cb_profile: {
+        accreditations: splitList(application.accreditations),
+        scope: application.scope,
+        countries: [],
+        product_categories: [],
+      },
     });
   }
 

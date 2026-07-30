@@ -1,12 +1,14 @@
-import React, { useMemo } from 'react';
-import { Share } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
+  Share,
   StyleSheet,
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,29 +16,12 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import Badge, { getStatusVariant } from '../../components/common/Badge';
-import Timeline from '../../components/common/Timeline';
-import ProgressBar from '../../components/common/ProgressBar';
 import Button from '../../components/common/Button';
 import { formatDate } from '../../utils/formatters';
+import certificationService from '../../services/certificationService';
 
-const MOCK_CERT: any = {
-  id: '',
-  name: '',
-  type: '',
-  certificateNo: '',
-  status: '',
-  issuedDate: '',
-  expiryDate: '',
-  productName: '',
-  progress: 0,
-  companyName: '',
-  applicantName: '',
-  labName: '',
-  standardName: '',
-  description: '',
-  timeline: [],
-  documents: [],
-};
+const prettyStatus = (s?: string) =>
+  (s ?? '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Unknown';
 
 const CertificationDetailScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -45,6 +30,129 @@ const CertificationDetailScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  const certId: string | undefined = route.params?.id;
+  const [cert, setCert] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!certId) {
+      setError('Missing certificate reference.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const res: any = await certificationService.getCertificationById(certId);
+      setCert(res?.data ?? res ?? null);
+    } catch (e) {
+      setError('Could not load this certificate.');
+    } finally {
+      setLoading(false);
+    }
+  }, [certId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleDownload = useCallback(async () => {
+    if (!certId) return;
+    try {
+      setDownloading(true);
+      const res: any = await certificationService.downloadCertificate(certId);
+      const url = res?.data?.url ?? res?.url;
+      if (url) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Download', 'The official certificate document is not available yet.');
+      }
+    } catch (e: any) {
+      const msg =
+        e?.response?.status === 409
+          ? 'The official certificate document has not been issued yet.'
+          : 'Could not download the certificate. Please try again.';
+      Alert.alert('Download', msg);
+    } finally {
+      setDownloading(false);
+    }
+  }, [certId]);
+
+  const handleShare = useCallback(() => {
+    if (!cert) return;
+    Share.share({
+      title: cert.scheme || cert.cert_type || 'Certificate',
+      message:
+        `${cert.cert_type ?? 'Certificate'}\n` +
+        `Certificate No: ${cert.cert_number ?? '—'}\n` +
+        `Issued by: ${cert.issuing_body ?? '—'}\n` +
+        `Valid until: ${formatDate(cert.expiry_date)}` +
+        (cert.verification_url ? `\nVerify: ${cert.verification_url}` : ''),
+    });
+  }, [cert]);
+
+  const detailRows = useMemo(() => {
+    if (!cert) return [];
+    return [
+      { label: 'Product', value: cert.product_id?.name },
+      { label: 'Certification Type', value: cert.cert_type },
+      { label: 'Scheme / Standard', value: cert.scheme },
+      { label: 'Issuing Body', value: cert.issuing_body },
+      { label: 'Company', value: cert.org_id?.name },
+      { label: 'Issue Date', value: cert.issue_date ? formatDate(cert.issue_date) : undefined },
+      { label: 'Expiry Date', value: cert.expiry_date ? formatDate(cert.expiry_date) : undefined },
+      {
+        label: 'Validity',
+        value: cert.validity_period_months ? `${cert.validity_period_months} months` : undefined,
+      },
+      { label: 'Scope', value: cert.scope },
+    ].filter((r) => !!r.value);
+  }, [cert]);
+
+  const renderHeader = (title: string) => (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>{title}</Text>
+      <View style={styles.shareBtn} />
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <LinearGradient
+          colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#E8ECF4']}
+          style={StyleSheet.absoluteFill}
+        />
+        {renderHeader('Certificate Detail')}
+        <View style={styles.centerFill}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  if (error || !cert) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <LinearGradient
+          colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#E8ECF4']}
+          style={StyleSheet.absoluteFill}
+        />
+        {renderHeader('Certificate Detail')}
+        <View style={styles.centerFill}>
+          <Ionicons name="alert-circle-outline" size={44} color={colors.textTertiary} />
+          <Text style={styles.emptyText}>{error ?? 'Certificate not found.'}</Text>
+          <Button title="Retry" onPress={load} variant="outline" size="md" style={{ marginTop: 16 }} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -59,7 +167,7 @@ const CertificationDetailScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Certificate Detail</Text>
-        <TouchableOpacity style={styles.shareBtn} onPress={() => Share.share({ title: MOCK_CERT.name, message: `${MOCK_CERT.name}\nCertificate No: ${MOCK_CERT.certificateNo}\nProduct: ${MOCK_CERT.productName}\nValid until: ${MOCK_CERT.expiryDate}` })}>
+        <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
           <Ionicons name="share-outline" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
@@ -77,28 +185,39 @@ const CertificationDetailScreen: React.FC = () => {
               <Ionicons name="shield-checkmark" size={40} color="#FFFFFF" />
             </View>
             <View style={styles.heroInfo}>
-              <Text style={styles.heroCertName}>{MOCK_CERT.name}</Text>
-              <Text style={styles.heroCertType}>{MOCK_CERT.type}</Text>
-              <Badge label="Active" variant="success" size="sm" dot style={{ marginTop: 6 }} />
+              <Text style={styles.heroCertName}>{cert.scheme || cert.cert_type || 'Certificate'}</Text>
+              <Text style={styles.heroCertType}>{cert.issuing_body || cert.cert_type}</Text>
+              <Badge
+                label={prettyStatus(cert.status)}
+                variant={getStatusVariant(cert.status)}
+                size="sm"
+                dot
+                style={{ marginTop: 6 }}
+              />
             </View>
           </View>
           <View style={styles.heroStats}>
-            <View style={styles.heroStatItem}>
-              <Ionicons name="barcode-outline" size={14} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.heroStatValue}>{MOCK_CERT.certificateNo}</Text>
-            </View>
-            <View style={styles.heroStatItem}>
-              <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.heroStatValue}>Expires: {formatDate(MOCK_CERT.expiryDate)}</Text>
-            </View>
+            {!!cert.cert_number && (
+              <View style={styles.heroStatItem}>
+                <Ionicons name="barcode-outline" size={14} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.heroStatValue}>{cert.cert_number}</Text>
+              </View>
+            )}
+            {!!cert.expiry_date && (
+              <View style={styles.heroStatItem}>
+                <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.heroStatValue}>Expires: {formatDate(cert.expiry_date)}</Text>
+              </View>
+            )}
           </View>
         </LinearGradient>
 
         {/* Actions */}
         <View style={styles.actionsRow}>
           <Button
-            title="Download"
-            onPress={() => Alert.alert('Download', 'Certificate download started.')}
+            title={downloading ? 'Preparing…' : 'Download'}
+            onPress={handleDownload}
+            disabled={downloading}
             variant="primary"
             size="md"
             icon={<Ionicons name="download-outline" size={16} color="#FFFFFF" />}
@@ -106,7 +225,7 @@ const CertificationDetailScreen: React.FC = () => {
           />
           <Button
             title="Share"
-            onPress={() => Alert.alert('Share', 'Share dialog.')}
+            onPress={handleShare}
             variant="outline"
             size="md"
             icon={<Ionicons name="share-social-outline" size={16} color={colors.primary} />}
@@ -114,7 +233,7 @@ const CertificationDetailScreen: React.FC = () => {
           />
           <Button
             title="Renew"
-            onPress={() => navigation.navigate('NewApplication')}
+            onPress={() => navigation.navigate('NewCertification')}
             variant="ghost"
             size="md"
             icon={<Ionicons name="refresh-outline" size={16} color={colors.textSecondary} />}
@@ -129,15 +248,7 @@ const CertificationDetailScreen: React.FC = () => {
             style={styles.cardInner}
           >
             <Text style={styles.cardTitle}>Certificate Details</Text>
-            {[
-              { label: 'Product Name', value: MOCK_CERT.productName },
-              { label: 'Standard', value: MOCK_CERT.standardName },
-              { label: 'Testing Lab', value: MOCK_CERT.labName },
-              { label: 'Company Name', value: MOCK_CERT.companyName },
-              { label: 'Applicant', value: MOCK_CERT.applicantName },
-              { label: 'Issue Date', value: formatDate(MOCK_CERT.issuedDate) },
-              { label: 'Expiry Date', value: formatDate(MOCK_CERT.expiryDate) },
-            ].map((item, i) => (
+            {detailRows.map((item, i) => (
               <View key={i} style={styles.detailRow}>
                 <Text style={styles.detailLabel}>{item.label}</Text>
                 <Text style={styles.detailValue}>{item.value}</Text>
@@ -146,36 +257,29 @@ const CertificationDetailScreen: React.FC = () => {
           </LinearGradient>
         </View>
 
-        {/* Documents */}
+        {/* Official document */}
         <View style={[styles.card, Shadows.sm]}>
           <LinearGradient
             colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
             style={styles.cardInner}
           >
-            <Text style={styles.cardTitle}>Supporting Documents</Text>
-            {(MOCK_CERT.documents || []).map((doc: any) => (
-              <View key={doc.id} style={styles.docRow}>
+            <Text style={styles.cardTitle}>Official Certificate</Text>
+            {cert.certificate_document_id ? (
+              <TouchableOpacity style={styles.docRow} onPress={handleDownload} disabled={downloading}>
                 <View style={styles.docIcon}>
                   <Ionicons name="document-text" size={18} color={colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.docName}>{doc.name}</Text>
-                  <Text style={styles.docType}>{doc.type}</Text>
+                  <Text style={styles.docName}>Certificate document</Text>
+                  <Text style={styles.docType}>PDF · tap to download</Text>
                 </View>
-                <Badge label={doc.status} variant={getStatusVariant(doc.status)} size="sm" />
-              </View>
-            ))}
-          </LinearGradient>
-        </View>
-
-        {/* Timeline */}
-        <View style={[styles.card, Shadows.sm]}>
-          <LinearGradient
-            colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
-            style={styles.cardInner}
-          >
-            <Text style={styles.cardTitle}>Application Timeline</Text>
-            <Timeline items={MOCK_CERT.timeline} />
+                <Ionicons name="download-outline" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.docType}>
+                The official certificate document has not been issued yet.
+              </Text>
+            )}
           </LinearGradient>
         </View>
 
@@ -188,6 +292,8 @@ const CertificationDetailScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+    emptyText: { fontSize: 14, color: colors.textSecondary, marginTop: 12, textAlign: 'center' },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -261,8 +367,6 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
       alignItems: 'center',
       gap: 12,
       paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderBottomColor: isDark ? 'rgba(255,255,255,0.04)' : colors.border,
     },
     docIcon: {
       width: 40,

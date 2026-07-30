@@ -11,7 +11,20 @@ export interface RecommendedCertificationBody {
   name: string;
   legal_name?: string;
   allowed_cert_types: string[];
+  accreditations: string[];
+  scope?: string;
+  countries: string[];
+  product_categories: string[];
   recommendation_reason?: string;
+}
+
+export interface CertificationBodyFilters {
+  certType?: string;
+  country?: string;
+  accreditation?: string;
+  scope?: string;
+  productCategory?: string;
+  q?: string;
 }
 
 export interface MarketAccessOutput {
@@ -155,34 +168,73 @@ export class MarketAccessService {
   }
 
   /**
-   * Recommend certification bodies for a certification. Returns ONLY real,
-   * approved Organizations(type='cb') that handle this cert type (or handle all,
-   * i.e. empty allowed_cert_types). Never invents a CB — an empty result is an
-   * honest "no accredited CB available yet". Future AI ranking populates
-   * `recommendation_reason`; it may only rank these verified organisations.
+   * Find certification bodies — searchable and filtered. Returns ONLY real,
+   * approved Organizations(type='cb'). Certification eligibility
+   * (allowed_cert_types) is the HARD filter: an ineligible CB is never returned.
+   * Country / accreditation / scope / product-category / free-text narrow
+   * further. Never invents a CB — an empty result is an honest "none available".
+   * Future AI ranking may only re-rank these verified organisations.
    */
-  static async recommendCertificationBodies(
-    certType: string,
+  static async searchCertificationBodies(
+    filters: CertificationBodyFilters,
   ): Promise<RecommendedCertificationBody[]> {
-    const code = String(certType || '').trim();
-    if (!code) return [];
+    const and: any[] = [];
 
-    const cbs = await Organization.find({
-      type: 'cb',
-      $or: [
-        { 'settings.allowed_cert_types': code },
-        { 'settings.allowed_cert_types': { $size: 0 } }, // empty = handles all cert types
-      ],
-    })
-      .sort({ name: 1 })
-      .lean();
+    // Certification eligibility — the CB must be able to issue this cert
+    // (explicitly listed, or empty = handles all).
+    if (filters.certType) {
+      and.push({
+        $or: [
+          { 'settings.allowed_cert_types': filters.certType.trim() },
+          { 'settings.allowed_cert_types': { $size: 0 } },
+        ],
+      });
+    }
+    if (filters.country) {
+      and.push({ 'cb_profile.countries': filters.country.trim().toUpperCase() });
+    }
+    if (filters.accreditation) {
+      and.push({ 'cb_profile.accreditations': new RegExp(escapeRegex(filters.accreditation.trim()), 'i') });
+    }
+    if (filters.scope) {
+      and.push({ 'cb_profile.scope': new RegExp(escapeRegex(filters.scope.trim()), 'i') });
+    }
+    if (filters.productCategory) {
+      and.push({ 'cb_profile.product_categories': new RegExp(`^${escapeRegex(filters.productCategory.trim())}$`, 'i') });
+    }
+    if (filters.q) {
+      and.push({
+        $or: [
+          { name: new RegExp(escapeRegex(filters.q.trim()), 'i') },
+          { legal_name: new RegExp(escapeRegex(filters.q.trim()), 'i') },
+        ],
+      });
+    }
+
+    const query: any = { type: 'cb' };
+    if (and.length) query.$and = and;
+
+    const cbs = await Organization.find(query).sort({ name: 1 }).lean();
 
     return cbs.map((o: any) => ({
       id: o._id.toString(),
       name: o.name,
       legal_name: o.legal_name,
       allowed_cert_types: o.settings?.allowed_cert_types ?? [],
+      accreditations: o.cb_profile?.accreditations ?? [],
+      scope: o.cb_profile?.scope,
+      countries: o.cb_profile?.countries ?? [],
+      product_categories: o.cb_profile?.product_categories ?? [],
     }));
+  }
+
+  /** True when a CB org is eligible to issue the given certification. */
+  static async isEligibleCB(orgId: string, certType?: string): Promise<boolean> {
+    const org: any = await Organization.findOne({ _id: orgId, type: 'cb' }).lean();
+    if (!org) return false;
+    if (!certType) return true;
+    const allowed: string[] = org.settings?.allowed_cert_types ?? [];
+    return allowed.length === 0 || allowed.includes(certType);
   }
 
   /** Resolve a product string to a ProductCategory (by name, id, or keyword). */

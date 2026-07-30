@@ -87,6 +87,13 @@ const HomeScreen: React.FC = () => {
   const sunOpacity = useRef(new Animated.Value(isDark ? 0 : 1)).current;
   const moonOpacity = useRef(new Animated.Value(isDark ? 1 : 0)).current;
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, 150],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(sunOpacity, { toValue: isDark ? 0 : 1, duration: 250, useNativeDriver: true }),
@@ -110,7 +117,7 @@ const HomeScreen: React.FC = () => {
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour >= 5  && hour < 12) return 'Good Morning';
+    if (hour >= 5 && hour < 12) return 'Good Morning';
     if (hour >= 12 && hour < 17) return 'Good Afternoon';
     if (hour >= 17 && hour < 21) return 'Good Evening';
     return 'Good Night';
@@ -155,11 +162,14 @@ const HomeScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient
-        colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#F8FAFC']}
-        style={StyleSheet.absoluteFill}
-      />
+    <View style={[styles.container, { backgroundColor: isDark ? '#000000' : '#FFFFFF', paddingTop: insets.top }]}>
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerOpacity }]}>
+        <LinearGradient
+          colors={isDark ? ['#1e3a8a', '#000000'] : ['#bfdbfe', '#FFFFFF']}
+          style={StyleSheet.absoluteFill}
+          locations={[0, 0.5]}
+        />
+      </Animated.View>
 
       {/* Header */}
       <View style={styles.header}>
@@ -207,10 +217,15 @@ const HomeScreen: React.FC = () => {
         </View>
       )}
 
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
       >
         {/* AI SEARCH BAR */}
         <View style={styles.searchSection}>
@@ -220,7 +235,7 @@ const HomeScreen: React.FC = () => {
         </View>
 
         {/* SECTION 1: COMPLIANCE HEALTH (HERO) */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.healthContainer, { backgroundColor: isDark ? colors.bgCardLight : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.05)' : colors.border }]}
           activeOpacity={0.9}
           onPress={() => navigation.navigate('ComplianceScore')}
@@ -371,7 +386,7 @@ const HomeScreen: React.FC = () => {
               <Text style={styles.impactValue}>{currencySymbol}{(analytics?.total_revenue || 0).toLocaleString()}</Text>
               <Text style={styles.impactLabel}>Revenue Processed</Text>
             </View>
-            
+
             <View style={[styles.impactCard, { backgroundColor: isDark ? colors.bgCardLight : '#fff' }]}>
               <View style={styles.impactCardHeader}>
                 <View style={[styles.impactIconWrap, { backgroundColor: '#3B82F615' }]}>
@@ -404,13 +419,13 @@ const HomeScreen: React.FC = () => {
               </TouchableOpacity>
             ))}
             {recentApplications.length === 0 && (
-               <Text style={{ textAlign: 'center', color: colors.textTertiary, padding: 20 }}>No applications found.</Text>
+              <Text style={{ textAlign: 'center', color: colors.textTertiary, padding: 20 }}>No applications found.</Text>
             )}
           </View>
         </View>
 
         <View style={{ height: 80 }} />
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 };
@@ -438,7 +453,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     clientHint: { fontSize: 12, color: colors.textSecondary },
     scrollContent: { paddingTop: Platform.OS === 'ios' ? 4 : 8 },
     searchSection: { paddingHorizontal: 20, marginBottom: Platform.OS === 'ios' ? 12 : 16 },
-    
+
     // Shared
     sectionContainer: { marginTop: 24 },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Platform.OS === 'ios' ? 12 : 16, paddingHorizontal: 20 },
@@ -446,13 +461,13 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     seeAll: { fontSize: 13, color: colors.primary, fontWeight: '600' },
 
     // Hero / Health
-    healthContainer: { 
-      marginHorizontal: 20, marginBottom: 8, borderWidth: 1, 
-      padding: Platform.OS === 'ios' ? 16 : 20, 
-      borderRadius: Platform.OS === 'ios' ? 20 : 24, 
-      ...(Platform.OS === 'ios' 
-        ? { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 6 } 
-        : Shadows.md) 
+    healthContainer: {
+      marginHorizontal: 20, marginBottom: 8, borderWidth: 1,
+      padding: Platform.OS === 'ios' ? 16 : 20,
+      borderRadius: Platform.OS === 'ios' ? 20 : 24,
+      ...(Platform.OS === 'ios'
+        ? { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 6 }
+        : Shadows.md)
     },
     healthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Platform.OS === 'ios' ? 16 : 20 },
     healthTitle: { fontSize: Platform.OS === 'ios' ? 11 : 13, fontWeight: Platform.OS === 'ios' ? '700' : '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },

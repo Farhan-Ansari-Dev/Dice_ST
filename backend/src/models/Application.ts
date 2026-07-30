@@ -67,14 +67,19 @@ export interface IApplication extends Document {
     added_at: Date;
   }>;
 
-  // Certification Body handling this application (per certification). Default is
-  // Sanyog-managed; the same Workflow/lifecycle applies regardless of who the CB
-  // is — this is an attribute, not a separate workflow.
+  // Preferred Certification Body for this application (per certification).
+  // Default is Sanyog-managed (staff assign the CB later); the customer may also
+  // find/enter a CB, which a manager then accepts or overrides. Same
+  // Workflow/lifecycle regardless — this is an attribute, not a separate workflow.
   certification_body?: {
-    mode: 'sanyog_managed' | 'customer_selected' | 'recommended';
-    org_id?: Types.ObjectId;               // an approved Organization(type='cb')
-    name?: string;                         // free-text external CB (off-platform)
-    recommendation_reason?: string;        // populated by future AI ranking
+    mode: 'sanyog_managed' | 'customer_selected';
+    org_id?: Types.ObjectId;               // an approved, eligible Organization(type='cb')
+    name?: string;                         // manual off-platform CB ("I already have a CB")
+    source?: 'customer' | 'staff';         // who set the current value
+    status?: 'pending' | 'accepted' | 'overridden';   // manager review state
+    review_reason?: string;                // required when a manager overrides
+    reviewed_by?: Types.ObjectId;
+    reviewed_at?: Date;
     selected_by?: Types.ObjectId;
     selected_at?: Date;
   };
@@ -167,12 +172,16 @@ const ApplicationSchema = new Schema<IApplication>(
     ],
 
     certification_body: {
-      mode:                  { type: String, enum: ['sanyog_managed', 'customer_selected', 'recommended'], default: 'sanyog_managed' },
-      org_id:                { type: Schema.Types.ObjectId, ref: 'Organization' },
-      name:                  { type: String, trim: true },
-      recommendation_reason: { type: String, trim: true },
-      selected_by:           { type: Schema.Types.ObjectId, ref: 'User' },
-      selected_at:           { type: Date },
+      mode:          { type: String, enum: ['sanyog_managed', 'customer_selected'], default: 'sanyog_managed' },
+      org_id:        { type: Schema.Types.ObjectId, ref: 'Organization' },
+      name:          { type: String, trim: true },
+      source:        { type: String, enum: ['customer', 'staff'] },
+      status:        { type: String, enum: ['pending', 'accepted', 'overridden'], default: 'pending' },
+      review_reason: { type: String, trim: true },
+      reviewed_by:   { type: Schema.Types.ObjectId, ref: 'User' },
+      reviewed_at:   { type: Date },
+      selected_by:   { type: Schema.Types.ObjectId, ref: 'User' },
+      selected_at:   { type: Date },
     },
 
     submitted_at:            Date,

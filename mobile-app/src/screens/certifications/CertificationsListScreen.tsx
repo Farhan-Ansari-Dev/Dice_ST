@@ -315,7 +315,7 @@ const CertificationsScreen: React.FC = () => {
 
             <TouchableOpacity 
               style={[styles.sheetActionCard, { borderColor: 'rgba(255,165,2,0.2)', backgroundColor: isDark ? 'rgba(255,165,2,0.05)' : 'rgba(255,165,2,0.05)' }]} 
-              onPress={() => { setActionSheetVisible(false); /* Add route here when Inspection is ready */ }}
+              onPress={() => { setActionSheetVisible(false); navigation.navigate('Inspection'); }}
               activeOpacity={0.8}
             >
               <LinearGradient colors={['#FFA502', '#FF6348']} style={styles.sheetIconBox} start={{x:0, y:0}} end={{x:1, y:1}}>

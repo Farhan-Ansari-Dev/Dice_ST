@@ -33,7 +33,14 @@ const UploadInspectionDocumentsScreen: React.FC = () => {
   const [agreed, setAgreed] = useState(false);
 
   useEffect(() => {
-    const docs: any[] = [];
+    // Simulated AI determination of required inspection documents
+    const docs = [
+      'Factory Layout',
+      'Manufacturing Process Flow',
+      'Quality Control Plan',
+      'Factory Registration Certificate',
+      'Product Specification / Datasheet',
+    ];
 
     const parsedDocs = docs.map((name, index) => ({
       id: index,

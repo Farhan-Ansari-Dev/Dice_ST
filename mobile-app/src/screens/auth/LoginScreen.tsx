@@ -113,6 +113,11 @@ const LoginScreen: React.FC = () => {
     setGoogleLoading(true);
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      // Always present the account chooser. signIn() silently reuses the app's
+      // cached Google session when one exists; signOut() clears only that LOCAL
+      // session (not the OAuth consent grant), so the next signIn() re-shows the
+      // picker. No silent sign-in is used elsewhere, so this is safe.
+      await GoogleSignin.signOut().catch(() => {});
       const userInfo = await GoogleSignin.signIn();
       if (isSuccessResponse(userInfo)) {
         const idToken = userInfo.data.idToken;
