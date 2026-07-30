@@ -95,7 +95,7 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
     if (req.body.is_admin_portal) {
       const allowedRoles = ['admin', 'super_admin', 'cb', 'employee', 'consultant', 'lab', 'ib'];
       if (!allowedRoles.includes(user.role)) {
-         return res.status(403).json({ error: 'forbidden', message: 'Unauthorized access. Only authorized staff can login here.' });
+        return res.status(403).json({ error: 'forbidden', message: 'Unauthorized access. Only authorized staff can login here.' });
       }
     }
   }
@@ -161,45 +161,61 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/google — Google OAuth (mobile + web)
 // ═══════════════════════════════════════════════════════════════
-router.post('/google', validate(googleSchema), async (req: Request, res: Response) => {
-  const { idToken } = req.body;
-  if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
+router.post(
+  '/google',
+  (req: Request, res: Response, next) => {
+    console.log('========== GOOGLE REQUEST ==========');
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Content-Length:', req.headers['content-length']);
+    console.log('Body:', req.body);
+    console.log('JSON:', JSON.stringify(req.body));
+    console.log('typeof idToken:', typeof req.body?.idToken);
+    console.log('idToken === null:', req.body?.idToken === null);
+    console.log('idToken length:', req.body?.idToken?.length);
+    console.log('====================================');
 
-  try {
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: googleClientAudiences,
-    });
-    const payload = ticket.getPayload();
-    if (!payload?.email) return res.status(401).json({ error: 'invalid_google_token' });
+    next();
+  },
+  validate(googleSchema),
+  async (req: Request, res: Response) => {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
 
-    let user = await User.findOne({ email: payload.email.toLowerCase() });
-    if (!user) {
-      user = await User.create({
-        email: payload.email.toLowerCase(),
-        name: payload.name ?? payload.email.split('@')[0],
-        avatar_url: payload.picture,
-        email_verified_at: new Date(),
-        role: 'client',
-        otp_attempts: 0,
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: googleClientAudiences,
       });
-    } else if (!user.email_verified_at) {
-      user.email_verified_at = new Date();
-      await user.save();
+      const payload = ticket.getPayload();
+      if (!payload?.email) return res.status(401).json({ error: 'invalid_google_token' });
+
+      let user = await User.findOne({ email: payload.email.toLowerCase() });
+      if (!user) {
+        user = await User.create({
+          email: payload.email.toLowerCase(),
+          name: payload.name ?? payload.email.split('@')[0],
+          avatar_url: payload.picture,
+          email_verified_at: new Date(),
+          role: 'client',
+          otp_attempts: 0,
+        });
+      } else if (!user.email_verified_at) {
+        user.email_verified_at = new Date();
+        await user.save();
+      }
+
+      const { accessToken, refreshToken } = issueTokens(user);
+      await audit({ actor: user._id as any, resource_type: 'user', resource_id: user._id as any, action: 'logged_in', ip: req.ip, notes: 'google_oauth' });
+
+      return res.json({
+        success: true,
+        data: { accessToken, refreshToken, user: await buildUserResponse(user) },
+      });
+    } catch (err) {
+      logger.error('[auth/google] verification failed:', err);
+      return res.status(401).json({ error: 'google_auth_failed', message: err instanceof Error ? err.message : 'unknown' });
     }
-
-    const { accessToken, refreshToken } = issueTokens(user);
-    await audit({ actor: user._id as any, resource_type: 'user', resource_id: user._id as any, action: 'logged_in', ip: req.ip, notes: 'google_oauth' });
-
-    return res.json({
-      success: true,
-      data: { accessToken, refreshToken, user: await buildUserResponse(user) },
-    });
-  } catch (err) {
-    logger.error('[auth/google] verification failed:', err);
-    return res.status(401).json({ error: 'google_auth_failed', message: err instanceof Error ? err.message : 'unknown' });
-  }
-});
+  });
 
 router.post('/verify-otp', verifyLimiter, validate(verifyOtpSchema), async (req: Request, res: Response) => {
   const { email, otp } = req.body;
