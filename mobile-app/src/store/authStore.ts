@@ -14,10 +14,16 @@ export interface User {
   role: 'super_admin' | 'admin' | 'consultant' | 'employee' | 'client' | 'viewer' | 'cb' | 'lab' | 'ib';
   avatar?: string;
   gstNumber?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
+  cin?: string;
+  iec?: string;
+  country_code?: string;
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+  };
   createdAt: string;
   isVerified: boolean;
   subscription: 'free' | 'pro' | 'enterprise';
@@ -33,6 +39,8 @@ export interface User {
   /** Server-authoritative: true once the onboarding wizard has been submitted. */
   isOnboardingComplete?: boolean;
   onboardingCompletedAt?: string | null;
+  /** Server-computed 0–100 customer-profile completeness. */
+  profileCompletion?: number;
 }
 
 interface AuthState {
@@ -68,6 +76,8 @@ interface AuthState {
     businessGoals: string[];
   }) => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
+  /** Persist arbitrary profile fields to the server, then refresh local state + SecureStore. */
+  saveProfile: (updates: Record<string, any>) => Promise<User>;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   setBiometricAuthenticated: (authenticated: boolean) => void;
 }
@@ -177,6 +187,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       businessGoals: profile.businessGoals,
       isUserTypeDone: true,
     });
+  },
+
+  saveProfile: async (updates) => {
+    const updated = await authService.updateProfile(updates as any);
+    await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(updated)).catch(() => {});
+    get().setUser(updated);
+    return updated;
   },
 
   loadStoredAuth: async () => {

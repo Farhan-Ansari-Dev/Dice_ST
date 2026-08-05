@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { AIConversation } from '../models/AIConversation'
-import { Application, Certification, Insight } from '../models'
+import { Application, Certification, Insight, User } from '../models'
 import redis from '../config/redis'
 import { logger } from '../utils/logger'
 
@@ -156,6 +156,32 @@ const SYSTEM_PROMPT = `You are an expert AI compliance assistant for Sanyog Conf
 
 Always provide accurate, actionable compliance advice. Reference specific standards and regulations when possible. If you're unsure, say so.`
 
+/**
+ * Server-side customer context. The signed-in user's onboarding/company profile
+ * is injected into AI prompts so answers are tailored to their business — without
+ * the client having to send (or the server having to trust) profile data.
+ */
+export async function buildCustomerContext(userId: string): Promise<string> {
+  try {
+    const u: any = await User.findById(userId).lean()
+    if (!u) return ''
+    const parts: string[] = []
+    if (u.company_name) parts.push(`Company: ${u.company_name}`)
+    if (u.business_role) parts.push(`Business role: ${u.business_role}`)
+    if (u.company_size) parts.push(`Company size: ${u.company_size}`)
+    if (u.industries?.length) parts.push(`Industries: ${u.industries.join(', ')}`)
+    if (u.target_markets?.length) parts.push(`Target export markets: ${u.target_markets.join(', ')}`)
+    if (u.interested_certifications?.length) parts.push(`Certifications of interest: ${u.interested_certifications.join(', ')}`)
+    if (u.country_code) parts.push(`Home country: ${u.country_code}`)
+    if (u.gst_number) parts.push('Registered for GST')
+    if (u.iec) parts.push('Holds an Import-Export Code (active exporter)')
+    if (!parts.length) return ''
+    return `\n\nCUSTOMER PROFILE — tailor every answer to this business:\n${parts.map(p => `- ${p}`).join('\n')}`
+  } catch {
+    return ''
+  }
+}
+
 export const aiService = {
   async chat(userId: string, message: string, conversationId?: string): Promise<{ response: string; conversationId: string }> {
     const { openai, model } = await getAIClientAndModel()
@@ -185,6 +211,9 @@ export const aiService = {
     const fullMessage = message + contextStr
     messages.push({ role: 'user', content: fullMessage })
 
+    // Tailor answers to the signed-in customer's business profile.
+    const customerContext = await buildCustomerContext(userId)
+
     // No silent fallback. Writing a canned "AI is unavailable" line into the
     // conversation renders it as a normal assistant bubble, which reads like an
     // answer and pollutes the stored history. The client shows an explicit
@@ -195,7 +224,7 @@ export const aiService = {
     try {
       completion = await openai.chat.completions.create({
         model: model,
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+        messages: [{ role: 'system', content: SYSTEM_PROMPT + customerContext }, ...messages],
         max_tokens: 1024,
         temperature: 0.6,
       })
@@ -249,14 +278,15 @@ export const aiService = {
     return summary
   },
 
-  async analyzeDocument(text: string): Promise<{ issues: string[]; recommendations: string[]; complianceScore: number }> {
+  async analyzeDocument(text: string, userId?: string): Promise<{ issues: string[]; recommendations: string[]; complianceScore: number }> {
     const { openai, model } = await getAIClientAndModel()
     if (!openai) throw new AIUnavailableError()
 
+    const customerContext = userId ? await buildCustomerContext(userId) : ''
     const completion = await openai.chat.completions.create({
       model: model,
       messages: [
-        { role: 'system', content: 'Analyze this compliance document and identify potential issues, missing information, and recommendations. Return a JSON object with: issues (array), recommendations (array), complianceScore (0-100).' },
+        { role: 'system', content: 'Analyze this compliance document and identify potential issues, missing information, and recommendations. Return a JSON object with: issues (array), recommendations (array), complianceScore (0-100).' + customerContext },
         { role: 'user', content: text.slice(0, 4000) },
       ],
       response_format: { type: 'json_object' },
@@ -273,18 +303,20 @@ export const aiService = {
     }
   },
 
-  async analyzeHsCode(hsCode: string): Promise<{ demand: string; profitMargin: string; topMarkets: string }> {
+  async analyzeHsCode(hsCode: string, userId?: string): Promise<{ demand: string; profitMargin: string; topMarkets: string }> {
     const { openai, model } = await getAIClientAndModel()
-    const cacheKey = `hs_code_analysis:${hsCode}`;
+    // Cache is scoped per-user because the answer now reflects the customer's profile.
+    const cacheKey = `hs_code_analysis:${hsCode}:${userId ?? 'anon'}`;
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
     if (!openai) throw new AIUnavailableError();
 
+    const customerContext = userId ? await buildCustomerContext(userId) : ''
     const completion = await openai.chat.completions.create({
       model: model,
       messages: [
-        { role: 'system', content: 'You are a global trade analyst. Given an HS code or product name, provide a JSON response with exactly three keys: "demand" (e.g. "Very High", "Medium"), "profitMargin" (e.g. "15% - 20%"), and "topMarkets" (e.g. "USA, Germany, UAE"). Keep values very concise.' },
+        { role: 'system', content: 'You are a global trade analyst. Given an HS code or product name, provide a JSON response with exactly three keys: "demand" (e.g. "Very High", "Medium"), "profitMargin" (e.g. "15% - 20%"), and "topMarkets" (e.g. "USA, Germany, UAE"). Keep values very concise.' + customerContext },
         { role: 'user', content: `Analyze HS Code / Product: ${hsCode}` },
       ],
       response_format: { type: 'json_object' },
@@ -305,18 +337,19 @@ export const aiService = {
     return result;
   },
 
-  async analyzeRisks(context: string): Promise<Array<{ title: string; level: string; desc: string }>> {
+  async analyzeRisks(context: string, userId?: string): Promise<Array<{ title: string; level: string; desc: string }>> {
     const { openai, model } = await getAIClientAndModel()
-    const cacheKey = `risk_analysis:${context}`;
+    const cacheKey = `risk_analysis:${context}:${userId ?? 'anon'}`;
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
     if (!openai) throw new AIUnavailableError();
 
+    const customerContext = userId ? await buildCustomerContext(userId) : ''
     const completion = await openai.chat.completions.create({
       model: model,
       messages: [
-        { role: 'system', content: 'You are a global trade risk analyst. Given a trade context (e.g., country or product), return a JSON object with a single key "risks", which is an array of exactly 3 risk objects. Each risk object must have "title" (string), "level" ("High", "Medium", or "Low"), and "desc" (short 1-sentence string).' },
+        { role: 'system', content: 'You are a global trade risk analyst. Given a trade context (e.g., country or product), return a JSON object with a single key "risks", which is an array of exactly 3 risk objects. Each risk object must have "title" (string), "level" ("High", "Medium", or "Low"), and "desc" (short 1-sentence string).' + customerContext },
         { role: 'user', content: `Analyze Trade Risks for: ${context}` },
       ],
       response_format: { type: 'json_object' },
@@ -339,8 +372,15 @@ export const aiService = {
    * Backward-compatible: keeps `{ isValid, certifications:[{code,name,market}] }`
    * and adds the richer `intelligence` payload plus `productValidationRequired`.
    */
-  async analyzeCertifications(productName: string, markets: string[]): Promise<any> {
-    const intelligence = await MarketAccessService.resolveCertifications(productName, markets);
+  async analyzeCertifications(productName: string, markets: string[], userId?: string): Promise<any> {
+    // Prefill target markets from the customer's profile when the caller didn't
+    // specify any — certification analysis then reflects where they actually sell.
+    let effectiveMarkets = markets
+    if ((!markets || markets.length === 0) && userId) {
+      const u: any = await User.findById(userId).lean()
+      if (u?.target_markets?.length) effectiveMarkets = u.target_markets
+    }
+    const intelligence = await MarketAccessService.resolveCertifications(productName, effectiveMarkets);
 
     const certifications: Array<{ code: string; name: string; market: string }> = [];
     for (const m of intelligence.markets) {
@@ -372,16 +412,25 @@ export const aiService = {
     const cached = await redis.get(cacheKey)
     if (cached) return JSON.parse(cached)
 
-    // Get user's certification data
-    const certs = await Certification.find({ org_id: userId }).sort({ expiry_date: 1 }).limit(10).lean()
+    // Get the user's certification data. A client is frequently org-less, so scope
+    // by their org when present, otherwise by certifications produced by their own
+    // applications (the same ownership rule the certifications API uses). The old
+    // `{ org_id: userId }` compared a User id to an org id and returned nothing for
+    // most customers.
+    const u: any = await User.findById(userId).lean()
+    const certFilter: any = u?.org_id
+      ? { org_id: u.org_id }
+      : { application_id: { $in: await Application.find({ created_by: userId }).distinct('_id') } }
+    const certs = await Certification.find(certFilter).sort({ expiry_date: 1 }).limit(10).lean()
     const context = certs.map((c: any) => `${c.cert_type}: expires ${c.expiry_date}, status: ${c.status}`).join('; ')
+    const customerContext = await buildCustomerContext(userId)
 
     if (!openai) throw new AIUnavailableError()
 
     const completion = await openai.chat.completions.create({
       model: model,
       messages: [
-        { role: 'system', content: 'Generate 3-5 personalized compliance recommendations based on the user\'s certification portfolio. Return a JSON array of recommendation strings.' },
+        { role: 'system', content: 'Generate 3-5 personalized compliance recommendations for this business. Return a JSON array of recommendation strings.' + customerContext },
         { role: 'user', content: `User certifications: ${context || 'No certifications yet'}` },
       ],
       response_format: { type: 'json_object' },

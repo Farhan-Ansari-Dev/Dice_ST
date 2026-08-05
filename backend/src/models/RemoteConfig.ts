@@ -10,6 +10,10 @@ export interface IRemoteConfig {
     enable_promotional_banners: boolean;
     enable_notifications: boolean;
     consultant_verification_enabled: boolean;
+    // ── Workflow rollout flags (default OFF — additive until flipped) ──
+    workflow_gates_enforced: boolean;     // document/payment gates BLOCK transitions
+    auto_assignment_enabled: boolean;     // auto-route on stage entry via assignee_role
+    renewal_auto_generation: boolean;     // expiry cron auto-creates renewal applications
   };
   dynamicConfig: {
     banner_text: string;
@@ -35,6 +39,12 @@ const remoteConfigSchema = new mongoose.Schema<IRemoteConfig>({
     enable_promotional_banners: { type: Boolean, default: false },
     enable_notifications: { type: Boolean, default: true },
     consultant_verification_enabled: { type: Boolean, default: false },
+    // Workflow rollout flags — default OFF so behaviour is unchanged until an
+    // operator flips them. (Ownership read-cutover / RBAC-scoping flags will be
+    // introduced together with the code that consumes them, in the cutover work.)
+    workflow_gates_enforced: { type: Boolean, default: false },
+    auto_assignment_enabled: { type: Boolean, default: false },
+    renewal_auto_generation: { type: Boolean, default: false },
   },
   dynamicConfig: {
     banner_text: { type: String, default: 'Welcome to DICE by Sanyog' },

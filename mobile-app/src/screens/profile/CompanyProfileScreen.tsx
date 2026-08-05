@@ -1,28 +1,92 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput , KeyboardAvoidingView, Platform} from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
+import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../components/common/ToastProvider';
 
 const CompanyProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { user, saveProfile } = useAuthStore();
+  const { showToast } = useToast();
+
   const [editing, setEditing] = useState(false);
-  const [companyName, setCompanyName] = useState('');
-  const [gst, setGst] = useState('');
-  const [cin, setCin] = useState('');
-  const [address, setAddress] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
-  const [pincode, setPincode] = useState('');
-  const [industry, setIndustry] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Initialise from the server-owned profile so edits start from real data.
+  const [companyName, setCompanyName] = useState(user?.companyName ?? '');
+  const [gst, setGst]                 = useState(user?.gstNumber ?? '');
+  const [cin, setCin]                 = useState(user?.cin ?? '');
+  const [iec, setIec]                 = useState(user?.iec ?? '');
+  const [country, setCountry]         = useState(user?.country_code ?? '');
+  const [line1, setLine1]             = useState(user?.address?.line1 ?? '');
+  const [city, setCity]               = useState(user?.address?.city ?? '');
+  const [stateName, setStateName]     = useState(user?.address?.state ?? '');
+  const [pincode, setPincode]         = useState(user?.address?.pincode ?? '');
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
-  const renderField = (label: string, value: string, setter: (v: string) => void, icon: keyof typeof Ionicons.glyphMap) => (
+  const resetFromUser = () => {
+    setCompanyName(user?.companyName ?? '');
+    setGst(user?.gstNumber ?? '');
+    setCin(user?.cin ?? '');
+    setIec(user?.iec ?? '');
+    setCountry(user?.country_code ?? '');
+    setLine1(user?.address?.line1 ?? '');
+    setCity(user?.address?.city ?? '');
+    setStateName(user?.address?.state ?? '');
+    setPincode(user?.address?.pincode ?? '');
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    // Light client-side validation (server re-validates).
+    const iecTrim = iec.trim().toUpperCase();
+    if (iecTrim && !/^[A-Z0-9]{10}$/.test(iecTrim)) {
+      showToast('Invalid IEC', 'IEC must be 10 alphanumeric characters.', 'error');
+      return;
+    }
+    const gstTrim = gst.trim().toUpperCase();
+    if (gstTrim && gstTrim.length !== 15) {
+      showToast('Invalid GST', 'GSTIN must be 15 characters.', 'error');
+      return;
+    }
+    try {
+      setSaving(true);
+      await saveProfile({
+        companyName: companyName.trim(),
+        gstNumber: gstTrim,
+        cin: cin.trim().toUpperCase(),
+        iec: iecTrim,
+        countryCode: country.trim().toUpperCase(),
+        address: {
+          line1: line1.trim(),
+          city: city.trim(),
+          state: stateName.trim(),
+          pincode: pincode.trim(),
+        },
+      });
+      showToast('Saved', 'Your company profile has been updated.', 'success');
+      setEditing(false);
+    } catch (e: any) {
+      showToast('Save Failed', e?.response?.data?.message ?? 'Could not update your profile. Please try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderField = (
+    label: string,
+    value: string,
+    setter: (v: string) => void,
+    icon: keyof typeof Ionicons.glyphMap,
+    opts?: { keyboardType?: 'default' | 'numeric'; autoCapitalize?: 'none' | 'characters' },
+  ) => (
     <View style={styles.fieldGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={[styles.fieldWrapper, editing && styles.fieldWrapperActive]}>
@@ -31,7 +95,10 @@ const CompanyProfileScreen: React.FC = () => {
           style={styles.fieldInput}
           value={value}
           onChangeText={setter}
-          editable={editing}
+          editable={editing && !saving}
+          keyboardType={opts?.keyboardType ?? 'default'}
+          autoCapitalize={opts?.autoCapitalize ?? 'sentences'}
+          placeholder={editing ? `Enter ${label.toLowerCase()}` : '—'}
           placeholderTextColor={colors.textTertiary}
         />
         {editing && <Ionicons name="pencil-outline" size={14} color={colors.primary} />}
@@ -51,7 +118,10 @@ const CompanyProfileScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Company Profile</Text>
-        <TouchableOpacity onPress={() => setEditing(!editing)} style={styles.editBtn}>
+        <TouchableOpacity
+          onPress={() => { if (editing) resetFromUser(); setEditing(!editing); }}
+          style={styles.editBtn}
+        >
           <Ionicons name={editing ? 'close-outline' : 'create-outline'} size={22} color={colors.primary} />
         </TouchableOpacity>
       </View>
@@ -61,7 +131,9 @@ const CompanyProfileScreen: React.FC = () => {
         <View style={styles.logoSection}>
           <TouchableOpacity style={styles.logoWrapper} activeOpacity={editing ? 0.7 : 1}>
             <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.logoGradient}>
-              <Text style={styles.logoInitials}>SCS</Text>
+              <Text style={styles.logoInitials}>
+                {(companyName || user?.name || 'SCS').slice(0, 3).toUpperCase()}
+              </Text>
             </LinearGradient>
             {editing && (
               <View style={styles.editOverlay}>
@@ -69,11 +141,13 @@ const CompanyProfileScreen: React.FC = () => {
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.logoName}>{companyName}</Text>
-          <View style={[styles.verifiedBadge, { backgroundColor: `${colors.success}20` }]}>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-            <Text style={[styles.verifiedText, { color: colors.success }]}>Verified Company</Text>
-          </View>
+          <Text style={styles.logoName}>{companyName || 'Your Company'}</Text>
+          {user?.isVerified && (
+            <View style={[styles.verifiedBadge, { backgroundColor: `${colors.success}20` }]}>
+              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+              <Text style={[styles.verifiedText, { color: colors.success }]}>Verified Account</Text>
+            </View>
+          )}
         </View>
 
         <View style={[styles.formCard, Shadows.md]}>
@@ -83,9 +157,10 @@ const CompanyProfileScreen: React.FC = () => {
           >
             <Text style={styles.sectionTitle}>Company Information</Text>
             {renderField('Company Name', companyName, setCompanyName, 'business-outline')}
-            {renderField('GST Number', gst, setGst, 'card-outline')}
-            {renderField('CIN Number', cin, setCin, 'document-outline')}
-            {renderField('Industry Type', industry, setIndustry, 'layers-outline')}
+            {renderField('GST Number', gst, setGst, 'card-outline', { autoCapitalize: 'characters' })}
+            {renderField('CIN Number', cin, setCin, 'document-outline', { autoCapitalize: 'characters' })}
+            {renderField('IEC (Import-Export Code)', iec, setIec, 'globe-outline', { autoCapitalize: 'characters' })}
+            {renderField('Country', country, setCountry, 'flag-outline', { autoCapitalize: 'characters' })}
           </LinearGradient>
         </View>
 
@@ -95,18 +170,27 @@ const CompanyProfileScreen: React.FC = () => {
             style={styles.formCardInner}
           >
             <Text style={styles.sectionTitle}>Address Details</Text>
-            {renderField('Street Address', address, setAddress, 'location-outline')}
+            {renderField('Street Address', line1, setLine1, 'location-outline')}
             {renderField('City', city, setCity, 'pin-outline')}
-            {renderField('State', state, setState, 'map-outline')}
-            {renderField('Pincode', pincode, setPincode, 'navigate-outline')}
+            {renderField('State', stateName, setStateName, 'map-outline')}
+            {renderField('Pincode', pincode, setPincode, 'navigate-outline', { keyboardType: 'numeric' })}
           </LinearGradient>
         </View>
 
         {editing && (
-          <TouchableOpacity style={[styles.saveBtn, Shadows.md]} onPress={() => setEditing(false)} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={[styles.saveBtn, Shadows.md, saving && { opacity: 0.7 }]}
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.85}
+          >
             <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.saveBtnGradient}>
-              <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-              <Text style={styles.saveBtnText}>Save Changes</Text>
+              {saving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+              )}
+              <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}

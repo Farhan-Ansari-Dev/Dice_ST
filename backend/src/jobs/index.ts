@@ -1,6 +1,15 @@
 import { runExpiryReminders, runStaleApplicationCheck } from './expiryReminder'
 import { seedInsights } from './insightsScraper'
+import { runRenewalAutoGeneration } from '../services/renewalService'
+import { isFeatureEnabled } from '../services/featureFlags'
 import { logger } from '../utils/logger'
+
+/** Auto-generate renewals when the feature flag is enabled (default OFF). */
+async function maybeRunRenewalAutoGeneration(): Promise<void> {
+  if (!(await isFeatureEnabled('renewal_auto_generation'))) return
+  const { created, skipped } = await runRenewalAutoGeneration()
+  logger.info(`[renewal] auto-generation: ${created} created, ${skipped} skipped`)
+}
 
 const HOUR = 60 * 60 * 1000
 const DAY  = 24 * HOUR
@@ -28,6 +37,7 @@ export function startBackgroundJobs(): void {
     if (istHour === 9) {
       await runExpiryReminders().catch((e) => logger.error('Expiry reminders failed:', e))
       await runStaleApplicationCheck().catch((e) => logger.error('Stale app check failed:', e))
+      await maybeRunRenewalAutoGeneration().catch((e) => logger.error('Renewal auto-generation failed:', e))
     }
   }, HOUR)
 

@@ -37,12 +37,11 @@ export default function DashboardPage() {
     monthly_trend: [] as any[],
   })
   const [recentApplications, setRecentApplications] = useState<any[]>([])
+  const [activities, setActivities] = useState<any[]>([])
 
-  // Basic mock data for charts since backend doesn't aggregate these yet
+  // Charts are driven by the backend aggregation in /analytics/overview.
   const trendData = stats.monthly_trend || (stats as any).monthly_revenue_trend || []
-  const revenueData = trendData.length > 0 ? trendData : [
-    { month: 'Jan', revenue: 0, target: 0 },
-  ]
+  const revenueData = trendData.length > 0 ? trendData : [{ month: '—', revenue: 0, target: 0 }]
   const pipelineData = [
     { name: 'Submitted', count: stats.pending_applications, fill: '#00D4FF' },
   ]
@@ -50,20 +49,25 @@ export default function DashboardPage() {
     { name: 'Active', value: stats.active_certifications, color: '#6C63FF' },
     { name: 'Expiring', value: stats.expiring_soon, color: '#FFB347' },
   ]
-  const activities = [
-    { actor: 'System', action: 'Dashboard updated at', target: new Date().toLocaleTimeString(), time: 'Just now' },
-  ]
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, appsRes] = await Promise.all([
+        const [statsRes, appsRes, actRes] = await Promise.all([
           apiClient.get('/analytics/overview'),
-          apiClient.get('/applications')
+          apiClient.get('/applications'),
+          apiClient.get('/analytics/activity?limit=6'),
         ])
         setStats(statsRes.data.data)
         const apps = appsRes.data.data || []
         setRecentApplications(apps.slice(0, 5))
+        // Real recent activity from the audit log (replaces the hardcoded row).
+        setActivities((actRes.data.data || []).map((a: any) => ({
+          actor: (a.title || '').split(' ')[0] || 'System',
+          action: (a.title || '').split(' ').slice(1).join(' ') || a.type,
+          target: '',
+          time: a.created_at ? new Date(a.created_at).toLocaleString() : '',
+        })))
       } catch (err) {
         console.error('Failed to load dashboard data', err)
         // Fallback to zeros if API fails so the page doesn't stay black

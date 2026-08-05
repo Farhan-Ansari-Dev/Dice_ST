@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Inspection } from '../../models';
+import { Inspection, audit } from '../../models';
 import { authenticate, requireRole, AuthRequest } from '../../middleware/authMongo';
 
 import { getPaginationData, buildPaginationResponse } from '../../utils/pagination';
@@ -66,6 +66,13 @@ router.post('/', authenticate, wrap(async (req: AuthRequest, res: Response) => {
       created_at: new Date(),
       updated_at: new Date(),
     });
+    await audit({
+      actor: req.user!._id as any,
+      org_id: req.user?.org_id as any,
+      resource_type: 'inspection',
+      resource_id: (inspection as any).client_id,
+      action: 'inspection_scheduled',
+    }).catch(() => {});
     return res.status(201).json({ success: true, data: inspection });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error.message });

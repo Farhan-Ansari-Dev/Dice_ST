@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ITesting extends Document {
   sample_id: string;
   client_id: mongoose.Types.ObjectId;
+  application_id?: mongoose.Types.ObjectId;   // links the lab test to its Application workflow
   product_name: string;
   standard: string;
   lab_name: string;
@@ -18,6 +19,7 @@ const TestingSchema: Schema = new Schema(
   {
     sample_id: { type: String, required: true, unique: true },
     client_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    application_id: { type: Schema.Types.ObjectId, ref: 'Application', index: true },
     product_name: { type: String, required: true },
     standard: { type: String, required: true },
     lab_name: { type: String, required: true },

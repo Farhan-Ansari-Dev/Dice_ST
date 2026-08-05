@@ -62,6 +62,12 @@ export interface IOrganization extends Document {
     product_categories: string[];
   };
 
+  // Sprint 3 (Ownership Backfill) — marks an auto-provisioned "Personal
+  // Organization" that wraps a single-user customer so every Application can
+  // point customer_id at an Organization (the locked ownership decision).
+  // Optional + additive; nothing reads it in production yet.
+  is_personal?: boolean;
+
   deleted_at?: Date;
   created_at: Date;
   updated_at: Date;
@@ -122,12 +128,21 @@ const OrganizationSchema = new Schema<IOrganization>(
       product_categories: { type: [String], default: [] },
     },
 
+    // Sprint 3 — personal-organization marker (see interface note). Additive.
+    is_personal: { type: Boolean, default: false },
+
     deleted_at: { type: Date, index: true },
   },
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }
 );
 
 OrganizationSchema.index({ gst_number: 1 }, { unique: true, sparse: true });
+// At most one personal Organization per owner — makes provisioning idempotent
+// and duplicate-execution safe (a race loses to a duplicate-key error we retry).
+OrganizationSchema.index(
+  { owner_user_id: 1, is_personal: 1 },
+  { unique: true, partialFilterExpression: { is_personal: true } },
+);
 OrganizationSchema.index({ 'address.country_code': 1, 'subscription.tier': 1 });
 OrganizationSchema.index({ name: 'text', legal_name: 'text' });
 

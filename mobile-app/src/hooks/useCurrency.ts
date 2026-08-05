@@ -12,7 +12,7 @@ export const useCurrency = () => {
     if (user?.gstNumber) return '₹';
 
     // 3. Check Address / State if explicitly "India" or specific states
-    if (user?.city && ['delhi', 'mumbai', 'bangalore', 'chennai', 'hyderabad'].includes(user.city.toLowerCase())) return '₹';
+    if (user?.address?.city && ['delhi', 'mumbai', 'bangalore', 'chennai', 'hyderabad'].includes(user.address.city.toLowerCase())) return '₹';
 
     // 4. Fallback to Timezone
     try {

@@ -54,6 +54,15 @@ export interface IUser extends Document {
   business_goals: string[];
   company_name?: string;
   gst_number?: string;
+  cin?: string;                 // Corporate Identification Number (MCA)
+  iec?: string;                 // Import-Export Code (DGFT) — for exporters
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+  };
   onboarding_completed_at?: Date;
 
   // Consultant verification
@@ -112,6 +121,15 @@ const UserSchema = new Schema<IUser>(
     business_goals:            { type: [String], default: [] },
     company_name:              { type: String, trim: true },
     gst_number:                { type: String, trim: true, uppercase: true },
+    cin:                       { type: String, trim: true, uppercase: true },
+    iec:                       { type: String, trim: true, uppercase: true },
+    address: {
+      line1:   { type: String, trim: true },
+      line2:   { type: String, trim: true },
+      city:    { type: String, trim: true },
+      state:   { type: String, trim: true },
+      pincode: { type: String, trim: true },
+    },
     onboarding_completed_at:   { type: Date },
 
     consultant_verification_status: {

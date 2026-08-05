@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Testing } from '../../models';
+import { Testing, audit } from '../../models';
 import { authenticate, requireRole, AuthRequest } from '../../middleware/authMongo';
 import { stripProtected } from '../../utils/sanitize';
 
@@ -30,6 +30,13 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
 router.post('/', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
   try {
     const test = await Testing.create(stripProtected(req.body));
+    // Timeline: attribute to the customer (client_id) so it shows on their 360.
+    await audit({
+      actor: req.user!._id as any,
+      resource_type: 'testing',
+      resource_id: (test as any).client_id,
+      action: 'testing_started',
+    }).catch(() => {});
     return res.status(201).json({ success: true, data: test });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error.message });

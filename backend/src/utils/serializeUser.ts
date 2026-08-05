@@ -18,6 +18,29 @@ export function isOnboardingComplete(user: any): boolean {
   return Boolean(user?.onboarding_completed_at);
 }
 
+/**
+ * Customer profile completeness (0–100). Weighted equally across the fields that
+ * matter for applications/certifications. `country_code` is excluded because it
+ * always defaults to "IN" and would inflate the score. Single source of truth so
+ * mobile + admin show the same number.
+ */
+export function computeProfileCompletion(user: any): number {
+  const checks = [
+    !!user?.name,
+    !!user?.phone,
+    !!user?.company_name,
+    !!user?.gst_number,
+    !!user?.business_role,
+    !!user?.company_size,
+    Array.isArray(user?.industries) && user.industries.length > 0,
+    Array.isArray(user?.target_markets) && user.target_markets.length > 0,
+    !!(user?.address && user.address.line1),
+    !!user?.iec,
+  ];
+  const filled = checks.filter(Boolean).length;
+  return Math.round((filled / checks.length) * 100);
+}
+
 export interface SerializeOptions {
   /** Include applications/certifications/insights counts (extra DB round-trips). */
   withCounts?: boolean;
@@ -55,9 +78,12 @@ export async function serializeUser(user: any, options: SerializeOptions = {}) {
     country_code: user.country_code,
     isVerified: Boolean(user.email_verified_at),
 
-    // Onboarding profile
+    // Onboarding + company profile
     companyName: user.company_name,
     gstNumber: user.gst_number,
+    cin: user.cin,
+    iec: user.iec,
+    address: user.address ?? null,
     businessRole: user.business_role,
     industries: user.industries ?? [],
     targetMarkets: user.target_markets ?? [],
@@ -66,6 +92,7 @@ export async function serializeUser(user: any, options: SerializeOptions = {}) {
     businessGoals: user.business_goals ?? [],
     onboardingCompletedAt: user.onboarding_completed_at ?? null,
     isOnboardingComplete: isOnboardingComplete(user),
+    profileCompletion: computeProfileCompletion(user),
 
     applicationsCount,
     certificationsCount,

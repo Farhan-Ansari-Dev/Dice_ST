@@ -9,6 +9,7 @@
 import { Types } from 'mongoose';
 import { Application, Product, Workflow, audit } from '../models';
 import type { IUser } from '../models';
+import { resolveCustomerIdForCreate } from './ownership/dualWrite';
 
 /** Thrown when the referenced catalog product does not exist. */
 export class ProductNotFoundError extends Error {
@@ -57,9 +58,15 @@ export async function createDraftApplication(input: CreateDraftApplicationInput)
   const appNumber = `APP-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
   const durationDays = workflow?.estimated_duration_days ?? 45;
 
+  // Dual-write (Sprint 3): resolve the new customer ownership axis alongside the
+  // legacy created_by. Best-effort — resolveCustomerIdForCreate never throws and
+  // returns undefined on failure, so creation proceeds on legacy ownership.
+  const customerId = await resolveCustomerIdForCreate(input.user);
+
   const app = await Application.create({
     application_number: appNumber,
     org_id: input.user.org_id,
+    customer_id: customerId,          // new axis (dual-write); created_by stays authoritative
     product_id: product?._id,
     product_status,
     workflow_id: workflow?._id,

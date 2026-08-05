@@ -10,6 +10,7 @@ import ToastContainer from './components/common/ToastContainer'
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
 const ClientsPage = lazy(() => import('./pages/clients/ClientsPage'))
+const ClientDetailPage = lazy(() => import('./pages/clients/ClientDetailPage'))
 const CertificationsPage = lazy(() => import('./pages/certifications/CertificationsPage'))
 const ApplicationsPage = lazy(() => import('./pages/applications/ApplicationsPage'))
 const ApplicationDetailPage = lazy(() => import('./pages/applications/ApplicationDetailPage'))
@@ -70,6 +71,7 @@ function ThemedApp() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="clients" element={<ClientsPage />} />
+            <Route path="clients/:id" element={<ClientDetailPage />} />
             <Route path="certifications" element={<CertificationsPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="applications/:id" element={<ApplicationDetailPage />} />

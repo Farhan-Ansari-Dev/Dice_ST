@@ -36,6 +36,7 @@ export interface IStatusTransition {
   at: Date;
   reason?: string;
   comment?: string;
+  override?: boolean;   // true when set by an admin override (bypassed the state machine)
 }
 
 export interface IApplication extends Document {
@@ -55,7 +56,17 @@ export interface IApplication extends Document {
   status_history: IStatusTransition[];     // immutable append-only
 
   // Ownership & assignment
-  created_by: Types.ObjectId;
+  //
+  // Sprint 2 (Ownership Foundation) — typed ownership axes. Every field here is
+  // OPTIONAL and purely additive: no route or service reads them for
+  // authorization or visibility yet (that is a later cutover sprint). Until then
+  // `created_by` continues to back ownership for backward compatibility; after
+  // the cutover it becomes immutable audit-only metadata (never authorization).
+  customer_id?: Types.ObjectId;            // owning customer (Organization) — future visibility axis
+  consultant_id?: Types.ObjectId;          // servicing consultant
+  employee_id?: Types.ObjectId;            // reviewing employee
+  manager_id?: Types.ObjectId;             // oversight / escalation target
+  created_by: Types.ObjectId;              // immutable creator (audit) — see note above
   assignees: Types.ObjectId[];             // consultants/managers working on it
   primary_assignee?: Types.ObjectId;
 
@@ -102,6 +113,11 @@ export interface IApplication extends Document {
   priority: 'low' | 'medium' | 'high' | 'urgent';
   tags: string[];
 
+  // Renewal: when this application was created to renew an expiring certificate,
+  // this points at the predecessor cert. On issuance the new Certification is
+  // linked to it (predecessor/successor) and the old cert is marked 'renewed'.
+  renewal_of_cert_id?: Types.ObjectId;
+
   // External references (issuing body)
   external_ref?: {
     body: string;                          // "BIS", "CPCB", "TEC", etc.
@@ -131,6 +147,7 @@ const StatusTransitionSchema = new Schema<IStatusTransition>(
     at:      { type: Date, default: Date.now },
     reason:  String,
     comment: String,
+    override: Boolean,
   },
   { _id: false }
 );
@@ -157,6 +174,11 @@ const ApplicationSchema = new Schema<IApplication>(
     current_stage:  String,
     status_history: { type: [StatusTransitionSchema], default: [] },
 
+    // Sprint 2 — typed ownership axes (expand-only: optional, not yet read by auth).
+    customer_id:       { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
+    consultant_id:     { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    employee_id:       { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    manager_id:        { type: Schema.Types.ObjectId, ref: 'User', index: true },
     created_by:        { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     assignees:         [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
     primary_assignee:  { type: Schema.Types.ObjectId, ref: 'User' },
@@ -199,6 +221,8 @@ const ApplicationSchema = new Schema<IApplication>(
     priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium', index: true },
     tags:     { type: [String], default: [] },
 
+    renewal_of_cert_id: { type: Schema.Types.ObjectId, ref: 'Certification', index: true },
+
     external_ref: {
       body:             String,
       reference_number: String,
@@ -220,6 +244,14 @@ ApplicationSchema.index({ assignees: 1, status: 1, due_at: 1 });        // "my t
 ApplicationSchema.index({ org_id: 1, cert_type: 1, status: 1 });
 ApplicationSchema.index({ is_overdue: 1, status: 1 });                  // overdue dashboard
 ApplicationSchema.index({ tags: 1 });
+
+// ─── Sprint 2: ownership-axis indexes (support the future ownership cutover) ───
+// Additive only. These back the read patterns the cutover will use (customer
+// visibility + per-staff work queues) without changing any current query.
+ApplicationSchema.index({ customer_id: 1, status: 1, created_at: -1 });
+ApplicationSchema.index({ consultant_id: 1, status: 1, due_at: 1 });
+ApplicationSchema.index({ employee_id: 1, status: 1, due_at: 1 });
+ApplicationSchema.index({ manager_id: 1, status: 1 });
 
 // ─── Methods ───
 ApplicationSchema.methods.canTransitionTo = function (newStatus: ApplicationStatus): boolean {

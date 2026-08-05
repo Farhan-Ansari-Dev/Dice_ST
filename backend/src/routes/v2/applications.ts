@@ -8,23 +8,25 @@
  *   4. Notification fired to assignees + org owner via notify()
  */
 import { Router, Response } from 'express';
-import { Types } from 'mongoose';
-import { Application, ApplicationStatus, Workflow, Product, Certification, audit, AuditLog } from '../../models';
+import { Application, ApplicationStatus, Product, AuditLog, Testing, Inspection } from '../../models';
 import { authenticate, AuthRequest, requireRole, ADMIN_ROLES } from '../../middleware/authMongo';
-import { notify } from '../../services/notifications';
 import { createDraftApplication, ProductNotFoundError } from '../../services/applicationService';
+import { transition as runTransition, TransitionDeniedError, GateDeniedError } from '../../services/workflow/transitionService';
+import { assignApplication, unassignApplication, escalateApplication } from '../../services/assignment';
+import { overrideStatus } from '../../services/workflow/overrideService';
 
 const router = Router();
 router.use(authenticate);
 
 // Single-tenant scoping: staff operate platform-wide; other roles are limited to
-// the applications they created. Used for all single-item lookups so an org-less
-// client cannot reach another client's application by id.
+// applications they created OR are assigned to (consultants service assigned
+// applications). Used for all single-item lookups so an org-less client cannot
+// reach another client's application by id.
 const STAFF_ROLES = ['admin', 'super_admin', 'employee'];
 const scopeById = (req: AuthRequest): any =>
   STAFF_ROLES.includes(req.user!.role)
     ? { _id: req.params.id }
-    : { _id: req.params.id, created_by: req.user!._id };
+    : { _id: req.params.id, $or: [{ created_by: req.user!._id }, { assignees: req.user!._id }] };
 
 // ═══════════════════════════════════════════════════════════════
 // GET /applications — list with filters + pagination
@@ -41,7 +43,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   // and { org_id: undefined } would match every org-less application).
   const filter: any = {};
   if (!STAFF_ROLES.includes(req.user!.role)) {
-    filter.created_by = req.user!._id;
+    filter.$or = [{ created_by: req.user!._id }, { assignees: req.user!._id }];
   }
   if (status) filter.status = status;
   if (cert_type) filter.cert_type = cert_type;
@@ -134,206 +136,147 @@ router.get('/:id/audit', async (req: AuthRequest, res: Response) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// GET /applications/:id/timeline — unified chronological activity
+// ═══════════════════════════════════════════════════════════════
+// Merges the application's own status_history (state-machine + overrides) with
+// its immutable AuditLog events (assignment, documents, payments, issuance),
+// plus linked lab tests / inspections — a single feed for the detail view.
+router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
+  const app = await Application.findOne(scopeById(req))
+    .select('_id status_history')
+    .populate('status_history.by', 'name email')
+    .lean();
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  const [logs, testings, inspections] = await Promise.all([
+    AuditLog.find({ 'meta.resource_type': 'application', 'meta.resource_id': req.params.id } as any)
+      .sort({ ts: -1 }).limit(200).populate('meta.actor', 'name email').lean(),
+    Testing.find({ application_id: req.params.id }).select('sample_id status lab_name updatedAt').lean(),
+    Inspection.find({ application_id: req.params.id }).select('inspection_number status inspection_type updated_at').lean(),
+  ]);
+
+  type Event = { kind: string; ts: Date; action: string; actor?: any; detail?: any };
+  const events: Event[] = [];
+
+  for (const h of (app as any).status_history ?? []) {
+    events.push({ kind: h.override ? 'override' : 'status', ts: h.at, action: `${h.from} → ${h.to}`, actor: h.by, detail: { reason: h.reason, comment: h.comment } });
+  }
+  for (const l of logs as any[]) {
+    events.push({ kind: 'audit', ts: l.ts, action: l.meta?.action, actor: l.meta?.actor, detail: { notes: l.meta?.notes, before: l.meta?.before, after: l.meta?.after } });
+  }
+  for (const t of testings as any[]) {
+    events.push({ kind: 'testing', ts: t.updatedAt, action: `testing:${t.status}`, detail: { sample_id: t.sample_id, lab: t.lab_name } });
+  }
+  for (const i of inspections as any[]) {
+    events.push({ kind: 'inspection', ts: i.updated_at, action: `inspection:${i.status}`, detail: { inspection_number: i.inspection_number, type: i.inspection_type } });
+  }
+
+  events.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+  return res.json({ data: events });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // POST /applications/:id/transition — change status
 // ═══════════════════════════════════════════════════════════════
+// The single, authoritative transition path. All state changes flow through
+// TransitionService, which runs the pure WorkflowEngine (transition validity +
+// Role Matrix) before applying the change and its side effects. The former
+// duplicate `PUT /:id/status` has been removed.
 router.post('/:id/transition', async (req: AuthRequest, res: Response) => {
   const { to_status, reason, comment } = req.body as { to_status: ApplicationStatus; reason?: string; comment?: string };
   const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
-  const oldStatus = app.status;
-
   try {
-    (app as any).transitionTo(to_status, req.user!._id, { reason, comment });
-  } catch (err: any) {
-    return res.status(400).json({ error: 'invalid_transition', message: err.message });
-  }
-  await app.save();
-
-  // Audit
-  await audit({
-    actor: req.user!._id as any,
-    org_id: req.user!.org_id,
-    resource_type: 'application',
-    resource_id: app._id as any,
-    action: 'status_changed',
-    before: { status: oldStatus },
-    after: { status: to_status, reason, comment },
-    ip: req.ip,
-  });
-
-  // Notify assignees + creator about the change
-  const targets = Array.from(
-    new Set([
-      ...app.assignees.map(a => a.toString()),
-      app.created_by.toString(),
-    ])
-  ).filter(uid => uid !== req.user!._id.toString());          // don't notify the actor
-
-  await Promise.all(
-    targets.map(uid =>
-      notify({
-        user_id: uid,
-        type: `app_status_changed`,
-        title: `📋 ${app.application_number} → ${to_status.replace(/_/g, ' ')}`,
-        body: comment ?? `Status changed from ${oldStatus} to ${to_status}`,
-        data: { application_id: app._id, deep_link: `dice://applications/${app._id}` },
-        resource_type: 'application',
-        resource_id: app._id as any,
-      })
-    )
-  );
-
-  // If terminal "approved" → auto-issue Certification
-  if (to_status === 'cert_issued') {
-    await issueCertification(app, req.user!._id as any);
+    await runTransition({
+      application: app,
+      toStatus: to_status,
+      actor: req.user!._id as any,
+      actorRole: req.user!.role,
+      reason,
+      comment,
+      ip: req.ip,
+      orgId: req.user!.org_id as any,
+    });
+  } catch (err) {
+    if (err instanceof TransitionDeniedError) {
+      const code = err.decision.reasons[0]?.code;
+      const httpStatus = code === 'forbidden_role' ? 403 : 400;
+      return res.status(httpStatus).json({ error: code, message: err.message, reasons: err.decision.reasons });
+    }
+    if (err instanceof GateDeniedError) {
+      // Preconditions unmet (missing docs / payment) and gate enforcement is ON.
+      return res.status(422).json({ error: 'gate_unsatisfied', message: err.message, required_actions: err.requiredActions });
+    }
+    throw err;
   }
 
   return res.json({ data: app });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// POST /applications/:id/assign
+// POST /applications/:id/override — admin escape hatch (reason required)
+// ═══════════════════════════════════════════════════════════════
+// Bypasses ALLOWED_TRANSITIONS + Role Matrix. Admins only. Always audited,
+// timelined and notified via OverrideService.
+router.post('/:id/override', requireRole(...ADMIN_ROLES), async (req: AuthRequest, res: Response) => {
+  const { to_status, reason } = req.body as { to_status: ApplicationStatus; reason?: string };
+  if (!to_status || !reason || !reason.trim()) {
+    return res.status(400).json({ error: 'to_status and a non-empty reason are required' });
+  }
+  const app = await Application.findOne(scopeById(req));
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  await overrideStatus({ application: app, toStatus: to_status, actor: req.user!._id as any, reason, ip: req.ip, orgId: req.user!.org_id as any });
+  return res.json({ data: app });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// POST /applications/:id/assign — set the assignee set (via AssignmentEngine)
 // ═══════════════════════════════════════════════════════════════
 router.post('/:id/assign', requireRole(...ADMIN_ROLES, 'consultant'), async (req: AuthRequest, res: Response) => {
   const { user_ids, primary } = req.body as { user_ids: string[]; primary?: string };
+  if (!Array.isArray(user_ids)) return res.status(400).json({ error: 'user_ids array required' });
   const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
-  const before = [...app.assignees];
-  app.assignees = user_ids.map(id => new Types.ObjectId(id));
-  if (primary) app.primary_assignee = new Types.ObjectId(primary);
-  await app.save();
-
-  await audit({
-    actor: req.user!._id as any,
-    org_id: req.user!.org_id,
-    resource_type: 'application',
-    resource_id: app._id as any,
-    action: 'assigned',
-    before: { assignees: before },
-    after: { assignees: app.assignees, primary: app.primary_assignee },
-  });
-
-  // Notify newly added assignees
-  const added = user_ids.filter(id => !before.some(b => b.toString() === id));
-  await Promise.all(
-    added.map(uid =>
-      notify({
-        user_id: uid,
-        type: 'app_assigned',
-        title: '👤 Assigned to an application',
-        body: `You've been assigned to ${app.application_number} (${app.cert_type}).`,
-        data: { application_id: app._id, deep_link: `dice://applications/${app._id}` },
-      })
-    )
-  );
-
+  await assignApplication({ application: app, userIds: user_ids, primaryId: primary, actor: req.user!._id as any, orgId: req.user!.org_id as any });
   return res.json({ data: app });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// Helper: auto-issue Certification when app reaches cert_issued
+// PUT /applications/:id/assign — mobile compat (single assignee)
 // ═══════════════════════════════════════════════════════════════
-async function issueCertification(app: any, by: Types.ObjectId): Promise<void> {
-  const workflow = await Workflow.findById(app.workflow_id);
-  const validity = workflow?.validity_period_months ?? 24;
-  const issueDate = new Date();
-  const expiryDate = new Date(issueDate);
-  expiryDate.setMonth(expiryDate.getMonth() + validity);
-
-  // Cert number — placeholder; in production, fetch from issuing body's portal
-  const certNumber = `${app.cert_type}/${Date.now()}-${(app._id as any).toString().slice(-6)}`;
-
-  const cert = await Certification.create({
-    cert_number: certNumber,
-    cert_type: app.cert_type,
-    org_id: app.org_id ?? app.created_by,
-    product_id: app.product_id,
-    application_id: app._id,
-    issuing_body: workflow?.issuing_body ?? 'TBD',
-    scheme: workflow?.cert_type || app.cert_type,
-    issue_date: issueDate,
-    expiry_date: expiryDate,
-    validity_period_months: validity,
-    status: 'active',
-    renewal_due_at: new Date(expiryDate.getTime() - 60 * 24 * 3600 * 1000),
-  });
-
-  await audit({
-    actor: by,
-    org_id: app.org_id,
-    resource_type: 'certification',
-    resource_id: cert._id as any,
-    action: 'cert_issued',
-    after: { cert_number: certNumber, expiry_date: expiryDate },
-  });
-
-  // Notify whole org (or at least the application creator + assignees)
-  const targets = new Set([app.created_by.toString(), ...app.assignees.map((a: any) => a.toString())]);
-  await Promise.all(
-    [...targets].map(uid =>
-      notify({
-        user_id: uid,
-        type: 'cert_issued',
-        title: `🎉 Certificate Issued: ${cert.cert_number}`,
-        body: `Your ${app.cert_type} certificate is now active. Valid until ${expiryDate.toLocaleDateString()}.`,
-        data: { certification_id: cert._id, deep_link: `dice://certifications/${cert._id}` },
-        resource_type: 'certification',
-        resource_id: cert._id as any,
-        priority: 'high',
-      })
-    )
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PUT /applications/:id/status — mobile compat (maps to transition)
-// ═══════════════════════════════════════════════════════════════
-router.put('/:id/status', requireRole(...ADMIN_ROLES, 'employee', 'consultant'), async (req: AuthRequest, res: Response) => {
-  const { status, notes } = req.body as { status: string; notes?: string };
+router.put('/:id/assign', requireRole(...ADMIN_ROLES, 'consultant'), async (req: AuthRequest, res: Response) => {
+  const { assigned_to } = req.body as { assigned_to: string };
+  if (!assigned_to) return res.status(400).json({ error: 'assigned_to required' });
   const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
 
-  const oldStatus = app.status;
-  try {
-    (app as any).transitionTo(status as ApplicationStatus, req.user!._id, { reason: notes });
-  } catch (err: any) {
-    return res.status(400).json({ error: 'invalid_transition', message: err.message });
-  }
-  await app.save();
-
-  await audit({
-    actor: req.user!._id as any,
-    org_id: req.user!.org_id,
-    resource_type: 'application',
-    resource_id: app._id as any,
-    action: 'status_changed',
-    before: { status: oldStatus },
-    after: { status, notes },
-    ip: req.ip,
-  });
-
-  if (status === 'cert_issued') {
-    await issueCertification(app, req.user!._id as any);
-  }
-
+  await assignApplication({ application: app, userIds: [assigned_to], primaryId: assigned_to, actor: req.user!._id as any, orgId: req.user!.org_id as any });
   return res.json({ success: true, data: app });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// PUT /applications/:id/assign — mobile compat (maps to POST assign)
+// DELETE /applications/:id/assign — clear all assignees
 // ═══════════════════════════════════════════════════════════════
-router.put('/:id/assign', requireRole(...ADMIN_ROLES, 'consultant'), async (req: AuthRequest, res: Response) => {
-  const { assigned_to } = req.body as { assigned_to: string };
+router.delete('/:id/assign', requireRole(...ADMIN_ROLES), async (req: AuthRequest, res: Response) => {
   const app = await Application.findOne(scopeById(req));
   if (!app) return res.status(404).json({ error: 'not_found' });
+  await unassignApplication({ application: app, actor: req.user!._id as any, orgId: req.user!.org_id as any });
+  return res.json({ data: app });
+});
 
-  app.assignees = [new Types.ObjectId(assigned_to)];
-  app.primary_assignee = new Types.ObjectId(assigned_to);
-  await app.save();
-
-  return res.json({ success: true, data: app });
+// ═══════════════════════════════════════════════════════════════
+// POST /applications/:id/escalate — route to a manager (reason required)
+// ═══════════════════════════════════════════════════════════════
+router.post('/:id/escalate', requireRole(...ADMIN_ROLES, 'employee', 'consultant'), async (req: AuthRequest, res: Response) => {
+  const { manager_id, reason } = req.body as { manager_id: string; reason?: string };
+  if (!manager_id || !reason) return res.status(400).json({ error: 'manager_id and reason required' });
+  const app = await Application.findOne(scopeById(req));
+  if (!app) return res.status(404).json({ error: 'not_found' });
+  await escalateApplication({ application: app, managerId: manager_id, actor: req.user!._id as any, reason, orgId: req.user!.org_id as any });
+  return res.json({ data: app });
 });
 
 // ═══════════════════════════════════════════════════════════════

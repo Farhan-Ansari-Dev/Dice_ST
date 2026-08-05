@@ -12,39 +12,58 @@ const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
 
 router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Response) => {
-  const query: any = {}
-  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
+  // Per-model ownership scope. A client is frequently org-less, so scoping them by
+  // `{ org_id: undefined }` matched every org-less record platform-wide — that is
+  // why the "Business Impact / Revenue Processed" tile showed a stray ₹1 to every
+  // customer. Scope each model by its real owner instead.
+  const role = req.user!.role
+  const isStaff = role === 'admin' || role === 'super_admin'
+  const isClient = role === 'client'
+
+  let certScope: any = {}
+  let appScope: any = {}
+  let payScope: any = {}
+  if (isClient) {
+    const appIds = await Application.find({ created_by: req.user!._id }).distinct('_id')
+    appScope = { created_by: req.user!._id }
+    certScope = { application_id: { $in: appIds } }
+    payScope = { user_id: req.user!._id }
+  } else if (!isStaff) {
+    // employee/consultant — legitimately organisation-scoped
+    appScope = { org_id: req.user!.org_id }
+    certScope = { org_id: req.user!.org_id }
+    payScope = { org_id: req.user!.org_id }
   }
+  // admin / super_admin: platform-wide (all scopes empty)
 
   // Count Active Certifications
-  const total_certifications = await Certification.countDocuments({ ...query, deleted_at: { $exists: false } })
-  const active_certifications = await Certification.countDocuments({ ...query, status: 'active', deleted_at: { $exists: false } })
-  const expiring_soon = await Certification.countDocuments({ ...query, status: 'expiring_soon', deleted_at: { $exists: false } })
+  const total_certifications = await Certification.countDocuments({ ...certScope, deleted_at: { $exists: false } })
+  const active_certifications = await Certification.countDocuments({ ...certScope, status: 'active', deleted_at: { $exists: false } })
+  const expiring_soon = await Certification.countDocuments({ ...certScope, status: 'expiring_soon', deleted_at: { $exists: false } })
 
   // Count Pending Applications
-  const pending_applications = await Application.countDocuments({ ...query, status: { $in: ['draft', 'submitted', 'under_review'] }, deleted_at: { $exists: false } })
+  const pending_applications = await Application.countDocuments({ ...appScope, status: { $in: ['draft', 'submitted', 'docs_review', 'docs_required', 'tech_review', 'testing', 'approval_pending', 'on_hold'] }, deleted_at: { $exists: false } })
 
   // Active Users (excluding clients)
   let active_users = 0;
-  if (req.user!.role === 'admin' || req.user!.role === 'super_admin') {
+  if (isStaff) {
     active_users = await User.countDocuments({ role: { $ne: 'client' }, deleted_at: { $exists: false } })
-  } else {
+  } else if (req.user!.org_id) {
     active_users = await User.countDocuments({ role: { $ne: 'client' }, org_id: req.user!.org_id, deleted_at: { $exists: false } })
   }
 
-  // Total collected payments
-  const payments = await Payment.find({ ...query, status: { $in: ['paid', 'captured'] } })
+  // Total collected payments (customer's own payments only)
+  const payments = await Payment.find({ ...payScope, status: { $in: ['paid', 'captured'] } })
   const total_revenue = payments.reduce((acc, curr) => acc + (curr.total_paise / 100), 0)
 
-  // Monthly trend for the current year
+  // Monthly trend for the current year — scoped to the same owner.
   const currentYear = new Date().getFullYear();
   const paymentsTrend = await Payment.aggregate([
-    { $match: { status: { $in: ['paid', 'captured'] }, created_at: { $gte: new Date(`${currentYear}-01-01`) } } },
+    { $match: { ...payScope, status: { $in: ['paid', 'captured'] }, created_at: { $gte: new Date(`${currentYear}-01-01`) } } },
     { $group: { _id: { $month: "$created_at" }, total: { $sum: "$total_paise" } } }
   ]);
   const certsTrend = await Certification.aggregate([
-    { $match: { created_at: { $gte: new Date(`${currentYear}-01-01`) } } },
+    { $match: { ...certScope, created_at: { $gte: new Date(`${currentYear}-01-01`) } } },
     { $group: { _id: { $month: "$created_at" }, count: { $sum: 1 } } }
   ]);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -60,7 +79,7 @@ router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Respons
   });
 
   const country_aggr = await Certification.aggregate([
-    { $match: { ...query, deleted_at: { $exists: false } } },
+    { $match: { ...certScope, deleted_at: { $exists: false } } },
     { $group: { _id: "$market", count: { $sum: 1 } } },
     { $sort: { count: -1 } }
   ]);
@@ -72,7 +91,7 @@ router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Respons
   }));
 
   const type_aggr = await Certification.aggregate([
-    { $match: { ...query, deleted_at: { $exists: false } } },
+    { $match: { ...certScope, deleted_at: { $exists: false } } },
     { $group: { _id: "$type", count: { $sum: 1 } } }
   ]);
   const certification_mix = type_aggr.map((x, i) => ({

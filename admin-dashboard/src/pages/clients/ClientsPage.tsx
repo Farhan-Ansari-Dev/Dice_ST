@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { Search, Plus, Filter, MoreHorizontal, Award, Trash2, RefreshCcw, Edit2, Download, CheckCircle2, Clock } from 'lucide-react'
+import { Search, Plus, Filter, MoreHorizontal, Award, Trash2, RefreshCcw, Edit2, Download, CheckCircle2, Clock, Eye } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import Avatar from '../../components/common/Avatar'
 import Badge from '../../components/common/Badge'
 import Button from '../../components/common/Button'
@@ -11,6 +12,7 @@ const STATUS_MAP: Record<string, string> = { active: 'active', pending: 'pending
 
 export default function ClientsPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [showDeleted, setShowDeleted] = useState(true)
   const [isModalOpen, setModalOpen] = useState(false)
@@ -66,24 +68,45 @@ export default function ClientsPage() {
     }
   }
 
+  const q = search.toLowerCase()
   const filtered = (clients || []).filter((c: any) =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase())
+    c.name?.toLowerCase().includes(q) ||
+    c.email?.toLowerCase().includes(q) ||
+    c.company_name?.toLowerCase().includes(q) ||
+    c.gst_number?.toLowerCase().includes(q) ||
+    c.phone?.toLowerCase().includes(q)
   )
 
   const handleExportCSV = () => {
     if (!filtered || filtered.length === 0) return;
-    const headers = ['Name', 'Email', 'Company', 'Status', 'Onboarding', 'Onboarding Completed At', 'Business Role', 'Company Size', 'Updated At'];
+    const headers = [
+      'Name', 'Email', 'Phone', 'Company', 'GST', 'CIN', 'IEC', 'Country', 'City', 'State', 'Pincode',
+      'Business Role', 'Company Size', 'Industries', 'Target Markets', 'Business Goals', 'Interested Certifications',
+      'Onboarding', 'Onboarding Completed At', 'Status', 'Updated At',
+    ];
+    const csvCell = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = filtered.map((c: any) => [
-      `"${c.name || ''}"`,
-      `"${c.email || ''}"`,
-      `"${c.org_id?.name || ''}"`,
-      `"${c.deleted_at ? 'Suspended' : 'Active'}"`,
-      `"${c.onboarding_completed_at ? 'Complete' : 'Pending'}"`,
-      `"${c.onboarding_completed_at || ''}"`,
-      `"${c.business_role || ''}"`,
-      `"${c.company_size || ''}"`,
-      `"${c.updated_at || ''}"`
+      csvCell(c.name),
+      csvCell(c.email),
+      csvCell(c.phone),
+      csvCell(c.company_name || c.org_id?.name),
+      csvCell(c.gst_number),
+      csvCell(c.cin),
+      csvCell(c.iec),
+      csvCell(c.country_code),
+      csvCell(c.address?.city),
+      csvCell(c.address?.state),
+      csvCell(c.address?.pincode),
+      csvCell(c.business_role),
+      csvCell(c.company_size),
+      csvCell((c.industries || []).join('; ')),
+      csvCell((c.target_markets || []).join('; ')),
+      csvCell((c.business_goals || []).join('; ')),
+      csvCell((c.interested_certifications || []).join('; ')),
+      csvCell(c.onboarding_completed_at ? 'Complete' : 'Pending'),
+      csvCell(c.onboarding_completed_at),
+      csvCell(c.deleted_at ? 'Suspended' : 'Active'),
+      csvCell(c.updated_at),
     ]);
     const csvContent = [headers.join(','), ...rows.map((r: string[]) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -180,7 +203,7 @@ export default function ClientsPage() {
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: 13 }}>{client.org_id?.name || '—'}</td>
+                <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: 13 }}>{client.company_name || client.org_id?.name || '—'}</td>
                 <td style={{ padding: '14px 16px' }}><Badge status={client.deleted_at ? 'suspended' : 'active'} size="sm" /></td>
                 <td style={{ padding: '14px 16px' }}>
                   {client.onboarding_completed_at ? (
@@ -203,13 +226,16 @@ export default function ClientsPage() {
                 <td style={{ padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Award size={13} color="var(--accent-purple)" />
-                    <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>0</span>
+                    <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{client.certifications_count ?? 0}</span>
                   </div>
                 </td>
-                <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 13, fontWeight: 400 }}>0</td>
+                <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 13, fontWeight: 400 }}>{client.open_applications_count ?? 0}</td>
                 <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 12 }}>{formatDate(client.updated_at)}</td>
                 <td style={{ padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button onClick={() => navigate(`/clients/${client._id}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="View full profile">
+                      <Eye size={14} />
+                    </button>
                     <button onClick={() => openEdit(client)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Edit">
                       <Edit2 size={14} />
                     </button>

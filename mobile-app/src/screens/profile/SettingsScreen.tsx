@@ -36,8 +36,8 @@ const SettingsScreen: React.FC = () => {
   const [email, setEmail] = useState(user?.email ?? '');
   const [companyName, setCompanyName] = useState(user?.companyName ?? '');
   const [gstNumber, setGstNumber] = useState(user?.gstNumber ?? '');
-  const [city, setCity] = useState(user?.city ?? '');
-  const [state, setState] = useState(user?.state ?? '');
+  const [city, setCity] = useState(user?.address?.city ?? '');
+  const [state, setState] = useState(user?.address?.state ?? '');
   const [loading, setLoading] = useState(false);
 
   const pickFromLibrary = async () => {

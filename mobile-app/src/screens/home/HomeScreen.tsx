@@ -180,6 +180,11 @@ const HomeScreen: React.FC = () => {
             <Text style={styles.userName} numberOfLines={1}>
               {user?.name?.split(' ')[0] ?? 'there'}
             </Text>
+            {!!user?.companyName && (
+              <Text style={[styles.greeting, { marginTop: 1 }]} numberOfLines={1}>
+                {user.companyName}
+              </Text>
+            )}
           </View>
         </TouchableOpacity>
         <View style={styles.headerRight}>
@@ -249,7 +254,11 @@ const HomeScreen: React.FC = () => {
                 ) : (
                   <Text style={styles.healthScore}>{analytics?.compliance_score ?? 0}%</Text>
                 )}
-                {!analyticsLoading && <Badge label="Ready for Market" variant="success" size="sm" />}
+                {!analyticsLoading && (
+                  (analytics?.compliance_score ?? 0) >= 70
+                    ? <Badge label="Ready for Market" variant="success" size="sm" />
+                    : <Badge label="Building Compliance" variant="warning" size="sm" />
+                )}
               </View>
             </View>
             <View style={styles.healthChartWrap}>

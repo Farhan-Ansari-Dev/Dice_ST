@@ -44,7 +44,9 @@ const NewCertificationScreen: React.FC = () => {
 
   const [step, setStep] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
-  const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
+  // Prefill target markets from the customer's onboarding profile so they don't
+  // re-enter data they already gave. They can still adjust the selection.
+  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(user?.targetMarkets ?? []);
   
   const [productSearch, setProductSearch] = useState('');
   const [marketSearch, setMarketSearch] = useState('');

@@ -2,11 +2,17 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { authenticate, AuthRequest } from '../../middleware/authMongo'
 import { authorize } from '../../middleware/authorize'
 import { User } from '../../models/User'
+import { Application } from '../../models/Application'
+import { Certification } from '../../models/Certification'
+import { Document } from '../../models/Document'
+import { Payment } from '../../models/Payment'
+import { AuditLog } from '../../models/AuditLog'
 import { sendSuccess, sendError } from '../../utils/response'
 import crypto from 'crypto'
 import { sendSMS } from '../../services/notifications/sms'
 import { logger } from '../../utils/logger'
 import { serializeUser } from '../../utils/serializeUser'
+import { computeCustomerHealth } from '../../services/customerHealthService'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -40,6 +46,9 @@ const ONBOARDING_FIELD_MAP: Record<string, string> = {
   businessGoals:            'business_goals',
   companyName:              'company_name',
   gstNumber:                'gst_number',
+  cin:                      'cin',
+  iec:                      'iec',
+  countryCode:              'country_code',
 };
 
 const STRING_ARRAY_FIELDS = new Set([
@@ -70,6 +79,28 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
         update[dbKey] = value.map(String);
       } else {
         update[dbKey] = value === null ? undefined : String(value);
+      }
+    }
+
+    // Structured company address (nested object) — whitelist known subfields and
+    // coerce to strings. Unknown keys are dropped so a client can't inject fields.
+    if (req.body.address !== undefined && req.body.address !== null) {
+      const a = req.body.address;
+      if (typeof a !== 'object' || Array.isArray(a)) {
+        return res.status(400).json({ success: false, message: 'address must be an object' });
+      }
+      const addr: any = {};
+      for (const k of ['line1', 'line2', 'city', 'state', 'pincode']) {
+        if (a[k] !== undefined && a[k] !== null) addr[k] = String(a[k]).trim();
+      }
+      update.address = addr;
+    }
+
+    // Light format validation (only when a non-empty value is supplied).
+    if (update.iec) {
+      const iec = String(update.iec).toUpperCase();
+      if (!/^[A-Z0-9]{10}$/.test(iec)) {
+        return res.status(400).json({ success: false, message: 'IEC must be 10 alphanumeric characters' });
       }
     }
 
@@ -113,6 +144,16 @@ router.put('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => 
         before: { name: req.user!.name },
         after: { name: updated.name }
       });
+      // Distinct timeline event the first time the onboarding wizard completes.
+      if (update.onboarding_completed_at) {
+        await audit({
+          actor: req.user!._id as any,
+          org_id: req.user!.org_id as any,
+          resource_type: 'user',
+          resource_id: req.user!._id as any,
+          action: 'onboarding_completed',
+        });
+      }
     } catch (e) {
       console.error('Audit failed:', e);
     }
@@ -236,8 +277,44 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
     .select('-password_hash -otp_hash -totp_secret')
     .sort({ created_at: -1 })
     .lean()
-    
-  return sendSuccess(res, users)
+
+  // Attach real per-customer counts (previously hardcoded to 0 in the admin UI).
+  // Applications by created_by; open applications; certifications via those apps.
+  const userIds = users.map((u: any) => u._id)
+  const appAgg = await Application.aggregate([
+    { $match: { created_by: { $in: userIds }, deleted_at: { $exists: false } } },
+    { $group: { _id: '$created_by', total: { $sum: 1 }, open: { $sum: { $cond: [{ $in: ['$status', ['draft', 'submitted', 'docs_review', 'docs_required', 'tech_review', 'testing', 'approval_pending', 'on_hold']] }, 1, 0] } }, appIds: { $push: '$_id' } } },
+  ])
+  const appByUser = new Map<string, { total: number; open: number; appIds: any[] }>()
+  const allAppIds: any[] = []
+  for (const a of appAgg) { appByUser.set(String(a._id), a); allAppIds.push(...a.appIds) }
+
+  // Certifications are owned via their application; map cert → app → user.
+  const certAgg = allAppIds.length
+    ? await Certification.aggregate([
+        { $match: { application_id: { $in: allAppIds }, deleted_at: { $exists: false } } },
+        { $group: { _id: '$application_id', c: { $sum: 1 } } },
+      ])
+    : []
+  const appToUser = new Map<string, string>()
+  for (const a of appAgg) for (const appId of a.appIds) appToUser.set(String(appId), String(a._id))
+  const certByUser = new Map<string, number>()
+  for (const c of certAgg) {
+    const uid = appToUser.get(String(c._id))
+    if (uid) certByUser.set(uid, (certByUser.get(uid) ?? 0) + c.c)
+  }
+
+  const withCounts = users.map((u: any) => {
+    const a = appByUser.get(String(u._id))
+    return {
+      ...u,
+      applications_count: a?.total ?? 0,
+      open_applications_count: a?.open ?? 0,
+      certifications_count: certByUser.get(String(u._id)) ?? 0,
+    }
+  })
+
+  return sendSuccess(res, withCounts)
 }))
 
 router.post('/', authenticate, authorize(['admin','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
@@ -310,6 +387,91 @@ router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Res
 
   if (!user) return sendError(res, 'Not found', 404)
   return sendSuccess(res, user, 'Restored successfully')
+}))
+
+// ═══════════════════════════════════════════════════════════════
+// GET /users/:id/overview — Customer 360 for the admin detail page.
+// Aggregates everything about one customer: profile, real counts,
+// recent applications/certifications/payments, assigned managers, and a
+// chronological activity timeline from the audit log. Staff-only.
+//
+// Ownership: a customer is frequently org-less, so scope by their OWN data —
+// applications by created_by, certifications by those applications, documents
+// by uploaded_by, payments by user_id — never by `{ org_id: undefined }`.
+// ═══════════════════════════════════════════════════════════════
+router.get('/:id/overview', authenticate, authorize(['admin', 'employee', 'super_admin']), wrap(async (req: AuthRequest, res: Response) => {
+  const id = req.params.id
+  const user = await User.findById(id).lean()
+  if (!user) return sendError(res, 'Customer not found', 404)
+
+  const appIds = await Application.find({ created_by: id }).distinct('_id')
+
+  const [applications, certifications, documents, payments, pendingApplications, renewalsDue] = await Promise.all([
+    Application.countDocuments({ created_by: id, deleted_at: { $exists: false } }),
+    Certification.countDocuments({ application_id: { $in: appIds }, deleted_at: { $exists: false } }),
+    Document.countDocuments({ uploaded_by: id, deleted_at: { $exists: false } }),
+    Payment.countDocuments({ user_id: id }),
+    Application.countDocuments({ created_by: id, status: { $in: ['draft', 'submitted', 'docs_review', 'docs_required', 'tech_review', 'testing', 'approval_pending', 'on_hold'] }, deleted_at: { $exists: false } }),
+    Certification.countDocuments({ application_id: { $in: appIds }, status: 'expiring_soon', deleted_at: { $exists: false } }),
+  ])
+
+  const [recentApplications, recentCertifications, recentPayments, documentsList, paidAgg, managerIds] = await Promise.all([
+    Application.find({ created_by: id }).sort({ created_at: -1 }).limit(10).populate('product_id', 'name').lean(),
+    Certification.find({ application_id: { $in: appIds } }).sort({ created_at: -1 }).limit(10).populate('product_id', 'name').lean(),
+    Payment.find({ user_id: id }).sort({ created_at: -1 }).limit(10).lean(),
+    Document.find({ uploaded_by: id, deleted_at: { $exists: false } }).sort({ created_at: -1 }).limit(20).lean(),
+    Payment.aggregate([
+      { $match: { user_id: user._id, status: { $in: ['paid', 'captured'] } } },
+      { $group: { _id: null, total: { $sum: '$total_paise' } } },
+    ]),
+    Application.find({ created_by: id, primary_assignee: { $exists: true, $ne: null } }).distinct('primary_assignee'),
+  ])
+
+  const assignedManagers = managerIds.length
+    ? await User.find({ _id: { $in: managerIds } }).select('name email role').lean()
+    : []
+
+  // Chronological activity: events performed by the customer or on their resources
+  // (their applications and certifications, plus testing/inspection audits which
+  // are attributed via the customer's own id).
+  const certIds = await Certification.find({ application_id: { $in: appIds } }).distinct('_id')
+  const timeline = await AuditLog.find({
+    $or: [
+      { 'meta.actor': user._id },
+      { 'meta.resource_id': { $in: [user._id, ...appIds, ...certIds] } },
+    ],
+  }).sort({ ts: -1 }).limit(60).lean()
+
+  const customer = await serializeUser(user, { withCounts: false })
+  const health = computeCustomerHealth({
+    profileCompletion: (customer as any).profileCompletion ?? 0,
+    applications,
+    certifications,
+    renewalsDue,
+    payments,
+    onboardingComplete: Boolean((customer as any).isOnboardingComplete),
+  })
+
+  return sendSuccess(res, {
+    customer,
+    health,
+    counts: { applications, certifications, documents, payments, pendingApplications, renewalsDue },
+    totalPaidPaise: paidAgg[0]?.total ?? 0,
+    recentApplications,
+    recentCertifications,
+    recentPayments,
+    documents: documentsList,
+    assignedManagers,
+    timeline: timeline.map((a: any) => ({
+      id: a._id,
+      ts: a.ts,
+      action: a.meta?.action,
+      resourceType: a.meta?.resource_type,
+      resourceId: a.meta?.resource_id,
+      actorType: a.meta?.actor_type,
+      notes: a.meta?.notes,
+    })),
+  })
 }))
 
 export default router

@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import multer from 'multer'
 import { randomUUID } from 'crypto'
 import { authenticate, AuthRequest } from '../middleware/authMongo'
-import { aiService } from '../services/aiService'
+import { aiService, buildCustomerContext } from '../services/aiService'
 import { sendSuccess } from '../utils/response'
 import { AIConversation } from '../models/AIConversation'
 import { analyseProductImage, VisionUnavailableError } from '../services/vision/productVisionService'
@@ -52,7 +52,7 @@ router.get('/conversations/:id', wrap(async (req: AuthRequest, res: Response) =>
 
 router.post('/analyze-document', wrap(async (req: AuthRequest, res: Response) => {
   const { text } = req.body
-  const analysis = await aiService.analyzeDocument(text)
+  const analysis = await aiService.analyzeDocument(text, req.user!._id.toString())
   sendSuccess(res, analysis)
 }))
 
@@ -69,19 +69,19 @@ router.post('/ask', wrap(async (req: AuthRequest, res: Response) => {
 
 router.post('/analyze-hs-code', wrap(async (req: AuthRequest, res: Response) => {
   const { hsCode, hs_code } = req.body
-  const result = await aiService.analyzeHsCode(hsCode || hs_code)
+  const result = await aiService.analyzeHsCode(hsCode || hs_code, req.user!._id.toString())
   sendSuccess(res, result)
 }))
 
 router.post('/analyze-risks', wrap(async (req: AuthRequest, res: Response) => {
   const { context, product, market } = req.body
-  const result = await aiService.analyzeRisks(context || `${product} in ${market}`)
+  const result = await aiService.analyzeRisks(context || `${product} in ${market}`, req.user!._id.toString())
   sendSuccess(res, result)
 }))
 
 router.post('/analyze-certifications', wrap(async (req: AuthRequest, res: Response) => {
   const { productName, product_name, markets } = req.body
-  const result = await aiService.analyzeCertifications(productName || product_name, markets || [])
+  const result = await aiService.analyzeCertifications(productName || product_name, markets || [], req.user!._id.toString())
   sendSuccess(res, result)
 }))
 
@@ -107,7 +107,8 @@ router.post(
     const includeReport = String(req.body?.includeReport ?? 'true') !== 'false'
 
     try {
-      const observations = await analyseProductImage(req.file.buffer, req.file.mimetype, req.body?.notes)
+      const customerContext = await buildCustomerContext(userId)
+      const observations = await analyseProductImage(req.file.buffer, req.file.mimetype, req.body?.notes, customerContext)
       const analysis = buildAnalysis(observations, analysisId)
 
       let report = null

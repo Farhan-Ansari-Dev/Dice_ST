@@ -25,6 +25,7 @@ import routes from './routes/index';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
 import { validateEnv } from './config/validateEnv';
+import { startBackgroundJobs } from './jobs';
 
 async function main() {
   // 0. Fail fast on missing/invalid production secrets (payments, auth, db).
@@ -119,6 +120,12 @@ async function main() {
 
     // Tell PM2 cluster mode we're ready
     if (process.send) process.send('ready');
+
+    // Start in-process background jobs (cert-expiry reminders, stale-application
+    // checks, insights seeding, flag-gated renewal auto-generation). Single
+    // scheduler for the single-instance deployment; migrate to BullMQ when the
+    // API scales to multiple workers.
+    startBackgroundJobs();
   });
 
   // 9. Graceful shutdown

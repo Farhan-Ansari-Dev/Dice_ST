@@ -5,6 +5,7 @@ export interface IInspection {
   inspection_number: string;
   org_id: any;
   client_id: any;
+  application_id?: any;   // links the inspection to its Application workflow
   product_id?: any;
   product_name?: string;
   inspection_type: 'factory' | 'product' | 'process' | 'audit';
@@ -28,6 +29,7 @@ const InspectionSchema = new Schema<IInspection>({
   // Optional: single-tenant users have no Organization (same as Payment.org_id)
   org_id: { type: Schema.Types.ObjectId, ref: 'Organization' },
   client_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  application_id: { type: Schema.Types.ObjectId, ref: 'Application', index: true },
   product_id: { type: Schema.Types.ObjectId, ref: 'Product' },
   product_name: String,
   inspection_type: {

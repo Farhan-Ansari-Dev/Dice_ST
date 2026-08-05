@@ -131,6 +131,7 @@ export async function analyseProductImage(
   image: Buffer,
   mimeType: string,
   userHint?: string,
+  customerContext?: string,
 ): Promise<VisionObservations> {
   if (image.byteLength > MAX_IMAGE_BYTES) {
     throw new Error(`image exceeds ${MAX_IMAGE_BYTES} bytes`);
@@ -151,7 +152,7 @@ export async function analyseProductImage(
     temperature: 0.1,       // near-deterministic: this is extraction, not creativity
     max_tokens: 2048,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: SYSTEM_PROMPT + (customerContext ?? '') },
       {
         role: 'user',
         content: [

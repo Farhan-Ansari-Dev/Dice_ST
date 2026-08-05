@@ -6,6 +6,7 @@ import { Application } from '../../models/Application'
 import { sendSuccess, sendError } from '../../utils/response'
 import { stripProtected } from '../../utils/sanitize'
 import { documentService } from '../../services/documentService'
+import { createRenewal, RenewalNotEligibleError } from '../../services/renewalService'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -113,6 +114,20 @@ router.post('/:id/restore', authenticate, authorize(['admin','super_admin']), wr
   ).setOptions({ includeDeleted: true } as any)
   if (!cert) return sendError(res, 'Not found', 404)
   return sendSuccess(res, cert, 'Restored successfully')
+}))
+
+// Start a renewal: creates a fresh Draft Application linked to this cert. When
+// that application is issued, the new cert is linked and this one is retired.
+router.post('/:id/renew', authenticate, authorize(['admin','employee','super_admin','client']), wrap(async (req: AuthRequest, res: Response) => {
+  const cert = await Certification.findOne({ ...(await certOwnershipFilter(req)), _id: req.params.id })
+  if (!cert) return sendError(res, 'Not found', 404)
+  try {
+    const app = await createRenewal({ cert, actor: req.user!._id as any })
+    return sendSuccess(res, app, 'Renewal started', 201)
+  } catch (e) {
+    if (e instanceof RenewalNotEligibleError) return sendError(res, e.message, 409)
+    throw e
+  }
 }))
 
 // Download the official certificate PDF. Resolves the linked Document

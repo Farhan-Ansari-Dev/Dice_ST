@@ -64,6 +64,10 @@ const certificationService = {
   downloadCertificate: (certificationId: string) =>
     api.get<{ data: { url: string; expires_in: number } }>(`/certifications/${certificationId}/download`),
 
+  // Start a renewal — creates a fresh application linked to this certificate.
+  renew: (certificationId: string) =>
+    api.post<{ data: Application }>(`/certifications/${certificationId}/renew`),
+
   getDashboardStats: () =>
     api.get<any>('/analytics/dashboard'),
 };

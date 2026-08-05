@@ -180,6 +180,36 @@ const ProfileScreen: React.FC = () => {
           </TouchableOpacity>
         </LinearGradient>
 
+        {/* Profile completion — server-computed, links to the company profile editor */}
+        {typeof user?.profileCompletion === 'number' && user.profileCompletion < 100 && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CompanyProfile')}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: isDark ? colors.bgCard : '#FFFFFF',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              gap: 8,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>
+                Profile {user.profileCompletion}% complete
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            </View>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border, overflow: 'hidden' }}>
+              <View style={{ height: 8, borderRadius: 4, width: `${user.profileCompletion}%`, backgroundColor: colors.primary }} />
+            </View>
+            <Text style={{ fontSize: 12, color: colors.textTertiary }}>
+              Add company & compliance details to speed up applications.
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Company Card */}
         {user?.companyName && (
           <View style={[styles.companyCard, Shadows.sm]}>
@@ -198,10 +228,10 @@ const ProfileScreen: React.FC = () => {
                   )}
                 </View>
               </View>
-              {(user.city || user.state) && (
+              {(user.address?.city || user.address?.state) && (
                 <View style={styles.companyLocation}>
                   <Ionicons name="location-outline" size={14} color={colors.textTertiary} />
-                  <Text style={styles.companyLocationText}>{[user.city, user.state].filter(Boolean).join(', ')}</Text>
+                  <Text style={styles.companyLocationText}>{[user.address?.city, user.address?.state].filter(Boolean).join(', ')}</Text>
                 </View>
               )}
             </LinearGradient>

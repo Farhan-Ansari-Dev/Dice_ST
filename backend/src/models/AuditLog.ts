@@ -4,9 +4,10 @@ import mongoose from 'mongoose';
 export type AuditAction =
   | 'created' | 'updated' | 'deleted' | 'viewed' | 'downloaded'
   | 'logged_in' | 'logged_out' | 'failed_login'
-  | 'status_changed' | 'assigned' | 'unassigned'
+  | 'status_changed' | 'status_overridden' | 'assigned' | 'unassigned'
   | 'document_uploaded' | 'document_replaced' | 'document_archived'
   | 'payment_received' | 'cert_issued' | 'cert_revoked'
+  | 'onboarding_completed' | 'testing_started' | 'inspection_scheduled' | 'renewal_created'
   | 'consent_given' | 'consent_revoked'
   | 'data_exported' | 'data_deletion_requested';
 

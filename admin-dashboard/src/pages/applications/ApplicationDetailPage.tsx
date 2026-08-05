@@ -53,6 +53,10 @@ export default function ApplicationDetailPage() {
   const [newStatus, setNewStatus] = useState('')
   const [statusReason, setStatusReason] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [overrideTo, setOverrideTo] = useState('')
+  const [overrideReason, setOverrideReason] = useState('')
+  const [escalateTo, setEscalateTo] = useState('')
+  const [escalateReason, setEscalateReason] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['application', id] })
 
@@ -104,6 +108,16 @@ export default function ApplicationDetailPage() {
     mutationFn: (value: string) => apiClient.put(`/applications/${id}`, { notes: value }),
     onSuccess: () => { invalidate(); toast.success('Notes saved') },
     onError: () => toast.error('Failed to save notes'),
+  })
+  const overrideMut = useMutation({
+    mutationFn: (body: { to_status: string; reason: string }) => apiClient.post(`/applications/${id}/override`, body),
+    onSuccess: () => { invalidate(); queryClient.invalidateQueries({ queryKey: ['application_audit', id] }); toast.success('Status overridden'); setOverrideTo(''); setOverrideReason('') },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to override'),
+  })
+  const escalateMut = useMutation({
+    mutationFn: (body: { manager_id: string; reason: string }) => apiClient.post(`/applications/${id}/escalate`, body),
+    onSuccess: () => { invalidate(); toast.success('Escalated'); setEscalateTo(''); setEscalateReason('') },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to escalate'),
   })
   const downloadDoc = async (docId: string) => {
     try {
@@ -221,7 +235,7 @@ export default function ApplicationDetailPage() {
             {(tab === 'inspections' || tab === 'testing' || tab === 'shipments') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...muted }}>
                 <AlertTriangle size={14} color="var(--text-muted)" />
-                {pretty(tab).charAt(0).toUpperCase() + pretty(tab).slice(1)} are not linked at the application level in the current data model — manage them from their own module.
+                {pretty(tab).charAt(0).toUpperCase() + pretty(tab).slice(1)} are managed from their own module — open it to view records linked to this application.
               </div>
             )}
           </div>
@@ -309,6 +323,33 @@ export default function ApplicationDetailPage() {
             </select>
             <Button size="sm" variant="secondary" disabled={!assignee || assignMut.isPending} onClick={() => assignMut.mutate(assignee)}>
               {assignMut.isPending ? 'Assigning…' : 'Assign'}
+            </Button>
+          </div>
+
+          {/* Escalate */}
+          <div style={card}>
+            <h3 style={sectionTitle}><AlertTriangle size={15} /> Escalate to Manager</h3>
+            <select value={escalateTo} onChange={e => setEscalateTo(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 10 }}>
+              <option value="">Select manager…</option>
+              {(staff || []).filter((u: any) => ['admin', 'super_admin'].includes(u.role)).map((u: any) => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
+            </select>
+            <input value={escalateReason} onChange={e => setEscalateReason(e.target.value)} placeholder="Reason (required)" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 12 }} />
+            <Button size="sm" variant="secondary" disabled={!escalateTo || !escalateReason || escalateMut.isPending} onClick={() => escalateMut.mutate({ manager_id: escalateTo, reason: escalateReason })}>
+              {escalateMut.isPending ? 'Escalating…' : 'Escalate'}
+            </Button>
+          </div>
+
+          {/* Admin override */}
+          <div style={card}>
+            <h3 style={sectionTitle}><Shield size={15} /> Admin Override</h3>
+            <p style={{ ...muted, marginTop: 0, marginBottom: 12 }}>Force any status, bypassing the workflow. Always audited and notified.</p>
+            <select value={overrideTo} onChange={e => setOverrideTo(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 10 }}>
+              <option value="">Select status…</option>
+              {Object.keys(ALLOWED_TRANSITIONS).filter(s => s !== app.status).map(s => <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{pretty(s)}</option>)}
+            </select>
+            <input value={overrideReason} onChange={e => setOverrideReason(e.target.value)} placeholder="Reason (required)" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 12 }} />
+            <Button size="sm" variant="secondary" disabled={!overrideTo || !overrideReason || overrideMut.isPending} onClick={() => overrideMut.mutate({ to_status: overrideTo, reason: overrideReason })}>
+              {overrideMut.isPending ? 'Overriding…' : 'Override Status'}
             </Button>
           </div>
 

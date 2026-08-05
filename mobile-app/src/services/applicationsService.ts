@@ -59,8 +59,10 @@ const applicationsService = {
   create: (data: CreateApplicationRequest) =>
     api.post<{ data: Application }>('/applications', data),
 
+  // Both go through the single transition path. `PUT /:id/status` was removed
+  // server-side; updateStatus now maps status/notes onto the transition contract.
   updateStatus: (id: string, status: string, notes?: string) =>
-    api.put<{ data: Application }>(`/applications/${id}/status`, { status, notes }),
+    api.post<{ data: Application }>(`/applications/${id}/transition`, { to_status: status, reason: notes }),
 
   transition: (id: string, to_status: string, reason?: string) =>
     api.post<{ data: Application }>(`/applications/${id}/transition`, { to_status, reason }),
@@ -68,14 +70,28 @@ const applicationsService = {
   uploadDocument: (id: string, formData: FormData, onProgress?: (p: number) => void) =>
     api.uploadFile<{ data: any }>(`/applications/${id}/documents`, formData, onProgress),
 
+  // Unified activity feed: status history + audit + linked testing/inspection.
   getTimeline: (id: string) =>
-    api.get<{ data: Application }>(`/applications/${id}`),
+    api.get<{ data: any[] }>(`/applications/${id}/timeline`),
 
   getAudit: (id: string) =>
     api.get<{ data: any[] }>(`/applications/${id}/audit`),
 
   assignTo: (id: string, userId: string) =>
     api.put<{ data: Application }>(`/applications/${id}/assign`, { assigned_to: userId }),
+
+  assign: (id: string, userIds: string[], primary?: string) =>
+    api.post<{ data: Application }>(`/applications/${id}/assign`, { user_ids: userIds, primary }),
+
+  unassign: (id: string) =>
+    api.delete<{ data: Application }>(`/applications/${id}/assign`),
+
+  escalate: (id: string, managerId: string, reason: string) =>
+    api.post<{ data: Application }>(`/applications/${id}/escalate`, { manager_id: managerId, reason }),
+
+  // Admin escape hatch — bypasses the state machine; reason required.
+  override: (id: string, toStatus: string, reason: string) =>
+    api.post<{ data: Application }>(`/applications/${id}/override`, { to_status: toStatus, reason }),
 
   delete: (id: string) =>
     api.delete<{ message: string }>(`/applications/${id}`),

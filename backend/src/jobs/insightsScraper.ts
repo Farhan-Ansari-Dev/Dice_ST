@@ -8,6 +8,7 @@ const SAMPLE_INSIGHTS = [
     category: 'bis',
     country: 'India',
     source: 'Bureau of Indian Standards',
+    link: 'https://www.bis.gov.in',
     tags: ['BIS', 'LED', 'CRS', 'IS 10322'],
   },
   {
@@ -16,6 +17,7 @@ const SAMPLE_INSIGHTS = [
     category: 'fssai',
     country: 'India',
     source: 'FSSAI Official Gazette',
+    link: 'https://www.fssai.gov.in',
     tags: ['FSSAI', 'Import', 'Food Safety', 'Testing'],
   },
   {
@@ -24,6 +26,7 @@ const SAMPLE_INSIGHTS = [
     category: 'wpc',
     country: 'India',
     source: 'WPC Wing, DoT',
+    link: 'https://dot.gov.in',
     tags: ['WPC', '5G', 'Spectrum', 'ETA'],
   },
   {
@@ -32,6 +35,7 @@ const SAMPLE_INSIGHTS = [
     category: 'epr',
     country: 'India',
     source: 'CPCB Notification',
+    link: 'https://cpcb.nic.in',
     tags: ['EPR', 'CPCB', 'E-waste', 'Recycling'],
   },
   {
@@ -40,6 +44,7 @@ const SAMPLE_INSIGHTS = [
     category: 'international',
     country: 'EU',
     source: 'European Commission',
+    link: 'https://ec.europa.eu',
     tags: ['CE', 'EU', 'Machinery', 'Regulation'],
   },
   {
@@ -48,6 +53,7 @@ const SAMPLE_INSIGHTS = [
     category: 'customs',
     country: 'India',
     source: 'CBIC Circular',
+    link: 'https://www.cbic.gov.in',
     tags: ['Customs', 'Electronics', 'Faceless Assessment', 'CBIC'],
   },
   {
@@ -56,6 +62,7 @@ const SAMPLE_INSIGHTS = [
     category: 'iso',
     country: 'Global',
     source: 'ISO',
+    link: 'https://www.iso.org',
     tags: ['ISO', 'AI', 'Management System', '42001'],
   },
   {
@@ -64,6 +71,7 @@ const SAMPLE_INSIGHTS = [
     category: 'bis',
     country: 'India',
     source: 'Bureau of Indian Standards',
+    link: 'https://www.bis.gov.in',
     tags: ['BIS', 'Hallmark', 'Silver', 'Jewellery'],
   },
 ]
