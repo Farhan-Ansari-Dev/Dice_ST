@@ -162,7 +162,7 @@ export default function ApplicationDetailPage() {
               {app.deleted_at && <span style={{ background: 'rgba(255,107,107,0.15)', color: '#FF6B6B', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Archived</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontSize: 15, fontWeight: 600 }}>
-              <Package size={15} color="var(--text-muted)" /> {app.product_id?.name || 'Unknown product'}
+              <Package size={15} color="var(--text-muted)" /> {app.product_id?.name || (app.product_status === 'pending_validation' ? 'Pending Validation' : 'Unknown Product')}
               {productArchived && <span style={{ background: 'rgba(255,179,71,0.15)', color: '#FFB347', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>Archived</span>}
             </div>
           </div>

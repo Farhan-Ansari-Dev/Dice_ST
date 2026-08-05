@@ -60,7 +60,7 @@ export default function ApplicationsPage() {
     id: app.application_number,
     client: 'My Organization', // In a multi-tenant admin, this would be populated from org_id
     type: app.cert_type,
-    product: app.product_id?.name || 'Unknown Product',
+    product: app.product_id?.name || (app.product_status === 'pending_validation' ? 'Pending Validation' : 'Unknown Product'),
     productArchived: !!app.product_id?.deleted_at,
     status: app.status,
     priority: app.priority || 'medium',

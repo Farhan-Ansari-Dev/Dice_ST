@@ -111,7 +111,7 @@ export default function CertificationsPage() {
                     <option value="">Select an application…</option>
                     {(applications || []).map((app: any) => (
                       <option key={app._id} value={app._id}>
-                        {app.application_number || app._id.substring(0, 8)} — {app.product_id?.name || 'Unknown product'} ({app.cert_type})
+                        {app.application_number || app._id.substring(0, 8)} — {app.product_id?.name || (app.product_status === 'pending_validation' ? 'Pending Validation' : 'Unknown Product')} ({app.cert_type})
                       </option>
                     ))}
                   </select>
