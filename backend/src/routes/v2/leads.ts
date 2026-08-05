@@ -30,6 +30,9 @@ const createSchema = {
     productDescription: z.string().max(2000).optional(),
     targetMarkets: z.array(z.string()).max(30).optional(),
     notes: z.string().max(2000).optional(),
+    // "Continue as Manual Application" — no certification mapping was found, so a
+    // manager validates the product and attaches certifications downstream.
+    manualReview: z.boolean().optional(),
   }).passthrough(),
 };
 
@@ -67,8 +70,10 @@ router.post('/', authenticate, validate(createSchema), wrap(async (req: AuthRequ
     const admins = await User.find({ role: { $in: ['admin', 'super_admin', 'employee'] } })
       .select('_id').lean();
     if (admins.length) {
-      const title = 'New certification enquiry';
-      const body = `${b.contactName} enquired about ${b.serviceName}`;
+      const title = b.manualReview ? 'Manual application — product validation needed' : 'New certification enquiry';
+      const body = b.manualReview
+        ? `${b.contactName} submitted a manual application for "${b.productDescription || b.serviceName}". Identify the product, assign an HS code, and attach certifications.`
+        : `${b.contactName} enquired about ${b.serviceName}`;
       await Notification.insertMany(admins.map((a: any) => ({
         user_id: a._id, type: 'lead', title, body,
         data: { leadId: String(lead._id), serviceId: b.serviceId },
@@ -94,6 +99,16 @@ router.post('/', authenticate, validate(createSchema), wrap(async (req: AuthRequ
     try {
       application = await createDraftApplication({
         user: req.user!, product_id: productId, cert_type: certType, notes: b.notes, ip: req.ip,
+        // Manual applications carry a 'manual_review' tag so managers can find and
+        // action them; product_status stays 'pending_validation' (no product_id).
+        tags: b.manualReview ? ['manual_review'] : undefined,
+        manualReview: b.manualReview ? {
+          reason: 'no_certification_mapping',
+          original_product: b.productDescription,
+          requested_markets: Array.isArray(b.targetMarkets) ? b.targetMarkets : [],
+          confidence_score: 0,
+          ai_summary: b.notes,
+        } : undefined,
       });
       lead.converted_application_id = application._id;
       await lead.save();

@@ -21,6 +21,7 @@
     "migrate:indexes": "ts-node src/scripts/syncIndexes.ts",
     "reconcile:ownership": "ts-node src/scripts/reconcileOwnership.ts",
     "reconcile:customer360": "ts-node src/scripts/reconcileCustomer360.ts",
+    "backfill:company-profile": "ts-node src/scripts/backfillCompanyProfile.ts",
     "diagnose:ses": "ts-node src/scripts/diagnoseSes.ts"
   },
   "dependencies": {

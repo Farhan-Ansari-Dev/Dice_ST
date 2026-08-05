@@ -49,6 +49,19 @@ export interface IApplication extends Document {
   product_status: 'validated' | 'pending_validation';
   workflow_id: string;                     // references Workflow._id (e.g. "wf_bis_crs_v1")
   cert_type: string;                       // "BIS_CRS", "EPR", "TEC_ETA", etc.
+  hs_code?: string;                        // HS/HSN classification (set by manager on manual review)
+
+  // Manual-review metadata — populated when an application is created via
+  // "Continue as Manual Application" (no verified certification mapping). A
+  // Certification Manager uses it to identify the product and continue. Optional
+  // and additive; the legacy `manual_review` tag is retained for compatibility.
+  manual_review?: {
+    reason?: string;
+    original_product?: string;
+    requested_markets?: string[];
+    confidence_score?: number;             // 0–100; 0 when no mapping was found
+    ai_summary?: string;
+  };
 
   // Current state
   status: ApplicationStatus;
@@ -164,6 +177,14 @@ const ApplicationSchema = new Schema<IApplication>(
     product_status:     { type: String, enum: ['validated', 'pending_validation'], default: 'validated', index: true },
     workflow_id:        { type: String, index: true },
     cert_type:          { type: String, required: true, index: true },
+    hs_code:            { type: String, trim: true },
+    manual_review: {
+      reason:            { type: String, trim: true },
+      original_product:  { type: String, trim: true },
+      requested_markets: { type: [String], default: undefined },
+      confidence_score:  { type: Number },
+      ai_summary:        { type: String, trim: true },
+    },
 
     status: {
       type: String,

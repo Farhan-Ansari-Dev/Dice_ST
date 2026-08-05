@@ -8,7 +8,7 @@
  *   4. Notification fired to assignees + org owner via notify()
  */
 import { Router, Response } from 'express';
-import { Application, ApplicationStatus, Product, AuditLog, Testing, Inspection } from '../../models';
+import { Application, ApplicationStatus, Product, AuditLog, Testing, Inspection, audit } from '../../models';
 import { authenticate, AuthRequest, requireRole, ADMIN_ROLES } from '../../middleware/authMongo';
 import { createDraftApplication, ProductNotFoundError } from '../../services/applicationService';
 import { transition as runTransition, TransitionDeniedError, GateDeniedError } from '../../services/workflow/transitionService';
@@ -319,6 +319,85 @@ router.post('/:id/restore', requireRole(...ADMIN_ROLES), async (req: AuthRequest
   ).setOptions({ includeDeleted: true } as any);
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ success: true, data: app });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Manual-review resolution (Certification Manager)
+// ═══════════════════════════════════════════════════════════════
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Candidate products for a manual-review application. Suggestions only — the
+ *  manager selects; nothing is auto-selected. Layers: exact name → name match →
+ *  keyword/category match. */
+async function productSuggestions(term?: string) {
+  const norm = String(term || '').trim();
+  if (!norm) return [];
+  const tokens = norm.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+  const rxs = tokens.map((t) => new RegExp(escapeRegex(t), 'i'));
+  const [exact, contains, byToken] = await Promise.all([
+    Product.find({ name: new RegExp(`^${escapeRegex(norm)}$`, 'i') }).limit(5).lean(),
+    Product.find({ name: new RegExp(escapeRegex(norm), 'i') }).limit(10).lean(),
+    rxs.length ? Product.find({ $or: [{ name: { $in: rxs } }, { category: { $in: rxs } }] }).limit(10).lean() : [],
+  ]);
+  const seen = new Set<string>();
+  const out: any[] = [];
+  const push = (p: any, matchType: string, confidence: number) => {
+    const id = String(p._id);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({ product_id: id, name: p.name, brand: p.brand, category: p.category, hsn_code: p.hsn_code, matchType, confidence });
+  };
+  (exact as any[]).forEach((p) => push(p, 'exact_name', 95));
+  (contains as any[]).forEach((p) => push(p, 'name_match', 75));
+  (byToken as any[]).forEach((p) => push(p, 'keyword_or_category', 55));
+  return out;
+}
+
+// GET /applications/:id/product-suggestions — manager opens a manual app.
+router.get('/:id/product-suggestions', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthRequest, res: Response) => {
+  const app = await Application.findById(req.params.id).populate('product_id', 'name').lean();
+  if (!app) return res.status(404).json({ error: 'not_found' });
+  const term = (app as any).manual_review?.original_product || (app.product_id as any)?.name || undefined;
+  return res.json({
+    data: {
+      original_product: term ?? null,
+      manual_review: (app as any).manual_review ?? null,
+      suggestions: await productSuggestions(term),
+    },
+  });
+});
+
+// POST /applications/:id/resolve-product — manager selects the product, assigns
+// HS code + certifications, and un-flags manual review so the normal workflow
+// continues (via the existing transition endpoint). Preserves all other data.
+router.post('/:id/resolve-product', requireRole(...ADMIN_ROLES, 'employee'), async (req: AuthRequest, res: Response) => {
+  const { product_id, hs_code, cert_type } = req.body as { product_id?: string; hs_code?: string; cert_type?: string };
+  if (!product_id) return res.status(400).json({ error: 'product_id required' });
+  const app = await Application.findById(req.params.id);
+  if (!app) return res.status(404).json({ error: 'not_found' });
+  const product = await Product.findById(product_id);
+  if (!product) return res.status(404).json({ error: 'product_not_found' });
+
+  const before = { product_status: app.product_status, product_id: app.product_id, cert_type: app.cert_type };
+  app.product_id = product._id as any;
+  app.product_status = 'validated';
+  app.hs_code = hs_code ? String(hs_code) : ((product as any).hsn_code || app.hs_code);
+  if (cert_type) app.cert_type = String(cert_type);
+  app.tags = (app.tags || []).filter((t) => t !== 'manual_review');
+  await app.save();
+
+  await audit({
+    actor: req.user!._id as any,
+    org_id: req.user!.org_id as any,
+    resource_type: 'application',
+    resource_id: app._id as any,
+    action: 'updated',
+    before,
+    after: { product_status: 'validated', product_id: String(product._id), hs_code: app.hs_code, cert_type: app.cert_type },
+    notes: 'manual review resolved',
+  });
+
+  return res.json({ data: app });
 });
 
 export default router;

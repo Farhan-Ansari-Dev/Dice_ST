@@ -32,6 +32,16 @@ export interface CreateDraftApplicationInput {
   /** Direct "New Application" (catalog pick) requires a real product — set true
    *  to 404 on an unresolved product instead of creating a pending draft. */
   strict?: boolean;
+  /** Extra tags to stamp on the application (e.g. ['manual_review']). Additive. */
+  tags?: string[];
+  /** Structured manual-review metadata (no verified certification mapping). */
+  manualReview?: {
+    reason?: string;
+    original_product?: string;
+    requested_markets?: string[];
+    confidence_score?: number;
+    ai_summary?: string;
+  };
 }
 
 /**
@@ -78,7 +88,8 @@ export async function createDraftApplication(input: CreateDraftApplicationInput)
     documents: [],
     fee: { base_inr: workflow?.fee_structure?.application_fee_inr ?? 0, expedited: false, paid: false },
     priority: input.priority ?? 'medium',
-    tags: [],
+    tags: input.tags ?? [],
+    manual_review: input.manualReview,
     estimated_completion_at: new Date(Date.now() + durationDays * 24 * 3600 * 1000),
   });
 

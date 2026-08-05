@@ -243,15 +243,38 @@ export class MarketAccessService {
   ): Promise<{ id: string; name: string } | null> {
     const term = String(product || '').trim();
     if (!term) return null;
+    const norm = term.toLowerCase();
 
-    let cat = await ProductCategory.findOne({
+    // Layered matching (most precise first) so more products resolve before the
+    // manual-review fallback. Existing exact matches still take priority, so this
+    // is purely additive / backward compatible.
+    // 1. Exact category name (case-insensitive).
+    let cat: any = await ProductCategory.findOne({
       categoryName: new RegExp(`^${escapeRegex(term)}$`, 'i'),
     });
+    // 2. Category id.
     if (!cat && mongoose.Types.ObjectId.isValid(term)) {
       cat = await ProductCategory.findById(term);
     }
+    // 3. Exact keyword.
     if (!cat) {
-      cat = await ProductCategory.findOne({ keywords: term.toLowerCase() });
+      cat = await ProductCategory.findOne({ keywords: norm });
+    }
+    // 4. Keyword token match — any significant word of the product name is a
+    //    curated keyword (e.g. "Air Purifier" → keyword "purifier").
+    if (!cat) {
+      const tokens = norm.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+      if (tokens.length) cat = await ProductCategory.findOne({ keywords: { $in: tokens } });
+    }
+    // 5. Phrase containment — a category name or keyword appears within the
+    //    product name (e.g. "Air Purifier XL 3000" → "Air Purifier"). Categories
+    //    are a small curated set, so this whole-set scan is cheap and precise.
+    if (!cat) {
+      const all = await ProductCategory.find({}).lean();
+      cat = (all as any[]).find((c) =>
+        norm.includes(String(c.categoryName || '').toLowerCase()) ||
+        (c.keywords || []).some((k: any) => k && norm.includes(String(k).toLowerCase())),
+      ) || null;
     }
     return cat ? { id: cat._id.toString(), name: (cat as any).categoryName } : null;
   }
