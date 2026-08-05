@@ -57,6 +57,9 @@ export default function ApplicationDetailPage() {
   const [overrideReason, setOverrideReason] = useState('')
   const [escalateTo, setEscalateTo] = useState('')
   const [escalateReason, setEscalateReason] = useState('')
+  const [pickProduct, setPickProduct] = useState('')
+  const [hsCode, setHsCode] = useState('')
+  const [certTypeInput, setCertTypeInput] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['application', id] })
 
@@ -74,6 +77,14 @@ export default function ApplicationDetailPage() {
     queryKey: ['application_audit', id],
     queryFn: async () => (await apiClient.get(`/applications/${id}/audit`)).data.data || [],
     enabled: !!id,
+  })
+
+  // Manual review: fetch product suggestions when the application is flagged.
+  const isManual = !!app && (((app.tags || []) as string[]).includes('manual_review') || app.product_status === 'pending_validation')
+  const { data: suggest } = useQuery({
+    queryKey: ['product_suggestions', id],
+    queryFn: async () => (await apiClient.get(`/applications/${id}/product-suggestions`)).data.data,
+    enabled: isManual,
   })
 
   // Related records (only Documents / Certifications / Payments are linked to an
@@ -118,6 +129,11 @@ export default function ApplicationDetailPage() {
     mutationFn: (body: { manager_id: string; reason: string }) => apiClient.post(`/applications/${id}/escalate`, body),
     onSuccess: () => { invalidate(); toast.success('Escalated'); setEscalateTo(''); setEscalateReason('') },
     onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to escalate'),
+  })
+  const resolveMut = useMutation({
+    mutationFn: (body: { product_id: string; hs_code?: string; cert_type?: string }) => apiClient.post(`/applications/${id}/resolve-product`, body),
+    onSuccess: () => { invalidate(); queryClient.invalidateQueries({ queryKey: ['application_audit', id] }); toast.success('Product resolved — workflow can continue'); setPickProduct(''); setHsCode(''); setCertTypeInput('') },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to resolve product'),
   })
   const downloadDoc = async (docId: string) => {
     try {
@@ -289,6 +305,36 @@ export default function ApplicationDetailPage() {
 
         {/* Right column — actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Manual review — identify product, assign HS code + certification, continue */}
+          {isManual && (
+            <div style={{ ...card, borderColor: '#FFB347' }}>
+              <h3 style={sectionTitle}><Package size={15} /> Manual Review</h3>
+              <div style={{ ...muted, marginBottom: 10 }}>
+                {app.manual_review?.original_product && <div>Customer product: <b style={{ color: 'var(--text-primary)' }}>{app.manual_review.original_product}</b></div>}
+                {app.manual_review?.requested_markets?.length ? <div>Markets: {app.manual_review.requested_markets.join(', ')}</div> : null}
+                {app.manual_review?.reason && <div>Reason: {app.manual_review.reason}</div>}
+                {typeof app.manual_review?.confidence_score === 'number' && <div>Confidence: {app.manual_review.confidence_score}%</div>}
+                {app.manual_review?.ai_summary && <div>Notes: {app.manual_review.ai_summary}</div>}
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Suggested products</div>
+              {(suggest?.suggestions || []).length === 0
+                ? <p style={muted}>No suggestions — paste a Product ID below.</p>
+                : suggest.suggestions.map((s: any) => (
+                    <label key={s.product_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', cursor: 'pointer' }}>
+                      <input type="radio" name="pickProduct" checked={pickProduct === s.product_id} onChange={() => { setPickProduct(s.product_id); if (s.hsn_code) setHsCode(s.hsn_code) }} />
+                      <span style={{ color: 'var(--text-primary)', fontSize: 13 }}>{s.name}{s.brand ? ` — ${s.brand}` : ''}</span>
+                      <span style={muted}>{s.matchType} · {s.confidence}%</span>
+                    </label>
+                  ))}
+              <input value={pickProduct} onChange={e => setPickProduct(e.target.value)} placeholder="…or paste a Product ID" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', margin: '10px 0' }} />
+              <input value={hsCode} onChange={e => setHsCode(e.target.value)} placeholder="HS / HSN code (optional)" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 10 }} />
+              <input value={certTypeInput} onChange={e => setCertTypeInput(e.target.value)} placeholder="Certification type (e.g. BIS_CRS, optional)" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 12 }} />
+              <Button size="sm" disabled={!pickProduct || resolveMut.isPending} onClick={() => resolveMut.mutate({ product_id: pickProduct, hs_code: hsCode || undefined, cert_type: certTypeInput || undefined })}>
+                {resolveMut.isPending ? 'Resolving…' : 'Resolve & Continue'}
+              </Button>
+            </div>
+          )}
+
           {/* Change status */}
           <div style={card}>
             <h3 style={sectionTitle}><GitBranch size={15} /> Change Status</h3>

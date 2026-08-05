@@ -33,6 +33,8 @@ export interface CreateLeadInput {
   productDescription?: string;
   targetMarkets?: string[];
   notes?: string;
+  /** "Continue as Manual Application" — no certification mapping was found. */
+  manualReview?: boolean;
 }
 
 const leadsService = {

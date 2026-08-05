@@ -99,8 +99,31 @@ const NewCertificationScreen: React.FC = () => {
         return;
       }
 
+      const certs = response.data?.certifications || [];
+
+      // Workflow gate: never advance to Step 2 (Review & Apply) with zero
+      // certifications. The backend deliberately returns isValid:true even when
+      // it has no verified mapping (certifications:[]), so gating on isValid let
+      // the user reach Apply and dead-end. Gate on the actual result instead and
+      // offer recovery actions rather than a dead-end popup.
+      if (certs.length === 0) {
+        setIsAnalyzing(false);
+        Alert.alert(
+          'No certifications found',
+          `We don't yet have a verified certification mapping for "${selectedProduct}" in ${selectedMarkets.join(', ')}. ` +
+            'You can continue as a manual application — our certification team will identify the product and the exact certifications for you. Nothing you entered is lost.',
+          [
+            { text: 'Change Product', onPress: () => setSelectedProduct(null) },
+            { text: 'Change Markets', onPress: () => setSelectedMarkets([]) },
+            { text: 'Continue as Manual Application', onPress: () => { handleManualApply(); } },
+            { text: 'Contact Sanyog Expert', onPress: () => navigation.navigate('Communication') },
+          ],
+        );
+        return;
+      }
+
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setRecommendedCerts(response.data?.certifications || []);
+      setRecommendedCerts(certs);
       setStep(2);
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.message || 'Failed to analyze requirements.');
@@ -150,6 +173,48 @@ const NewCertificationScreen: React.FC = () => {
         screen: 'Home',
         params: { screen: 'MyWork' },
       });
+    } catch (err: any) {
+      showToast(
+        'Could not submit',
+        err?.response?.data?.message ?? 'Please check your connection and try again.',
+        'error',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  /** Continue as Manual Application when no certification mapping was found.
+   *  Preserves the entered product + markets; the backend creates a
+   *  pending-validation draft (tagged manual_review) and notifies a manager, who
+   *  identifies the product, assigns an HS code, and attaches certifications. */
+  const handleManualApply = async () => {
+    if (!user?.email) {
+      showToast('Sign in required', 'Please sign in before applying.', 'error');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await leadsService.create({
+        serviceId: 'MANUAL_REVIEW',
+        serviceName: `Manual review — ${selectedProduct ?? 'product'}`,
+        contactName: user.name ?? user.email.split('@')[0],
+        contactEmail: user.email,
+        contactPhone: user.phone,
+        companyName: user.companyName,
+        productDescription: selectedProduct ?? undefined,
+        targetMarkets: selectedMarkets,
+        notes: `Manual application — no verified certification mapping for "${selectedProduct}" in ${selectedMarkets.join(', ')}. Pending product validation.`,
+        manualReview: true,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['mywork'] });
+      showToast(
+        'Application created',
+        'Your application is pending validation. Our team will identify the certifications — continue from My Work.',
+        'success',
+      );
+      navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'MyWork' } });
     } catch (err: any) {
       showToast(
         'Could not submit',

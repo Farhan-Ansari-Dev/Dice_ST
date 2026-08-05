@@ -98,39 +98,13 @@ android {
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
-    debug {
-        storeFile file('debug.keystore')
-        storePassword 'android'
-        keyAlias 'androiddebugkey'
-        keyPassword 'android'
-    }
-
-    // Release signing credentials are read from android/keystore.properties
-    // (gitignored) or, in CI, from environment variables. They must never live
-    // in gradle.properties — that file is tracked.
-    release {
-        def keystorePropsFile = rootProject.file('keystore.properties')
-        if (keystorePropsFile.exists()) {
-            def keystoreProps = new Properties()
-            keystorePropsFile.withInputStream { keystoreProps.load(it) }
-            storeFile file(keystoreProps['MYAPP_UPLOAD_STORE_FILE'])
-            storePassword keystoreProps['MYAPP_UPLOAD_STORE_PASSWORD']
-            keyAlias keystoreProps['MYAPP_UPLOAD_KEY_ALIAS']
-            keyPassword keystoreProps['MYAPP_UPLOAD_KEY_PASSWORD']
-        } else if (System.getenv('MYAPP_UPLOAD_STORE_FILE')) {
-            storeFile file(System.getenv('MYAPP_UPLOAD_STORE_FILE'))
-            storePassword System.getenv('MYAPP_UPLOAD_STORE_PASSWORD')
-            keyAlias System.getenv('MYAPP_UPLOAD_KEY_ALIAS')
-            keyPassword System.getenv('MYAPP_UPLOAD_KEY_PASSWORD')
-        } else if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-            // Legacy fallback — kept so existing local setups keep building.
-            storeFile file(MYAPP_UPLOAD_STORE_FILE)
-            storePassword MYAPP_UPLOAD_STORE_PASSWORD
-            keyAlias MYAPP_UPLOAD_KEY_ALIAS
-            keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
         }
     }
-}
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
@@ -138,7 +112,7 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.release
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
