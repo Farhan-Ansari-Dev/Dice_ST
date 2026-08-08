@@ -54,6 +54,10 @@ class ApiService {
 
           try {
             const refreshToken = await SecureStore.getItemAsync(STORAGE_KEYS.REFRESH_TOKEN);
+            if (!refreshToken) {
+              // No refresh token stored — the session cannot be recovered.
+              throw Object.assign(new Error('no_refresh_token'), { response: { status: 401 } });
+            }
             const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
             const newToken = data.accessToken;
             if (data.refreshToken) {
@@ -66,7 +70,24 @@ class ApiService {
             return this.client(originalRequest);
           } catch (refreshError) {
             this.refreshSubscribers = [];
-            await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN).catch(() => {});
+            // Only a definitive auth failure (invalid/revoked/absent refresh token)
+            // means the session is unrecoverable. On a transient error (offline /
+            // 5xx) keep the session so an online retry can still succeed.
+            const status = (refreshError as any)?.response?.status;
+            if (status === 401 || status === 403) {
+              // Reset ALL auth state and route back to Login. Previously only the
+              // access token was deleted, leaving the app "authenticated" with a dead
+              // token — a silent 401 loop with no way back to Login (P1). Loaded
+              // lazily to avoid the api → authService → authStore import cycle.
+              try {
+                const { useAuthStore } = await import('../store/authStore');
+                await useAuthStore.getState().logout();
+              } catch {
+                await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN).catch(() => {});
+                await SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN).catch(() => {});
+                await SecureStore.deleteItemAsync(STORAGE_KEYS.USER_DATA).catch(() => {});
+              }
+            }
             return Promise.reject(refreshError);
           } finally {
             this.isRefreshing = false;
