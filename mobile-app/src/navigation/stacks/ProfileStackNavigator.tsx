@@ -26,9 +26,16 @@ import ReferralScreen from '../../screens/profile/ReferralScreen';
 import PartnerOnboardingScreen from '../../screens/profile/PartnerOnboardingScreen';
 import VaultStackNavigator from '../../navigation/stacks/VaultStackNavigator';
 import ConsultantVerificationScreen from '../../screens/consultant/VerificationScreen';
+import { useConfigStore } from '../../store/configStore';
 
 const Stack = createNativeStackNavigator();
-const ProfileStackNavigator: React.FC = () => (
+const ProfileStackNavigator: React.FC = () => {
+  // MCA/GSTIN lookup routes are registered only when the company-lookup feature
+  // flag is on (default OFF). They stay out of the production build's route tree
+  // — no dead route, no reachable empty screen — and re-enable via Remote Config
+  // once the external MCA21 / GST APIs are integrated. Screen code is untouched.
+  const mcaGstinLookupEnabled = useConfigStore((s) => s.featureFlags.enable_mca_gstin_lookup);
+  return (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="ProfileHome" component={ProfileScreen} />
     <Stack.Screen name="Settings" component={SettingsScreen} />
@@ -49,12 +56,17 @@ const ProfileStackNavigator: React.FC = () => (
     <Stack.Screen name="LiveChat" component={LiveChatScreen} />
     <Stack.Screen name="VideoConsultation" component={VideoConsultationScreen} />
     <Stack.Screen name="RaiseTicket" component={RaiseTicketScreen} />
-    <Stack.Screen name="GSTINLookup" component={GSTINLookupScreen} />
-    <Stack.Screen name="MCASearch" component={MCASearchScreen} />
+    {mcaGstinLookupEnabled && (
+      <>
+        <Stack.Screen name="GSTINLookup" component={GSTINLookupScreen} />
+        <Stack.Screen name="MCASearch" component={MCASearchScreen} />
+      </>
+    )}
     <Stack.Screen name="Referral" component={ReferralScreen} />
     <Stack.Screen name="PartnerOnboarding" component={PartnerOnboardingScreen} />
     <Stack.Screen name="Vault" component={VaultStackNavigator} />
     <Stack.Screen name="ConsultantVerification" component={ConsultantVerificationScreen} />
   </Stack.Navigator>
-);
+  );
+};
 export default ProfileStackNavigator;

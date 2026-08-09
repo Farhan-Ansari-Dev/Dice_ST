@@ -9,6 +9,10 @@ interface FeatureFlags {
   enable_referral_rewards: boolean;
   enable_promotional_banners: boolean;
   enable_notifications: boolean;
+  // MCA & GSTIN company-lookup screens. Default OFF — they require external
+  // government APIs (MCA21 / GST portal) that are not integrated yet, so they are
+  // hidden from production. Flip via Remote Config once those APIs are wired.
+  enable_mca_gstin_lookup: boolean;
 }
 
 interface DynamicConfig {
@@ -34,6 +38,7 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   enable_referral_rewards: true,
   enable_promotional_banners: false,
   enable_notifications: true,
+  enable_mca_gstin_lookup: false,
 };
 
 const DEFAULT_DYNAMIC_CONFIG: DynamicConfig = {
