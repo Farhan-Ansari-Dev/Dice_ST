@@ -16,6 +16,7 @@ import { useConfigStore } from './src/store/configStore';
 import { ThemeProvider, loadPersistedTheme, useTheme } from './src/theme';
 import OfflineBanner from './src/components/common/OfflineBanner';
 import { ToastProvider } from './src/components/common/ToastProvider';
+import ErrorBoundary from './src/components/common/ErrorBoundary';
 
 function ThemedStatusBar() {
   const { isDark } = useTheme();
@@ -178,7 +179,9 @@ export default function App() {
             <ToastProvider>
               <ThemedStatusBar />
               <OfflineBanner />
-              <RootNavigator />
+              <ErrorBoundary>
+                <RootNavigator />
+              </ErrorBoundary>
             </ToastProvider>
           </ThemeProvider>
         </QueryClientProvider>
