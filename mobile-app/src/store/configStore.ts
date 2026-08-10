@@ -13,6 +13,11 @@ interface FeatureFlags {
   // government APIs (MCA21 / GST portal) that are not integrated yet, so they are
   // hidden from production. Flip via Remote Config once those APIs are wired.
   enable_mca_gstin_lookup: boolean;
+  // Remote (Expo) push notifications. Default OFF — mobile push is a POST-LAUNCH
+  // feature; this release ships without Expo/FCM so the app must not initialize
+  // any push service at launch. In-app notifications (polled via the API) are
+  // unaffected. Flip via Remote Config when push is wired up post-launch.
+  enable_push_notifications: boolean;
 }
 
 interface DynamicConfig {
@@ -39,6 +44,7 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   enable_promotional_banners: false,
   enable_notifications: true,
   enable_mca_gstin_lookup: false,
+  enable_push_notifications: false,
 };
 
 const DEFAULT_DYNAMIC_CONFIG: DynamicConfig = {

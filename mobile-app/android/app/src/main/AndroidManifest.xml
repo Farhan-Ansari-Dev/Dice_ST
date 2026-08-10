@@ -20,6 +20,11 @@
     </intent>
   </queries>
   <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false" android:fullBackupContent="@xml/secure_store_backup_rules" android:dataExtractionRules="@xml/secure_store_data_extraction_rules">
+    <!-- Push is a post-launch feature; this release ships without FCM/google-services.json.
+         Disable Firebase auto-init (pulled in transitively by expo-notifications) so the
+         app never attempts to initialize any push service at startup. -->
+    <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false"/>
+    <meta-data android:name="firebase_analytics_collection_enabled" android:value="false"/>
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>

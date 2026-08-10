@@ -7,10 +7,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import RootNavigator from './src/navigation/RootNavigator';
 import { useNotificationStore } from './src/store/notificationStore';
 import { useAuthStore } from './src/store/authStore';
+import { useConfigStore } from './src/store/configStore';
 import { ThemeProvider, loadPersistedTheme, useTheme } from './src/theme';
 import OfflineBanner from './src/components/common/OfflineBanner';
 import { ToastProvider } from './src/components/common/ToastProvider';
@@ -71,12 +73,19 @@ export default function App() {
     hideSplash();
     loadPersistedTheme();
     loadStoredAuth();
-    setupNotificationListeners();
-    // Request push permission 3 seconds after app opens (gives user time to see the app first)
-    const timer = setTimeout(() => {
-      registerForPushNotifications();
-    }, 3000);
-    return () => clearTimeout(timer);
+    // Remote push notifications are a POST-LAUNCH feature and are DISABLED by
+    // default. This release ships without Expo/FCM, so the app must not attempt
+    // to initialize any push service (that previously threw "FirebaseApp not
+    // initialized"). In-app notifications (polled via the API) are unaffected.
+    // Re-enable later by flipping `enable_push_notifications` in Remote Config.
+    if (useConfigStore.getState().featureFlags.enable_push_notifications) {
+      setupNotificationListeners();
+      // Request push permission a few seconds after open (lets the user see the app first)
+      const timer = setTimeout(() => {
+        registerForPushNotifications();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   const hideSplash = async () => {
@@ -98,9 +107,18 @@ export default function App() {
         return;
       }
 
+      // getExpoPushTokenAsync needs the EAS project ID (a UUID), NOT the slug.
+      // Read it from app config so there is a single source of truth.
+      const projectId =
+        (Constants.expoConfig?.extra?.eas?.projectId as string | undefined) ??
+        (Constants as any).easConfig?.projectId;
       const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: 'sanyog-conformity-solutions',
-      }).catch(() => null);
+        projectId,
+      }).catch((err) => {
+        // Log instead of swallowing silently — a failed token means no server push.
+        console.warn('[Push] getExpoPushTokenAsync failed:', err?.message ?? err);
+        return null;
+      });
 
       if (tokenData?.data) {
         setPushToken(tokenData.data);
