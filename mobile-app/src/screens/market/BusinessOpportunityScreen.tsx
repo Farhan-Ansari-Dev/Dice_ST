@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTheme } from '../../theme';
@@ -71,7 +72,7 @@ export default function BusinessOpportunityScreen() {
 }
 
 const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.bgDark },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { padding: 4 },
   headerRight: { flexDirection: 'row' },
@@ -81,10 +82,10 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   title: { fontSize: 24, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 4 },
   industry: { fontSize: 14, color: colors.primary, fontWeight: '600', marginBottom: 20 },
   metricsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  metricCard: { flex: 1, backgroundColor: colors.surface, padding: 16, borderRadius: 12, marginHorizontal: 4, alignItems: 'center' },
+  metricCard: { flex: 1, backgroundColor: colors.bgCard, padding: 16, borderRadius: 12, marginHorizontal: 4, alignItems: 'center' },
   metricLabel: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
   metricValue: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary },
-  card: { backgroundColor: colors.surface, padding: 16, borderRadius: 12, marginBottom: 16 },
+  card: { backgroundColor: colors.bgCard, padding: 16, borderRadius: 12, marginBottom: 16 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 },
   text: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
   certList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

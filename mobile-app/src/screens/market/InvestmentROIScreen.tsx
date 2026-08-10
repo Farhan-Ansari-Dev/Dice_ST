@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, Typography, Shadows, BorderRadius, Spacing } from '../../theme';
@@ -65,11 +66,11 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   glassBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', alignItems: 'center', justifyContent: 'center' },
   headerTitle: { ...Typography.h3, color: colors.textPrimary },
   content: { padding: Spacing.xl },
-  card: { backgroundColor: colors.surface, padding: Spacing.xl, borderRadius: BorderRadius['2xl'], ...Shadows.sm, marginBottom: Spacing.xl },
+  card: { backgroundColor: colors.bgCard, padding: Spacing.xl, borderRadius: BorderRadius['2xl'], ...Shadows.sm, marginBottom: Spacing.xl },
   sectionTitle: { ...Typography.h4, color: colors.textPrimary, marginBottom: Spacing.xs },
   subText: { ...Typography.body2, color: colors.textSecondary, marginBottom: Spacing.lg },
   label: { ...Typography.caption, color: colors.textPrimary, marginBottom: 4, marginLeft: 4 },
-  input: { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.background, borderWidth: 1, borderColor: colors.border, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.lg, height: 56, marginBottom: Spacing.md, ...Typography.body1, color: colors.textPrimary },
+  input: { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.bgCardLight, borderWidth: 1, borderColor: colors.border, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.lg, height: 56, marginBottom: Spacing.md, ...Typography.body1, color: colors.textPrimary },
   
   resultCard: { padding: Spacing.xl, borderRadius: BorderRadius.xl, alignItems: 'center', ...Shadows.sm },
   resultLabel: { ...Typography.body1, color: colors.textPrimary, marginBottom: Spacing.xs },

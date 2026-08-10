@@ -23,6 +23,13 @@ prepare_react_native_project!
 target 'DicebySanyog' do
   use_expo_modules!
 
+  # Google Sign-In's AppCheckCore is a Swift pod that imports GoogleUtilities and
+  # RecaptchaInterop; when built as static libraries those must expose module maps.
+  # Enable modular headers for just these transitive deps (targeted, not global).
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'RecaptchaInterop', :modular_headers => true
+  pod 'AppCheckCore', :modular_headers => true
+
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
   else

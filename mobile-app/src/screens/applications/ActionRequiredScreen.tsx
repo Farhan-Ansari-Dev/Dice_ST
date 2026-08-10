@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../theme';
@@ -82,18 +83,18 @@ const ActionRequiredScreen = () => {
 };
 
 const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.bgDark },
   header: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { marginRight: 16 },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary },
   content: { padding: 16 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   summaryText: { flex: 1, fontSize: 16, color: colors.textSecondary },
-  refreshBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.surface, alignItems: 'center', justifyContent: 'center' },
+  refreshBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.bgCard, alignItems: 'center', justifyContent: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   card: { 
     width: '48%', 
-    backgroundColor: colors.surface, 
+    backgroundColor: colors.bgCard, 
     borderRadius: 16, 
     padding: 16, 
     marginBottom: 16,

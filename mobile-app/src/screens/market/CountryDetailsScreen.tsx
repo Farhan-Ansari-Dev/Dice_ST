@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTheme } from '../../theme';
@@ -68,13 +69,13 @@ export default function CountryDetailsScreen() {
 }
 
 const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.bgDark },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { padding: 4 },
   bookmarkBtn: { padding: 4 },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary },
   content: { padding: 16 },
-  card: { backgroundColor: colors.surface, padding: 16, borderRadius: 12, marginBottom: 16 },
+  card: { backgroundColor: colors.bgCard, padding: 16, borderRadius: 12, marginBottom: 16 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 },
   text: { fontSize: 14, color: colors.textSecondary, lineHeight: 22, marginBottom: 4 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },

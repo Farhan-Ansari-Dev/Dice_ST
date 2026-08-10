@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, Typography, Shadows, BorderRadius, Spacing } from '../../theme';
@@ -103,16 +104,16 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   glassBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', alignItems: 'center', justifyContent: 'center' },
   headerTitle: { ...Typography.h3, color: colors.textPrimary },
   content: { padding: Spacing.xl },
-  card: { backgroundColor: colors.surface, padding: Spacing.xl, borderRadius: BorderRadius['2xl'], ...Shadows.sm, marginBottom: Spacing.xl },
+  card: { backgroundColor: colors.bgCard, padding: Spacing.xl, borderRadius: BorderRadius['2xl'], ...Shadows.sm, marginBottom: Spacing.xl },
   sectionTitle: { ...Typography.h4, color: colors.textPrimary, marginBottom: Spacing.xs },
   subText: { ...Typography.body2, color: colors.textSecondary, marginBottom: Spacing.lg },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.background, borderWidth: 1, borderColor: colors.border, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.lg, height: 56, marginBottom: Spacing.xl },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : colors.bgCardLight, borderWidth: 1, borderColor: colors.border, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.lg, height: 56, marginBottom: Spacing.xl },
   input: { flex: 1, marginLeft: Spacing.sm, ...Typography.body1, color: colors.textPrimary },
   
   resultContainer: { marginTop: Spacing.md },
   resultHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md },
   resultTitle: { ...Typography.h4, color: colors.textPrimary, marginLeft: Spacing.sm },
-  resultCard: { backgroundColor: colors.surface, padding: Spacing.lg, borderRadius: BorderRadius.xl, marginBottom: Spacing.md, ...Shadows.sm },
+  resultCard: { backgroundColor: colors.bgCard, padding: Spacing.lg, borderRadius: BorderRadius.xl, marginBottom: Spacing.md, ...Shadows.sm },
   resultLabel: { ...Typography.caption, color: colors.textSecondary, marginBottom: 4 },
   resultValue: { ...Typography.h5, color: colors.textPrimary },
 });

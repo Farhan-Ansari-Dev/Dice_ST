@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, Typography, Shadows, BorderRadius, Spacing } from '../../theme';
@@ -62,11 +63,11 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   mapText: { ...Typography.h4, color: colors.primary, marginTop: Spacing.md },
   mapSubText: { ...Typography.body2, color: colors.textSecondary, marginTop: 4 },
   sectionTitle: { ...Typography.h4, color: colors.textPrimary, marginBottom: Spacing.lg },
-  marketCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: Spacing.lg, borderRadius: BorderRadius.xl, marginBottom: Spacing.md, ...Shadows.sm },
+  marketCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bgCard, padding: Spacing.lg, borderRadius: BorderRadius.xl, marginBottom: Spacing.md, ...Shadows.sm },
   flag: { fontSize: 32, marginRight: Spacing.md },
   marketInfo: { flex: 1 },
   marketName: { ...Typography.h5, color: colors.textPrimary, marginBottom: 2 },
   marketSub: { ...Typography.caption, color: colors.textSecondary },
-  demandBadge: { backgroundColor: colors.background, paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full },
+  demandBadge: { backgroundColor: colors.bgCardLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full },
   demandText: { ...Typography.caption, fontWeight: 'bold' },
 });

@@ -112,7 +112,11 @@ describe('no provider configured — every AI endpoint fails honestly', () => {
     ['analyze-document',       'post', '/api/v1/ai/analyze-document',       { text: 'some document text' }],
     ['analyze-hs-code',        'post', '/api/v1/ai/analyze-hs-code',        { hsCode: '8517' }],
     ['analyze-risks',          'post', '/api/v1/ai/analyze-risks',          { context: 'electronics to EU' }],
-    ['analyze-certifications', 'post', '/api/v1/ai/analyze-certifications', { productName: 'speaker', markets: ['IN'] }],
+    // NOTE: analyze-certifications is intentionally NOT here. It is a DATA-driven
+    // endpoint (MarketAccessService reads the compliance DB — the LLM is never
+    // involved), so it does not depend on an AI provider and must not 503 when one
+    // is absent. Its safety contract (no invented codes → manual review) is covered
+    // by the dedicated 'never emits invented certification codes' test below.
     ['recommendations',        'get',  '/api/v1/ai/recommendations',        undefined],
   ];
 
@@ -153,7 +157,10 @@ describe('no provider configured — every AI endpoint fails honestly', () => {
     const body = JSON.stringify(res.body);
     expect(body).not.toMatch(/COMP_/);
     expect(body).not.toMatch(/General Compliance/);
-    expect(body).not.toMatch(/"certifications"/);
+    // Data-driven resolver: with no verified mapping it returns an EMPTY list and
+    // flags the product for a specialist to validate — it never invents codes.
+    expect(res.body.data.certifications).toEqual([]);
+    expect(res.body.data.productValidationRequired).toBe(true);
   });
 
   it('does not write a fake assistant turn into conversation history', async () => {

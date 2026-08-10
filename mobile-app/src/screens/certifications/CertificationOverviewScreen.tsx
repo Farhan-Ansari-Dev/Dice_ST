@@ -9,7 +9,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, LayoutAnimation, Platform, UIManager,
+  ActivityIndicator, LayoutAnimation,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,9 +22,6 @@ import { getCertificationOverview } from '../../data/certificationOverviews';
 import { useQueryClient } from '@tanstack/react-query';
 import leadsService from '../../services/leadsService';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const CertificationOverviewScreen: React.FC = () => {
   const navigation = useNavigation<any>();

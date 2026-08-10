@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   Platform,
-  UIManager,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -30,9 +29,6 @@ interface Standard {
   required_documents: IDocumentRequirement[];
 }
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const UploadDocumentsScreen: React.FC = () => {
   const navigation = useNavigation<any>();

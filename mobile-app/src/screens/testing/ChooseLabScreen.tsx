@@ -6,8 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Platform,
-  UIManager,
   LayoutAnimation,
   Animated,
   FlatList,
@@ -21,9 +19,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
 import Button from '../../components/common/Button';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const LAB_MARKETPLACE = [
   { id: 'lab-1', name: 'SGS Electronics Lab', type: 'Lab', rating: 4.9, reviews: '9.8k', time: '3-5 days', price: 'From ₹12k' },

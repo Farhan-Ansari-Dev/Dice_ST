@@ -6,8 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Platform,
-  UIManager,
   LayoutAnimation,
   Animated,
   FlatList,
@@ -21,9 +19,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
 import Button from '../../components/common/Button';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const IB_MARKETPLACE = [
   { id: 'ib-1', name: 'Bureau Veritas Inspect', type: 'IB', rating: 4.9, reviews: '8.7k', time: '2-4 days', price: 'From ₹10k' },

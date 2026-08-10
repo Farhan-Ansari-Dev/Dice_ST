@@ -5,8 +5,6 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Platform,
-  UIManager,
   LayoutAnimation,
   Alert,
 } from 'react-native';
@@ -17,9 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
 import Button from '../../components/common/Button';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const UploadTestingDocumentsScreen: React.FC = () => {
   const navigation = useNavigation<any>();

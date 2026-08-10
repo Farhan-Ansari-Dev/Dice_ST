@@ -247,15 +247,28 @@ const UserTypeScreen: React.FC = () => {
       animateToStep(step + 1);
     } else {
       setSubmitting(true);
-      await setOnboardingProfile({
-        businessRole: businessRole!,
-        industries: Array.from(industries),
-        targetMarkets: Array.from(targetMarkets),
-        interestedCertifications: Array.from(certifications),
-        companySize: companySize!,
-        businessGoals: Array.from(businessGoals),
-      });
-      await SecureStore.deleteItemAsync(ONBOARDING_DRAFT_KEY).catch(() => {});
+      try {
+        await setOnboardingProfile({
+          businessRole: businessRole!,
+          industries: Array.from(industries),
+          targetMarkets: Array.from(targetMarkets),
+          interestedCertifications: Array.from(certifications),
+          companySize: companySize!,
+          businessGoals: Array.from(businessGoals),
+        });
+        await SecureStore.deleteItemAsync(ONBOARDING_DRAFT_KEY).catch(() => {});
+        // On success the navigator swaps this screen for Main (isUserTypeDone),
+        // so `submitting` is intentionally left set to avoid a flash of the CTA.
+      } catch (e) {
+        // Without this, a failed/slow save left the button stuck on
+        // "Setting up your profile…" forever with no error and no retry.
+        setSubmitting(false);
+        showToast(
+          'Setup Failed',
+          'Could not save your profile. Please check your connection and try again.',
+          'error',
+        );
+      }
     }
   };
 
