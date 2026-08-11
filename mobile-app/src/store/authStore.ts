@@ -136,6 +136,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    // Unregister this device's push token FIRST — the DELETE call needs the auth
+    // token, which we are about to clear. No-op when nothing is registered (e.g.
+    // push disabled). Imported lazily to avoid an import cycle; never blocks logout.
+    try {
+      const notificationsService = (await import('../services/notificationsService')).default;
+      await notificationsService.unregisterPushToken();
+    } catch (e) {
+      console.warn('Push unregister during logout failed (ignored):', e);
+    }
     try {
       await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN);
       await SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN);

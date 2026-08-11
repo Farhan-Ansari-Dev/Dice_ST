@@ -15,6 +15,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import { useConfigStore } from '../store/configStore';
 import MaintenanceScreen from '../screens/common/MaintenanceScreen';
 import notificationsService from '../services/notificationsService';
+import { navigationRef } from '../services/notificationRouter';
 
 const Stack = createNativeStackNavigator();
 // Total splash animation duration (spring 400ms + delay 120ms + fade 380ms + buffer 200ms)
@@ -90,7 +91,7 @@ const RootNavigator: React.FC = () => {
     : undefined;
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <Stack.Navigator
         screenOptions={{ headerShown: false, contentStyle: { backgroundColor: cardBg } }}
       >

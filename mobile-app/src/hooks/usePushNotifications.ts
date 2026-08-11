@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { APP_VERSION } from '../utils/constants';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -17,7 +17,7 @@ Notifications.setNotificationHandler({
 });
 
 export function usePushNotifications() {
-  const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
+  const [devicePushToken, setDevicePushToken] = useState<string | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
@@ -27,9 +27,13 @@ export function usePushNotifications() {
     if (isAuthenticated) {
       registerForPushNotificationsAsync().then((token) => {
         if (token) {
-          setExpoPushToken(token);
-          // Send token to backend
-          api.post('/notifications/push-tokens', { token }).catch((err) => {
+          setDevicePushToken(token);
+          // Send native token to backend (→ AWS SNS)
+          api.post('/notifications/push-tokens', {
+            token,
+            platform: Platform.OS === 'ios' ? 'ios' : 'android',
+            appVersion: APP_VERSION,
+          }).catch((err) => {
             console.warn('Failed to register push token with backend', err);
           });
         }
@@ -51,7 +55,7 @@ export function usePushNotifications() {
     };
   }, [isAuthenticated]);
 
-  return { expoPushToken, notification };
+  return { devicePushToken, notification };
 }
 
 async function registerForPushNotificationsAsync() {
@@ -79,18 +83,8 @@ async function registerForPushNotificationsAsync() {
     }
     
     try {
-      const projectId =
-        Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-      
-      if (!projectId) {
-        console.warn('Project ID not found. Ensure app.json is configured with EAS project ID.');
-      }
-      
-      token = (
-        await Notifications.getExpoPushTokenAsync({
-          projectId,
-        })
-      ).data;
+      // Native device push token (APNs/FCM) for AWS SNS — not an Expo push token.
+      token = (await Notifications.getDevicePushTokenAsync()).data as string;
     } catch (e) {
       token = `${e}`;
     }

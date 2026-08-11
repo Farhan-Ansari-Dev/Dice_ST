@@ -52,10 +52,9 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
 
   try {
-    const token = await Notifications.getExpoPushTokenAsync({
-      projectId: '1d04926d-1f47-4d73-b16e-3166301f0791',
-    });
-    return token.data;
+    // Native device push token (APNs on iOS, FCM on Android) for AWS SNS.
+    const token = await Notifications.getDevicePushTokenAsync();
+    return String(token.data);
   } catch (e) {
     console.log('Could not get push token:', e);
     return null;

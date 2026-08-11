@@ -26,10 +26,10 @@ const notificationsService = {
   delete: (id: string) =>
     api.delete<{ message: string }>(`/notifications/${id}`),
 
-  registerPushToken: async (token: string, platform: 'ios' | 'android') => {
+  registerPushToken: async (token: string, platform: 'ios' | 'android', appVersion?: string) => {
     const saved = await SecureStore.getItemAsync(STORAGE_KEYS.PUSH_TOKEN).catch(() => null);
-    if (saved === token) return; // already registered
-    const result = await api.post<{ message: string }>('/notifications/push-tokens', { token, platform });
+    if (saved === token) return; // already registered (token unchanged)
+    const result = await api.post<{ message: string }>('/notifications/push-tokens', { token, platform, appVersion });
     await SecureStore.setItemAsync(STORAGE_KEYS.PUSH_TOKEN, token);
     return result;
   },
