@@ -203,7 +203,7 @@ const LoginScreen: React.FC = () => {
           <Animated.View style={[styles.logoArea, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
             <View style={styles.logoImageWrap} accessibilityRole="image" accessibilityLabel="Dice logo">
               <Image
-                source={require('../../../assets/icon.png')}
+                source={require('../../../assets/logo-dark.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
