@@ -12,6 +12,7 @@ export { DocumentVersion, IDocumentVersion } from './DocumentVersion';
 export { AuditLog, IAuditLog, AuditAction, audit } from './AuditLog';
 export { Workflow, IWorkflow } from './Workflow';
 export { Notification, INotification } from './Notification';
+export { Device, IDevice } from './Device';
 export { Payment, IPayment, PaymentStatus } from './Payment';
 export * from './AIConversation';
 export { Insight, IInsight } from './Insight';

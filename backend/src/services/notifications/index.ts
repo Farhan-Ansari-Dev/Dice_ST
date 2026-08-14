@@ -23,9 +23,11 @@
  *   });
  */
 import { Types } from 'mongoose';
-import { User, Notification } from '../../models';
+import { User } from '../../models/User';
+import { Notification } from '../../models/Notification';
 import { audit } from '../../models/AuditLog';
-import { sendExpoPush, sendWebPush } from './push';
+import { sendWebPush } from './push';
+import { publishToUser, normalizeData } from './sns';
 import { sendEmail } from './email';
 import { sendSMS } from './sms';
 import { logger } from '../../utils/logger';
@@ -83,23 +85,31 @@ export async function notify(input: NotifyInput): Promise<{
   // Track delivered channels for analytics
   const delivered: string[] = ['in_app'];
 
-  // 2. Push — fire-and-forget in parallel for speed
-  if (channels.includes('push') && user.expo_push_tokens?.length) {
+  // 2. Push — mobile via AWS SNS (native APNs/FCM), web via VAPID
+  if (channels.includes('push')) {
     result.push = { mobile: false, web: false };
 
-    // Mobile push (Expo)
+    // Mobile push (AWS SNS → APNs/FCM). No-op when PUSH_PROVIDER=off.
     try {
-      const tickets = await sendExpoPush({
-        tokens: user.expo_push_tokens,
+      // Normalize to the {type, screen, entityId, data} contract the mobile
+      // notificationRouter navigates from (derives screen/entityId from
+      // resource_type/resource_id or existing data keys; preserves all keys).
+      const pushData = normalizeData({
+        type: input.type,
+        resource_type: input.resource_type,
+        resource_id: input.resource_id,
+        data: input.data,
+      });
+      const { sent } = await publishToUser(user._id, {
         title: input.title,
         body: input.body,
-        data: input.data,
-        priority: input.priority,
+        type: input.type,
+        data: pushData,
       });
-      result.push.mobile = tickets.some(t => t.status === 'ok');
+      result.push.mobile = sent > 0;
       if (result.push.mobile) delivered.push('push:mobile');
     } catch (err) {
-      logger.error('[notify] mobile push failed', err);
+      logger.error('[notify] mobile push (sns) failed', err);
     }
   }
 
