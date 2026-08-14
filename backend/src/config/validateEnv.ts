@@ -59,5 +59,18 @@ export function validateEnv(): void {
     );
   }
 
+  // Push (AWS SNS) — only enforced when explicitly turned on. Default PUSH_PROVIDER
+  // is "off" (safe no-op), so a missing SNS config never blocks startup.
+  if ((process.env.PUSH_PROVIDER ?? 'off').toLowerCase() === 'sns') {
+    const needed = ['SNS_PLATFORM_APP_ARN_IOS', 'SNS_PLATFORM_APP_ARN_ANDROID'].filter(
+      (k) => !process.env[k]
+    );
+    if (needed.length > 0) {
+      const msg = `PUSH_PROVIDER=sns but missing: ${needed.join(', ')}`;
+      if (isProd) throw new Error(`[env] ${msg} — refusing to start in production.`);
+      logger.warn(`[env] ${msg} (non-production: continuing).`);
+    }
+  }
+
   logger.info('[env] environment validation passed');
 }

@@ -1,43 +1,34 @@
-import { User } from '../models/User'
-import { Notification } from '../models/Notification'
+/**
+ * Legacy notification adapter.
+ *
+ * Historically this held its own Expo `fetch`-based push sender. It now delegates
+ * to the unified notify() so there is a SINGLE push transport (AWS SNS). The
+ * public shape (sendPush / saveToDatabase / notify) is preserved so existing call
+ * sites compile and behave the same — plus they now also record an in-app inbox
+ * entry (accepted behavior change). Errors are swallowed, matching prior behavior.
+ *
+ * Delegations are constrained to ['in_app', 'push'] to avoid introducing new
+ * email/SMS sends at legacy call sites.
+ */
 import { logger } from '../utils/logger'
-
-interface ExpoMessage {
-  to: string
-  sound: string
-  title: string
-  body: string
-  data: Record<string, unknown>
-  priority: string
-}
+import { notify as notifyUnified } from './notifications'
 
 export const notificationService = {
-  async sendPush(userId: string, title: string, body: string, data?: Record<string, unknown>): Promise<void> {
+  async sendPush(
+    userId: string,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>
+  ): Promise<void> {
     try {
-      const user = await User.findById(userId).select('expo_push_tokens')
-      if (!user || !user.expo_push_tokens || user.expo_push_tokens.length === 0) return
-
-      const messages: ExpoMessage[] = user.expo_push_tokens.map(token => ({
-        to: token,
-        sound: 'default',
+      await notifyUnified({
+        user_id: userId,
+        type: (data?.type as string) ?? 'system',
         title,
         body,
-        data: data ?? {},
-        priority: 'high',
-      }))
-
-      const response = await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Accept-Encoding': 'gzip, deflate',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(messages),
+        data: data as Record<string, any> | undefined,
+        channels: ['in_app', 'push'],
       })
-
-      const responseData = await response.json() as unknown
-      logger.info(`Push sent to user ${userId}: ${title}`, responseData)
     } catch (err) {
       logger.error(`Failed to send push notification to user ${userId}`, err)
     }
@@ -51,12 +42,13 @@ export const notificationService = {
     metadata?: Record<string, unknown>
   ): Promise<void> {
     try {
-      await Notification.create({
+      await notifyUnified({
         user_id: userId,
+        type,
         title,
         body,
-        type,
-        data: metadata ?? {},
+        data: metadata as Record<string, any> | undefined,
+        channels: ['in_app'],
       })
     } catch (err) {
       logger.error(`Failed to save notification for user ${userId}`, err)
@@ -70,9 +62,17 @@ export const notificationService = {
     type: string = 'system',
     data?: Record<string, unknown>
   ): Promise<void> {
-    await Promise.all([
-      this.sendPush(userId, title, body, data),
-      this.saveToDatabase(userId, title, body, type, data),
-    ])
+    try {
+      await notifyUnified({
+        user_id: userId,
+        type,
+        title,
+        body,
+        data: data as Record<string, any> | undefined,
+        channels: ['in_app', 'push'],
+      })
+    } catch (err) {
+      logger.error(`Failed to notify user ${userId}`, err)
+    }
   },
 }
