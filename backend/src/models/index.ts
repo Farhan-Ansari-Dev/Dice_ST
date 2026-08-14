@@ -13,6 +13,7 @@ export { AuditLog, IAuditLog, AuditAction, audit } from './AuditLog';
 export { Workflow, IWorkflow } from './Workflow';
 export { Comment, IComment } from './Comment';
 export { Notification, INotification } from './Notification';
+export { Device, IDevice } from './Device';
 export { Payment, IPayment, PaymentStatus } from './Payment';
 export { Task, ITask } from './Task';
 export * from './AIConversation';

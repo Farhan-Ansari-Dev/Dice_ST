@@ -2,8 +2,8 @@
  * Notification routes — list, mark-read, register push tokens, web push subs.
  */
 import { Router, Response } from 'express';
-import { Expo } from 'expo-server-sdk';
 import { Notification, User } from '../../models';
+import { registerDevice, disableDevice } from '../../services/notifications/sns';
 import { authenticate, AuthRequest } from '../../middleware/authMongo';
 
 const router = Router();
@@ -53,28 +53,29 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   return res.json({ success: true });
 });
 
-// ─── Mobile push tokens (Expo) ─────────────────────────────────
-// POST /notifications/push-tokens
+// ─── Mobile push tokens (native APNs/FCM → AWS SNS) ─────────────
+// POST /notifications/push-tokens  { token, platform, appVersion? }
 router.post('/push-tokens', async (req: AuthRequest, res: Response) => {
-  const { token, platform } = req.body;
-  if (!token) return res.status(400).json({ error: 'token required' });
-  if (!Expo.isExpoPushToken(token)) {
-    return res.status(400).json({ error: 'invalid expo token format' });
+  const { token, platform, appVersion } = req.body;
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ error: 'token required' });
+  }
+  if (platform !== 'ios' && platform !== 'android') {
+    return res.status(400).json({ error: 'platform must be ios or android' });
   }
 
-  await User.updateOne(
-    { _id: req.user!._id },
-    { $addToSet: { expo_push_tokens: token } }
-  );
+  await registerDevice({
+    user_id: req.user!._id,
+    platform,
+    token,
+    appVersion: typeof appVersion === 'string' ? appVersion : undefined,
+  });
   return res.json({ success: true, platform });
 });
 
-// DELETE /notifications/push-tokens/:token
+// DELETE /notifications/push-tokens/:token  — logout / unregister (soft disable)
 router.delete('/push-tokens/:token', async (req: AuthRequest, res: Response) => {
-  await User.updateOne(
-    { _id: req.user!._id },
-    { $pull: { expo_push_tokens: req.params.token } }
-  );
+  await disableDevice({ user_id: req.user!._id, token: req.params.token });
   return res.json({ success: true });
 });
 
