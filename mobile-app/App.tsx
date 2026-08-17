@@ -71,6 +71,10 @@ const queryClient = new QueryClient({
 export default function App() {
   const { addNotification, setPushToken } = useNotificationStore();
   const { loadStoredAuth } = useAuthStore();
+  // Subscribe to the push flag. Remote Config hydrates asynchronously, so reading
+  // it once at mount always sees the default `false`; subscribing lets the push
+  // effect below re-run the instant the flag flips true after config loads.
+  const pushEnabled = useConfigStore((s) => s.featureFlags.enable_push_notifications);
 
   useEffect(() => {
     hideSplash();
@@ -81,13 +85,16 @@ export default function App() {
     // actually arrives). Their IDs must match the backend SNS/FCM payload's
     // channel_id. Safe to run regardless of the push feature flag.
     setupNotificationChannels();
+  }, []);
 
-    // Remote push is a POST-LAUNCH feature, DISABLED by default via Remote Config
-    // (`enable_push_notifications`). While off, the app must NOT register for push
-    // or request a native token. The in-app inbox (API-polled) is unaffected.
-    if (!useConfigStore.getState().featureFlags.enable_push_notifications) {
-      return;
-    }
+  // Remote push is a POST-LAUNCH feature, DISABLED by default via Remote Config
+  // (`enable_push_notifications`). This effect keys off the flag, so it starts
+  // registration the moment Remote Config loads and flips it true; while off
+  // (the default) the app never requests a native token. registerDevice is
+  // idempotent (upsert by token), so the AppState re-registration and any effect
+  // re-run cannot create duplicate endpoints.
+  useEffect(() => {
+    if (!pushEnabled) return;
 
     const cleanups: Array<() => void> = [];
 
@@ -117,7 +124,7 @@ export default function App() {
     cleanups.push(() => appStateSub.remove());
 
     return () => { cleanups.forEach((fn) => fn()); };
-  }, []);
+  }, [pushEnabled]);
 
   const hideSplash = async () => {
     // Hide immediately — the JS SplashScreen component handles the animated branding
