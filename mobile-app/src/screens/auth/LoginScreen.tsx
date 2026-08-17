@@ -13,6 +13,7 @@ import authService from '../../services/authService';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { GoogleSignin, statusCodes, isSuccessResponse, isCancelledResponse } from '@react-native-google-signin/google-signin';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { STORAGE_KEYS } from '../../utils/constants';
 import ENV from '../../config/env';
 import { useAuthStore } from '../../store/authStore';
@@ -22,6 +23,7 @@ const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const navigation = useNavigation<any>();
@@ -186,6 +188,38 @@ const LoginScreen: React.FC = () => {
     }
   };
 
+  // Sign in with Apple (iOS only). The native call returns a signed identityToken
+  // which the backend verifies; the account is linked by email (same as Google).
+  const handleAppleSignIn = async () => {
+    setAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        showToast('Apple Sign-In Failed', 'Apple did not return an identity token. Please try again or use email OTP.', 'error');
+        return;
+      }
+      const result = await authService.appleSignIn(credential.identityToken, credential.fullName ?? undefined);
+      await setTokens(result.token, result.refreshToken);
+      await SecureStore.setItemAsync(STORAGE_KEYS.USER_DATA, JSON.stringify(result.user));
+      setUser(result.user);
+    } catch (err: any) {
+      if (err?.code === 'ERR_REQUEST_CANCELED') return; // user cancelled — no toast
+      console.warn('[AppleSignIn] failed:', err?.code, err?.response?.status, err?.response?.data?.error ?? err?.message);
+      showToast(
+        'Apple Sign-In Failed',
+        err?.response?.data?.message ?? 'Unable to complete sign-in. Please try again or use email OTP.',
+        'error',
+      );
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
@@ -251,6 +285,18 @@ const LoginScreen: React.FC = () => {
                 <Text style={styles.dividerText}>or</Text>
                 <View style={styles.dividerLine} />
               </View>
+
+              {Platform.OS === 'ios' && (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={isDark
+                    ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                    : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={12}
+                  style={{ width: '100%', height: 50, marginBottom: 12 }}
+                  onPress={handleAppleSignIn}
+                />
+              )}
 
               <TouchableOpacity
                 style={styles.socialButton}
