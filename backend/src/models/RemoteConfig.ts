@@ -9,6 +9,10 @@ export interface IRemoteConfig {
     enable_referral_rewards: boolean;
     enable_promotional_banners: boolean;
     enable_notifications: boolean;
+    // Native mobile push registration gate (APNs/FCM → SNS). Default OFF: while
+    // off the mobile app must NOT request a device token or register for push.
+    // The mobile client reads this exact key; do not rename.
+    enable_push_notifications: boolean;
     consultant_verification_enabled: boolean;
     // ── Workflow rollout flags (default OFF — additive until flipped) ──
     workflow_gates_enforced: boolean;     // document/payment gates BLOCK transitions
@@ -38,6 +42,7 @@ const remoteConfigSchema = new mongoose.Schema<IRemoteConfig>({
     enable_referral_rewards: { type: Boolean, default: true },
     enable_promotional_banners: { type: Boolean, default: false },
     enable_notifications: { type: Boolean, default: true },
+    enable_push_notifications: { type: Boolean, default: false },
     consultant_verification_enabled: { type: Boolean, default: false },
     // Workflow rollout flags — default OFF so behaviour is unchanged until an
     // operator flips them. (Ownership read-cutover / RBAC-scoping flags will be
