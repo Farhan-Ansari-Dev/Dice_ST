@@ -78,6 +78,15 @@ const authService = {
 
   logout: () =>
     api.post<{ message: string }>('/auth/logout'),
+
+  /**
+   * Permanently deletes the authenticated user's account. The backend derives
+   * the account from the bearer token only (never a client-supplied id), soft-
+   * deletes + anonymizes the user, removes their device/push records, and
+   * invalidates the current session.
+   */
+  deleteAccount: () =>
+    api.delete<{ success: boolean; message: string }>('/users/me'),
 };
 
 export default authService;

@@ -1,19 +1,65 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../components/common/ToastProvider';
+import authService from '../../services/authService';
 
 const SecuritySettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { isBiometricEnabled, setBiometricEnabled } = useAuthStore();
+  const { isBiometricEnabled, setBiometricEnabled, logout } = useAuthStore();
+  const { showToast } = useToast();
   const [twoFactor, setTwoFactor] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  // Actually deletes the account on the backend, then clears the local session.
+  const performAccountDeletion = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await authService.deleteAccount();
+      showToast('Account deleted', 'Your account has been deleted successfully.', 'success');
+      // Clears secure tokens + cached profile and resets auth state; the root
+      // navigator reacts to isAuthenticated=false and returns to Login.
+      await logout();
+    } catch (e) {
+      setDeleting(false);
+      showToast('Deletion failed', 'Unable to delete your account. Please try again.', 'error');
+    }
+  };
+
+  // Two explicit confirmations before anything is deleted — the first tap only
+  // opens the dialog, and the destructive action requires a second confirm.
+  const handleDeleteAccount = () => {
+    if (deleting) return;
+    Alert.alert(
+      'Delete Account?',
+      'Deleting your account will permanently remove your DICE account and associated personal data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert(
+              'Confirm Deletion',
+              'This is permanent. Are you sure you want to delete your DICE account?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete Account', style: 'destructive', onPress: performAccountDeletion },
+              ],
+            ),
+        },
+      ],
+    );
+  };
 
   const MENU_ITEMS = [
     {
@@ -121,6 +167,25 @@ const SecuritySettingsScreen: React.FC = () => {
             ))}
           </LinearGradient>
         </View>
+
+        {/* Danger zone — permanent account deletion (App Store requirement) */}
+        <Text style={styles.dangerLabel}>Account</Text>
+        <TouchableOpacity
+          style={[styles.deleteBtn, Shadows.sm]}
+          onPress={handleDeleteAccount}
+          disabled={deleting}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.menuIcon, { backgroundColor: `${colors.error}20` }]}>
+            <Ionicons name="trash-outline" size={20} color={colors.error} />
+          </View>
+          <View style={styles.menuInfo}>
+            <Text style={[styles.menuTitle, { color: colors.error }]}>Delete Account</Text>
+            <Text style={styles.menuSubtitle}>Permanently delete your account and data</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.error} />
+        </TouchableOpacity>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -148,6 +213,18 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     menuTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
     menuSubtitle: { fontSize: 12, color: colors.textTertiary, marginTop: 2 },
     divider: { height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : colors.border, marginHorizontal: 12 },
+    dangerLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginTop: 24, marginBottom: 8, paddingHorizontal: 4 },
+    deleteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 14,
+      borderRadius: BorderRadius.lg,
+      borderWidth: 1,
+      borderColor: `${colors.error}40`,
+      backgroundColor: isDark ? 'rgba(255,71,87,0.08)' : 'rgba(255,71,87,0.05)',
+    },
   });
 
 export default SecuritySettingsScreen;
