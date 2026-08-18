@@ -64,6 +64,13 @@ interface AuthState {
   setUser: (user: User) => void;
   setTokens: (token: string, refreshToken: string) => void;
   logout: () => Promise<void>;
+  /**
+   * Local-only, network-free session reset — the authoritative "you are logged
+   * out" primitive. Clears secure tokens + cached profile and flips
+   * isAuthenticated to false. Never calls the API, so it can never hang or
+   * re-enter the api interceptor; safe to call from the interceptor itself.
+   */
+  clearSession: () => Promise<void>;
   loadStoredAuth: () => Promise<void>;
   setOnboardingDone: () => Promise<void>;
   setUserType: (type: string) => Promise<void>;
@@ -135,24 +142,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ token, refreshToken, isAuthenticated: true });
   },
 
-  logout: async () => {
-    // Unregister this device's push token FIRST — the DELETE call needs the auth
-    // token, which we are about to clear. No-op when nothing is registered (e.g.
-    // push disabled). Imported lazily to avoid an import cycle; never blocks logout.
-    try {
-      const notificationsService = (await import('../services/notificationsService')).default;
-      await notificationsService.unregisterPushToken();
-    } catch (e) {
-      console.warn('Push unregister during logout failed (ignored):', e);
-    }
+  clearSession: async () => {
     try {
       await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN);
       await SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN);
       await SecureStore.deleteItemAsync(STORAGE_KEYS.USER_DATA);
     } catch (e) {
-      console.warn('SecureStore error during logout:', e);
+      console.warn('SecureStore error during clearSession:', e);
     }
     set({ user: null, token: null, refreshToken: null, isAuthenticated: false, isUserTypeDone: false, userType: null, isBiometricAuthenticated: false });
+  },
+
+  logout: async () => {
+    // Best-effort server-side push unregister. This is OPTIONAL cleanup and must
+    // NEVER gate the local session reset: after account deletion the auth token
+    // is already dead, so this call 401s → the api interceptor tries a refresh →
+    // which also 401s. The interceptor now resets auth locally (clearSession, no
+    // network) instead of re-calling logout(), and settles its refresh queue, so
+    // this can no longer deadlock. The timeout is a belt-and-suspenders bound so
+    // a slow/hung network can never block logout either. A normal sign-out (valid
+    // token) still completes the server-side cleanup in milliseconds.
+    try {
+      const notificationsService = (await import('../services/notificationsService')).default;
+      await Promise.race([
+        notificationsService.unregisterPushToken(),
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ]);
+    } catch (e) {
+      console.warn('Push unregister during logout failed (ignored):', e);
+    }
+    // Local auth state is the source of truth and is ALWAYS cleared.
+    await get().clearSession();
   },
 
   setUserType: async (type: string) => {

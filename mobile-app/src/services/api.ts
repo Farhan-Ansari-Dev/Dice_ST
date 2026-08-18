@@ -5,7 +5,24 @@ import { API_BASE_URL, STORAGE_KEYS } from '../utils/constants';
 class ApiService {
   private client: AxiosInstance;
   private isRefreshing = false;
-  private refreshSubscribers: Array<(token: string) => void> = [];
+  // Requests that hit a 401 while a refresh is already in-flight wait here. Each
+  // entry MUST eventually be settled — resolved with the new token on refresh
+  // success, or rejected on refresh failure — never left hanging (a dropped
+  // subscriber is a promise that never resolves, which is what previously froze
+  // logout during account deletion).
+  private refreshSubscribers: Array<{ resolve: (token: string) => void; reject: (err: any) => void }> = [];
+
+  private flushSubscribersSuccess(token: string) {
+    const subs = this.refreshSubscribers;
+    this.refreshSubscribers = [];
+    subs.forEach((s) => s.resolve(token));
+  }
+
+  private flushSubscribersFailure(err: any) {
+    const subs = this.refreshSubscribers;
+    this.refreshSubscribers = [];
+    subs.forEach((s) => s.reject(err));
+  }
 
   constructor() {
     this.client = axios.create({
@@ -41,10 +58,13 @@ class ApiService {
 
         if (error.response?.status === 401 && !originalRequest._retry) {
           if (this.isRefreshing) {
-            return new Promise((resolve) => {
-              this.refreshSubscribers.push((token: string) => {
-                originalRequest.headers.Authorization = `Bearer ${token}`;
-                resolve(this.client(originalRequest));
+            return new Promise((resolve, reject) => {
+              this.refreshSubscribers.push({
+                resolve: (token: string) => {
+                  originalRequest.headers.Authorization = `Bearer ${token}`;
+                  resolve(this.client(originalRequest));
+                },
+                reject,
               });
             });
           }
@@ -64,24 +84,25 @@ class ApiService {
               await SecureStore.setItemAsync(STORAGE_KEYS.REFRESH_TOKEN, data.refreshToken);
             }
             await SecureStore.setItemAsync(STORAGE_KEYS.AUTH_TOKEN, newToken);
-            this.refreshSubscribers.forEach((cb) => cb(newToken));
-            this.refreshSubscribers = [];
+            this.flushSubscribersSuccess(newToken);
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             return this.client(originalRequest);
           } catch (refreshError) {
-            this.refreshSubscribers = [];
+            // Refresh failed — settle every queued request so none hang forever.
+            this.flushSubscribersFailure(refreshError);
             // Only a definitive auth failure (invalid/revoked/absent refresh token)
             // means the session is unrecoverable. On a transient error (offline /
             // 5xx) keep the session so an online retry can still succeed.
             const status = (refreshError as any)?.response?.status;
             if (status === 401 || status === 403) {
-              // Reset ALL auth state and route back to Login. Previously only the
-              // access token was deleted, leaving the app "authenticated" with a dead
-              // token — a silent 401 loop with no way back to Login (P1). Loaded
-              // lazily to avoid the api → authService → authStore import cycle.
+              // Reset auth state LOCALLY and route back to Login. We intentionally
+              // call clearSession() (network-free) rather than logout() here:
+              // logout() performs a push-token unregister API call, which — with a
+              // just-invalidated token — would 401 back into THIS interceptor and
+              // deadlock. Loaded lazily to avoid the api → authStore import cycle.
               try {
                 const { useAuthStore } = await import('../store/authStore');
-                await useAuthStore.getState().logout();
+                await useAuthStore.getState().clearSession();
               } catch {
                 await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN).catch(() => {});
                 await SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN).catch(() => {});

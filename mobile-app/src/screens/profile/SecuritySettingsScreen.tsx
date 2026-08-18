@@ -29,10 +29,10 @@ const SecuritySettingsScreen: React.FC = () => {
       await authService.deleteAccount();
       // The account — and its server-side Device/push-token records — is now
       // deleted, so the session token is invalid. Drop the locally-cached push
-      // token BEFORE logout so logout's unregisterPushToken() early-returns
-      // instead of firing a doomed authenticated request: that 401 → token
-      // refresh → re-entrant logout deadlocks and blocks the auth-state reset,
-      // leaving the app stuck on an authenticated screen.
+      // token BEFORE logout so logout's unregisterPushToken() has nothing to send,
+      // keeping the sign-out instant. logout() + the api interceptor are also
+      // independently hardened to never block or deadlock on that dead-token call
+      // (see authStore.logout / clearSession and services/api.ts).
       await SecureStore.deleteItemAsync(STORAGE_KEYS.PUSH_TOKEN).catch(() => {});
       showToast('Account deleted', 'Your account has been deleted successfully.', 'success');
       // Clears secure tokens + cached profile and resets auth state; the root
