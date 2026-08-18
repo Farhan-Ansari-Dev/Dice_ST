@@ -44,13 +44,11 @@ const HomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
   const currencySymbol = useCurrency();
   const [refreshing, setRefreshing] = useState(false);
+  // Workspace is derived ONLY from the authenticated user's role (server-owned).
+  // Home never asks the user to (re)classify themselves — that belongs to
+  // onboarding/profile — it just renders the correct workspace for who they are.
   const roleName = (businessRole ?? userType ?? user?.businessRole ?? user?.role ?? '').toLowerCase();
   const isConsultantAccount = roleName === 'consultant';
-  const [isConsultantMode, setIsConsultantMode] = useState(isConsultantAccount);
-
-  useEffect(() => {
-    setIsConsultantMode(isConsultantAccount);
-  }, [isConsultantAccount]);
 
   // Live Data Queries
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
@@ -188,20 +186,13 @@ const HomeScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
         <View style={styles.headerRight}>
-          {isConsultantAccount ? (
-            <View style={styles.modePill}>
-              <TouchableOpacity style={[styles.modePillBtn, !isConsultantMode && styles.modePillBtnActive]} onPress={() => setIsConsultantMode(false)}>
-                <Text style={[styles.modePillText, !isConsultantMode && styles.modePillTextActive]}>Biz</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modePillBtn, isConsultantMode && [styles.modePillBtnActive, { backgroundColor: colors.success }]]} onPress={() => setIsConsultantMode(true)}>
-                <Text style={[styles.modePillText, isConsultantMode && styles.modePillTextActive]}>Consultant</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={[styles.modeBadge, { backgroundColor: `${colors.primary}15` }]}>
-              <Text style={styles.modeBadgeText}>Biz</Text>
-            </View>
-          )}
+          {/* Non-interactive role badge — reflects the account's actual role,
+              not a signup toggle. */}
+          <View style={[styles.modeBadge, { backgroundColor: isConsultantAccount ? `${colors.success}15` : `${colors.primary}15` }]}>
+            <Text style={[styles.modeBadgeText, isConsultantAccount && { color: colors.success }]}>
+              {isConsultantAccount ? 'Consultant' : 'Biz'}
+            </Text>
+          </View>
           <TouchableOpacity style={styles.themeBtn} onPress={toggleTheme} activeOpacity={0.7}>
             <Animated.View style={[StyleSheet.absoluteFill, styles.themeIconWrap, { opacity: sunOpacity }]}>
               <Ionicons name="sunny" size={18} color={colors.warning} />
@@ -215,11 +206,20 @@ const HomeScreen: React.FC = () => {
       </View>
 
       {isConsultantAccount && (
-        <View style={styles.clientRow}>
-          <Ionicons name="briefcase-outline" size={14} color={colors.textTertiary} />
-          <Text style={styles.clientLabel}>Consultant workspace</Text>
-          <Text style={styles.clientHint}>Client assignment comes from backend data.</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.consultantCard}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('Profile', { screen: 'ConsultantVerification' })}
+        >
+          <View style={styles.consultantIcon}>
+            <Ionicons name="briefcase" size={18} color={colors.success} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.consultantTitle}>Consultant Workspace</Text>
+            <Text style={styles.consultantHint}>Open your Verification Center and consultant tools</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
       )}
 
       <Animated.ScrollView
@@ -460,6 +460,10 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     clientRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingBottom: 8, flexWrap: 'wrap' },
     clientLabel: { fontSize: 12, color: colors.textTertiary },
     clientHint: { fontSize: 12, color: colors.textSecondary },
+    consultantCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 20, marginBottom: 8, padding: 14, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: `${colors.success}30`, backgroundColor: isDark ? 'rgba(52,211,153,0.08)' : 'rgba(16,185,129,0.06)' },
+    consultantIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: `${colors.success}18` },
+    consultantTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+    consultantHint: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
     scrollContent: { paddingTop: Platform.OS === 'ios' ? 4 : 8 },
     searchSection: { paddingHorizontal: 20, marginBottom: Platform.OS === 'ios' ? 12 : 16 },
 

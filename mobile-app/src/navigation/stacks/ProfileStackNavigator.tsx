@@ -7,8 +7,6 @@ import TeamMembersScreen from '../../screens/profile/TeamMembersScreen';
 import RolesPermissionsScreen from '../../screens/profile/RolesPermissionsScreen';
 import NotificationSettingsScreen from '../../screens/profile/NotificationSettingsScreen';
 import SecuritySettingsScreen from '../../screens/profile/SecuritySettingsScreen';
-import ChangePasswordScreen from '../../screens/profile/ChangePasswordScreen';
-import DeviceSessionsScreen from '../../screens/profile/DeviceSessionsScreen';
 import LanguageSettingsScreen from '../../screens/profile/LanguageSettingsScreen';
 import ThemeSettingsScreen from '../../screens/profile/ThemeSettingsScreen';
 import PrivacyPolicyScreen from '../../screens/profile/PrivacyPolicyScreen';
@@ -44,8 +42,6 @@ const ProfileStackNavigator: React.FC = () => {
     <Stack.Screen name="RolesPermissions" component={RolesPermissionsScreen} />
     <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
     <Stack.Screen name="SecuritySettings" component={SecuritySettingsScreen} />
-    <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-    <Stack.Screen name="DeviceSessions" component={DeviceSessionsScreen} />
     <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
     <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
