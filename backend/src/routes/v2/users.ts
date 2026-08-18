@@ -6,6 +6,7 @@ import { Application } from '../../models/Application'
 import { Certification } from '../../models/Certification'
 import { Document } from '../../models/Document'
 import { Payment } from '../../models/Payment'
+import { Device } from '../../models/Device'
 import { AuditLog } from '../../models/AuditLog'
 import { sendSuccess, sendError } from '../../utils/response'
 import crypto from 'crypto'
@@ -255,6 +256,77 @@ router.post('/me/phone/verify', authenticate, wrap(async (req: AuthRequest, res:
 
   return res.json({ success: true, data: await serializeUser(user) });
 }));
+
+// ═══════════════════════════════════════════════════════════════
+// DELETE /users/me — self-service account deletion (App Store 5.1.1(v)).
+//
+// The account is derived ONLY from the authenticated session (req.user),
+// never from a client-supplied id, so a user can only ever delete their own
+// account. Follows the existing soft-delete convention (`deleted_at`, mirrored
+// from the admin DELETE /:id handler and applications.ts).
+//
+// Effect:
+//   • Removes this user's native push-token / Device records (exclusively
+//     user-owned) so no further pushes can target the deleted account.
+//   • Soft-deletes + anonymizes the User: scrubs personal data (name, email,
+//     phone, avatar) and every auth secret (OTP/TOTP/password/push tokens).
+//   • The soft-delete `pre(/^find/)` hook makes the current JWT unusable on the
+//     very next request (authenticate's User.findById returns null → 401), so
+//     the active session is invalidated immediately.
+//   • The partial unique-email index (deleted_at:null) frees the original email
+//     for re-registration.
+//
+// Idempotent/safe on repeat: once deleted, `authenticate` can no longer resolve
+// the user, so a repeated call is rejected with 401 before reaching here.
+//
+// Registered BEFORE the admin `/:id` route so `/me` is never captured as an id.
+//
+// Apple Sign-In note: identities are email-keyed on the User row (no separate
+// provider record), so anonymizing the user removes the Apple/Google linkage.
+// Server-to-server Apple *token revocation* is intentionally NOT performed here
+// because it would require an Apple client-secret (.p8) that this deployment
+// does not provision — account/data deletion is complete without it.
+// ═══════════════════════════════════════════════════════════════
+router.delete('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const userId = req.user!._id
+
+  // Exclusively user-owned push registrations. Best-effort: partial/missing
+  // records are a harmless no-op.
+  await Device.deleteMany({ user_id: userId }).catch(() => {})
+
+  const anonEmail = `deleted+${userId}@deleted.invalid`
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        deleted_at: new Date(),
+        updated_at: new Date(),
+        name: 'Deleted User',
+        email: anonEmail,
+        totp_enabled: false,
+        expo_push_tokens: [],
+        webpush_subscriptions: [],
+      },
+      $unset: {
+        phone: 1, avatar_url: 1, password_hash: 1,
+        otp_hash: 1, otp_expires_at: 1, otp_attempts: 1,
+        pending_phone: 1, phone_otp_hash: 1, phone_otp_expires_at: 1, phone_otp_attempts: 1,
+        totp_secret: 1,
+      },
+    }
+  )
+
+  await audit({
+    actor: userId as any,
+    resource_type: 'user',
+    resource_id: userId as any,
+    action: 'deleted',
+    notes: 'account_self_deleted',
+    ip: req.ip,
+  }).catch(() => {})
+
+  return sendSuccess(res, { deleted: true }, 'Your account has been deleted successfully.')
+}))
 
 router.get('/', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}
