@@ -30,6 +30,34 @@ const ALL_COUNTRIES = [
   'IN', 'AE', 'SA', 'US', 'GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'CA', 'AU', 'JP', 'KR', 'SG', 'MY', 'TH', 'VN', 'ID', 'PH', 'ZA', 'BR', 'MX', 'CL', 'EG', 'KE', 'NG', 'TR', 'QA', 'OM', 'KW',
 ];
 
+// The onboarding wizard (UserTypeScreen / constants.TARGET_MARKETS) stores
+// region-style ids ('india', 'europe', 'usa'…). The certification resolver and
+// this screen speak ISO alpha-2 codes (backend utils/marketCatalog). Prefilling
+// the raw onboarding ids sent malformed markets like "europe" that never resolve.
+//
+// We ONLY auto-translate ids that map UNAMBIGUOUSLY to a single catalogued
+// country. Regulatory blocs/regions are deliberately NOT converted to a
+// representative country: 'Europe' is an EU market with no single ISO code
+// (mapping it to DE/Germany would analyse the wrong regulatory geography), and
+// 'gcc'/'africa'/'sea' are not backend markets at all. Those (and uncatalogued
+// 'china') are dropped from the prefill; the user selects the specific
+// country(ies) they target in the ISO selector below. Never guess geography.
+const ONBOARDING_MARKET_TO_ISO: Record<string, string> = {
+  india: 'IN', uae: 'AE', saudi: 'SA', usa: 'US', uk: 'GB',
+  australia: 'AU', canada: 'CA', japan: 'JP', brazil: 'BR',
+  // europe / africa / gcc / sea / china: intentionally omitted (bloc/region or
+  // uncatalogued → require explicit per-country selection).
+};
+
+/** Normalise any incoming market value to a supported ISO code, or null. */
+const toIsoMarket = (raw: string): string | null => {
+  const up = String(raw ?? '').trim().toUpperCase();
+  if (ALL_COUNTRIES.includes(up)) return up;                 // already ISO
+  return ONBOARDING_MARKET_TO_ISO[String(raw ?? '').trim().toLowerCase()] ?? null;
+};
+const normalizeMarkets = (list: string[]): string[] =>
+  Array.from(new Set((list ?? []).map(toIsoMarket).filter((c): c is string => !!c)));
+
 const NewCertificationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
@@ -42,8 +70,10 @@ const NewCertificationScreen: React.FC = () => {
   const [step, setStep] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   // Prefill target markets from the customer's onboarding profile so they don't
-  // re-enter data they already gave. They can still adjust the selection.
-  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(user?.targetMarkets ?? []);
+  // re-enter data they already gave. Onboarding stores region ids, so translate
+  // them to ISO market codes (else the analyze receives malformed markets like
+  // "europe" that can never resolve). They can still adjust the selection.
+  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(() => normalizeMarkets(user?.targetMarkets ?? []));
   
   const [productSearch, setProductSearch] = useState('');
   const [marketSearch, setMarketSearch] = useState('');
@@ -83,11 +113,18 @@ const NewCertificationScreen: React.FC = () => {
       return;
     }
 
+    // Defensive: only send ISO market codes the resolver understands.
+    const isoMarkets = normalizeMarkets(selectedMarkets);
+    if (isoMarkets.length === 0) {
+      Alert.alert('Unsupported market', 'The selected markets are not supported yet. Please pick a target market from the list.');
+      return;
+    }
+
     setIsAnalyzing(true);
     try {
       const response = await api.post<{ success: boolean; data: any }>('/ai/analyze-certifications', {
         productName: selectedProduct,
-        markets: selectedMarkets
+        markets: isoMarkets
       });
 
       if (!response.data?.isValid) {
@@ -96,7 +133,23 @@ const NewCertificationScreen: React.FC = () => {
         return;
       }
 
-      const certs = response.data?.certifications || [];
+      // Prefer the richer `intelligence` shape (regulatory authority + required
+      // documents per market) over the flat `certifications` list; fall back to
+      // the flat list if intelligence is absent. All of this is verified DB data.
+      const intelligence = response.data?.intelligence;
+      const enriched: any[] = [];
+      for (const m of (intelligence?.markets ?? [])) {
+        for (const c of (m.requiredCertifications ?? [])) {
+          enriched.push({
+            code: c.code,
+            name: c.name,
+            market: m.marketCode ?? c.market,
+            authority: c.authority,
+            requiredDocuments: c.requiredDocuments ?? [],
+          });
+        }
+      }
+      const certs = enriched.length ? enriched : (response.data?.certifications || []);
 
       // Workflow gate: never advance to Step 2 (Review & Apply) with zero
       // certifications. The backend deliberately returns isValid:true even when
@@ -105,15 +158,18 @@ const NewCertificationScreen: React.FC = () => {
       // offer recovery actions rather than a dead-end popup.
       if (certs.length === 0) {
         setIsAnalyzing(false);
+        // Level 3 — Expert Review. We could not confidently determine verified
+        // requirements for this product/market, so recommend expert review
+        // (never a dead-end "no certifications found"). Every action here is real.
         Alert.alert(
-          'No certifications found',
-          `We don't yet have a verified certification mapping for "${selectedProduct}" in ${selectedMarkets.join(', ')}. ` +
-            'You can continue as a manual application — our certification team will identify the product and the exact certifications for you. Nothing you entered is lost.',
+          'Expert Review Recommended',
+          `We couldn't confidently determine the exact certification requirements for "${selectedProduct}" in ${selectedMarkets.join(', ')}. ` +
+            'Our certification team can review your product and identify the exact certifications for you. Nothing you entered is lost.',
           [
             { text: 'Change Product', onPress: () => setSelectedProduct(null) },
             { text: 'Change Markets', onPress: () => setSelectedMarkets([]) },
             { text: 'Continue as Manual Application', onPress: () => { handleManualApply(); } },
-            { text: 'Contact Sanyog Expert', onPress: () => navigation.navigate('Communication') },
+            { text: 'Contact Sanyog Expert', onPress: () => { handleContactExpert(); } },
           ],
         );
         return;
@@ -223,6 +279,45 @@ const NewCertificationScreen: React.FC = () => {
     }
   };
 
+  /** Contact Sanyog Expert — a REAL action (the button previously navigated to a
+   *  non-existent 'Communication' route). Creates an expert-consultation Lead
+   *  via the existing lead system (visible to the admin/certification team) with
+   *  the product + markets prefilled, then routes to the existing Support Center
+   *  for follow-up. */
+  const handleContactExpert = async () => {
+    if (!user?.email) {
+      showToast('Sign in required', 'Please sign in to contact an expert.', 'error');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await leadsService.create({
+        serviceId: 'EXPERT_CONSULTATION',
+        serviceName: `Certification expert consultation — ${selectedProduct ?? 'product'}`,
+        contactName: user.name ?? user.email.split('@')[0],
+        contactEmail: user.email,
+        contactPhone: user.phone,
+        companyName: user.companyName,
+        productDescription: selectedProduct ?? undefined,
+        targetMarkets: selectedMarkets,
+        notes: `Expert consultation requested — product "${selectedProduct}" for ${selectedMarkets.join(', ')}. No verified mapping; needs specialist review.`,
+      });
+      Alert.alert(
+        'Request received',
+        `Our certification expert will reach out at ${user.email} about "${selectedProduct}". You can also start a chat from the Support Center.`,
+        [{ text: 'Open Support Center', onPress: () => navigation.navigate('Profile', { screen: 'SupportCenter' }) }, { text: 'Done' }],
+      );
+    } catch (err: any) {
+      showToast(
+        'Could not send request',
+        err?.response?.data?.message ?? 'Please check your connection and try again.',
+        'error',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <LinearGradient colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#F8FAFC']} style={StyleSheet.absoluteFill} />
@@ -247,7 +342,7 @@ const NewCertificationScreen: React.FC = () => {
                 <Ionicons name="sparkles" size={20} color={colors.primary} />
               </View>
               <Text style={styles.infoText}>
-                Select your product and target markets. Our AI Market Engine will automatically recommend the exact certifications you need to apply for.
+                Select your product and target markets. We'll match them against our verified compliance database to show the certifications you need. If we don't have a verified mapping yet, our certification team reviews it.
               </Text>
             </View>
 
@@ -280,10 +375,16 @@ const NewCertificationScreen: React.FC = () => {
           </View>
         )}
 
-        {/* STEP 2 - AI Results + Apply */}
+        {/* STEP 2 - Verified certification requirements + Apply */}
         {step === 2 && (
           <View>
-            <Text style={styles.sectionLabel}>AI Recommended Certifications</Text>
+            <Text style={styles.sectionLabel}>Verified Certification Requirements</Text>
+            {/* Source label — these come from the verified compliance database,
+                not an AI guess. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, marginBottom: 12 }}>
+              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+              <Text style={{ fontSize: 12, color: colors.success, fontWeight: '700' }}>Verified from the DICE compliance database</Text>
+            </View>
             <View style={styles.recommendationList}>
               {recommendedCerts.map((cert, idx) => (
                 <View key={idx} style={[styles.certCard, { backgroundColor: isDark ? colors.bgCardLight : '#FFF' }]}>
@@ -293,8 +394,17 @@ const NewCertificationScreen: React.FC = () => {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.certName}>{cert.name}</Text>
                     <Text style={styles.certCode}>{cert.code}</Text>
+                    {!!cert.authority && (
+                      <Text style={styles.certMeta}>Authority: {cert.authority}</Text>
+                    )}
+                    {Array.isArray(cert.requiredDocuments) && cert.requiredDocuments.length > 0 && (
+                      <Text style={styles.certMeta}>{cert.requiredDocuments.length} required document{cert.requiredDocuments.length === 1 ? '' : 's'}</Text>
+                    )}
                   </View>
-                  <Badge label={cert.market} variant="info" size="sm" />
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <Badge label={cert.market} variant="info" size="sm" />
+                    <Badge label="Verified" variant="success" size="sm" />
+                  </View>
                 </View>
               ))}
             </View>
@@ -386,6 +496,11 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  certMeta: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: 3,
   },
   summaryCard: {
     marginHorizontal: 20,
