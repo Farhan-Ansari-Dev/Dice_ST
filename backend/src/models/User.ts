@@ -10,6 +10,11 @@ export interface IUser extends Document {
   locale: string;               // "en-IN", "hi-IN", etc.
   country_code: string;         // "IN", "AE", "SA" — drives data-residency policy
 
+  // Sign in with Apple subject id ("sub"). Stable, opaque IDENTITY KEY for an
+  // Apple user (NOT a display name). Used to map the same Apple account to the
+  // same DICE account across logins, even when Hide My Email is toggled.
+  apple_sub?: string;
+
   // Auth (passwords are optional — primary login is OTP)
   password_hash?: string;
   otp_hash?: string;
@@ -100,6 +105,8 @@ const UserSchema = new Schema<IUser>(
     locale:        { type: String, default: 'en-IN' },
     country_code:  { type: String, default: 'IN', uppercase: true },
 
+    apple_sub:        { type: String, trim: true },
+
     password_hash:    { type: String, select: false },
     otp_hash:         { type: String, select: false },
     otp_expires_at:   { type: Date, select: false },
@@ -187,6 +194,9 @@ const UserSchema = new Schema<IUser>(
 // Unique email when not soft-deleted
 UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { deleted_at: null } });
 UserSchema.index({ phone: 1 }, { unique: true, sparse: true });
+// One Apple identity → one live account (soft-deleted rows are excluded, so a
+// re-registration after deletion is not blocked — mirrors the email index).
+UserSchema.index({ apple_sub: 1 }, { unique: true, partialFilterExpression: { apple_sub: { $type: 'string' }, deleted_at: null } });
 UserSchema.index({ org_id: 1, role: 1 });
 
 // Clear any stale/invalid consultant_verification_status values before save.
