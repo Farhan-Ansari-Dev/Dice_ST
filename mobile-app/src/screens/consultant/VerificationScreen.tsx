@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme, Shadows, BorderRadius } from '../../theme';
 import { api } from '../../services/api';
+import documentsService from '../../services/documentsService';
 
 type PickedDoc = {
   uri: string;
@@ -67,30 +68,43 @@ const ConsultantVerificationScreen: React.FC = () => {
     enabled: !!user?.id,
   });
 
-  const verificationStatus = profileData?.consultant_verification_status;
-  const rejectionReason = profileData?.consultant_rejection_reason;
-  const existingDocs = profileData?.consultant_verification_documents || [];
+  // serializeUser exposes these camelCase fields (single source of truth); the
+  // real backend status — not the local businessRole flag — drives the UI.
+  const verificationStatus = profileData?.consultantVerificationStatus;
+  const rejectionReason = profileData?.consultantRejectionReason;
+  const existingDocs = profileData?.consultantVerificationDocuments || [];
   const statusInfo = STATUS_CONFIG[verificationStatus || ''];
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const docPayload = documents.map(doc => ({
-        url: doc.uri,
-        name: doc.name,
-      }));
-      const res = await api.post('/consultants/request-verification', {
-        documents: docPayload,
-      }) as any;
-      return res;
+      // Upload each picked file to secure storage (presign → S3 PUT → finalize)
+      // and submit the resulting stored references — never local file:// URIs,
+      // which the admin/backend could never read.
+      const uploaded: Array<{ url: string; name: string }> = [];
+      for (const doc of documents) {
+        const stored = await documentsService.uploadFromDevice(
+          doc.uri,
+          doc.name,
+          doc.mimeType || 'application/octet-stream',
+          'consultant_verification',
+        );
+        uploaded.push({ url: stored.s3_key, name: stored.name });
+      }
+      return api.post('/consultants/request-verification', { documents: uploaded });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-profile'] });
       setDocuments([]);
-      Alert.alert('Submitted', 'Your verification documents have been submitted for review.');
+      Alert.alert('Verification submitted', "Verification submitted successfully. We'll review your documents.");
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Failed to submit verification';
-      Alert.alert('Error', msg);
+      // Keep the real error for debugging; show a friendly, non-raw message.
+      console.warn('[consultant-verification] submit failed:', err?.response?.status, err?.response?.data || err?.message);
+      const status = err?.response?.status;
+      let msg = 'Unable to upload your documents. Please try again.';
+      if (status === 403) msg = "You don't have permission to submit verification.";
+      else if (status === 409) msg = err?.response?.data?.message || 'You have already submitted a verification request.';
+      Alert.alert('Verification', msg);
     },
   });
 

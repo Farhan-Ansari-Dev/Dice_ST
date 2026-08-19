@@ -36,6 +36,9 @@ export interface User {
   interestedCertifications?: string[];
   companySize?: string;
   businessGoals?: string[];
+  /** Server-authoritative consultant verification state (serializeUser). Only
+   *  'verified' unlocks operational consultant features. */
+  consultantVerificationStatus?: 'pending' | 'verified' | 'rejected' | null;
   /** Server-authoritative: true once the onboarding wizard has been submitted. */
   isOnboardingComplete?: boolean;
   onboardingCompletedAt?: string | null;

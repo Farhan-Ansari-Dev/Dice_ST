@@ -30,9 +30,16 @@ const ProfileScreen: React.FC = () => {
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
-  // The Consultant Zone gates the verification centre. It previously tested for
-  // a 'manager' role that the API never issues, so the section never rendered.
-  const isConsultant = user?.role === 'consultant';
+  // The Consultant Zone gates the verification centre. Consultant intent is the
+  // self-declared onboarding type (businessRole), which is where it actually
+  // lives — `role` stays 'client' until/unless an admin changes it, so gating on
+  // role alone hid the zone from every genuine consultant. (Being here only
+  // grants access to SUBMIT verification; approval/features depend on the real
+  // backend consultantVerificationStatus, not on this flag.)
+  const isConsultant = user?.businessRole === 'consultant' || user?.role === 'consultant';
+  // Operational consultant features (e.g. Assigned Applications) require BOTH
+  // consultant intent AND real admin approval — never business_role alone.
+  const isVerifiedConsultant = isConsultant && user?.consultantVerificationStatus === 'verified';
 
   const MENU_SECTIONS = [
     {
@@ -48,6 +55,11 @@ const ProfileScreen: React.FC = () => {
       title: 'Consultant Zone',
       items: [
         { icon: 'shield-checkmark-outline' as const, label: 'Verification Center', onPress: () => navigation.navigate('ConsultantVerification') },
+        // Operational consultant features require ACTUAL admin approval, not just
+        // consultant intent — gate strictly on the server verification status.
+        ...(isVerifiedConsultant
+          ? [{ icon: 'briefcase-outline' as const, label: 'Assigned Applications', onPress: () => navigation.navigate('AssignedApplications') }]
+          : []),
       ]
     }] : []),
     {

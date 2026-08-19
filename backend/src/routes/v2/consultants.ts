@@ -17,7 +17,6 @@ router.use(authenticate);
  */
 router.post(
   '/request-verification',
-  authorize(['consultant']),
   async (req: AuthRequest, res, next) => {
     try {
       const { documents } = req.body;
@@ -29,6 +28,28 @@ router.post(
       const user = await User.findById(req.user._id);
       if (!user) {
         return sendError(res, 'User not found', 404);
+      }
+
+      // A "consultant" is identified by the self-declared onboarding type
+      // (business_role) OR an admin-assigned role. `role` alone was wrong here:
+      // onboarding stores the consultant intent in `business_role` and leaves
+      // `role` at its default 'client', so authorize(['consultant']) rejected
+      // every genuine consultant with 403 forbidden. Submitting is a NON-
+      // privileged action (it only sets status='pending'); approval stays
+      // admin-only (see /:id/update-status), so a self-declared consultant can
+      // never approve themselves here.
+      const isConsultant = user.business_role === 'consultant' || user.role === 'consultant';
+      if (!isConsultant) {
+        return sendError(res, 'Only consultant accounts can submit verification.', 403);
+      }
+
+      // Idempotency / no duplicate active requests. Rejected or never-submitted
+      // users may (re)submit; pending/verified users may not.
+      if (user.consultant_verification_status === 'pending') {
+        return sendError(res, 'Your verification is already under review.', 409);
+      }
+      if (user.consultant_verification_status === 'verified') {
+        return sendError(res, 'Your account is already verified.', 409);
       }
 
       user.consultant_verification_status = 'pending';
@@ -76,7 +97,16 @@ router.post(
       }
 
       const user = await User.findById(id);
-      if (!user || user.role !== 'consultant') {
+      // Match the same "consultant" definition used on submit: self-declared
+      // business_role OR admin-assigned role OR anyone who has already submitted
+      // a verification request. Checking role alone previously made every real
+      // consultant un-approvable (404) because their role is 'client'.
+      const isConsultant =
+        !!user &&
+        (user.business_role === 'consultant' ||
+          user.role === 'consultant' ||
+          !!user.consultant_verification_status);
+      if (!isConsultant) {
         return sendError(res, 'Consultant not found', 404);
       }
 

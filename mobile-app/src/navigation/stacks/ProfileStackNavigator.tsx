@@ -24,6 +24,7 @@ import ReferralScreen from '../../screens/profile/ReferralScreen';
 import PartnerOnboardingScreen from '../../screens/profile/PartnerOnboardingScreen';
 import VaultStackNavigator from '../../navigation/stacks/VaultStackNavigator';
 import ConsultantVerificationScreen from '../../screens/consultant/VerificationScreen';
+import AssignedApplicationsScreen from '../../screens/consultant/AssignedApplicationsScreen';
 import { useConfigStore } from '../../store/configStore';
 
 const Stack = createNativeStackNavigator();
@@ -62,6 +63,7 @@ const ProfileStackNavigator: React.FC = () => {
     <Stack.Screen name="PartnerOnboarding" component={PartnerOnboardingScreen} />
     <Stack.Screen name="Vault" component={VaultStackNavigator} />
     <Stack.Screen name="ConsultantVerification" component={ConsultantVerificationScreen} />
+    <Stack.Screen name="AssignedApplications" component={AssignedApplicationsScreen} />
   </Stack.Navigator>
   );
 };
