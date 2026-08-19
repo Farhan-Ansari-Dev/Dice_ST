@@ -18,8 +18,9 @@
     "scheme": "com.sanyogconformity.app",
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "com.sanyogconformity.app",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSCameraUsageDescription": "Used for document scanning and OCR",
         "NSPhotoLibraryUsageDescription": "Used to upload documents",
@@ -29,10 +30,12 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0B0F"
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "backgroundColor": "#0A0B0F",
+        "monochromeImage": "./assets/adaptive-monochrome.png"
       },
       "package": "com.sanyogconformity.app",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "permissions": [
         "CAMERA",
@@ -70,10 +73,30 @@
       "expo-font",
       "expo-secure-store",
       "expo-local-authentication",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6C63FF"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF",
+          "dark": {
+            "image": "./assets/splash-dark.png",
+            "backgroundColor": "#0A0B0F"
+          }
+        }
+      ],
       "expo-camera",
       "expo-image-picker",
       "expo-web-browser",
+      "expo-apple-authentication",
       [
         "@react-native-google-signin/google-signin",
         {

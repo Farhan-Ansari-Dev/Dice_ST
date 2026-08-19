@@ -338,7 +338,14 @@ router.get('/', authenticate, authorize(['admin','employee','super_admin']), wra
   if (req.query.role) {
     query.role = req.query.role
   }
-  
+
+  // Self-declared consultants (onboarding) have role='client' + business_role=
+  // 'consultant'. The admin consultant-verification list filters on this so it
+  // actually finds them (role=consultant would return nobody).
+  if (req.query.business_role) {
+    query.business_role = req.query.business_role
+  }
+
   if (req.query.showDeleted !== 'true') {
     query.deleted_at = { $exists: false }
   }

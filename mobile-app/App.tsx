@@ -2,14 +2,16 @@ import 'react-native-url-polyfill/auto';
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import React, { useEffect, useCallback } from 'react';
-import { StatusBar, LogBox, Alert } from 'react-native';
+import { StatusBar, LogBox, Alert, AppState, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import RootNavigator from './src/navigation/RootNavigator';
+import notificationsService from './src/services/notificationsService';
+import { handleNotificationResponse } from './src/services/notificationRouter';
+import { APP_VERSION } from './src/utils/constants';
 import { useNotificationStore } from './src/store/notificationStore';
 import { useAuthStore } from './src/store/authStore';
 import { useConfigStore } from './src/store/configStore';
@@ -69,29 +71,99 @@ const queryClient = new QueryClient({
 export default function App() {
   const { addNotification, setPushToken } = useNotificationStore();
   const { loadStoredAuth } = useAuthStore();
+  // Subscribe to the push flag. Remote Config hydrates asynchronously, so reading
+  // it once at mount always sees the default `false`; subscribing lets the push
+  // effect below re-run the instant the flag flips true after config loads.
+  const pushEnabled = useConfigStore((s) => s.featureFlags.enable_push_notifications);
 
   useEffect(() => {
     hideSplash();
     loadPersistedTheme();
     loadStoredAuth();
-    // Remote push notifications are a POST-LAUNCH feature and are DISABLED by
-    // default. This release ships without Expo/FCM, so the app must not attempt
-    // to initialize any push service (that previously threw "FirebaseApp not
-    // initialized"). In-app notifications (polled via the API) are unaffected.
-    // Re-enable later by flipping `enable_push_notifications` in Remote Config.
-    if (useConfigStore.getState().featureFlags.enable_push_notifications) {
-      setupNotificationListeners();
-      // Request push permission a few seconds after open (lets the user see the app first)
-      const timer = setTimeout(() => {
-        registerForPushNotifications();
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
+
+    // Android channels are created at startup (idempotent + inert until a push
+    // actually arrives). Their IDs must match the backend SNS/FCM payload's
+    // channel_id. Safe to run regardless of the push feature flag.
+    setupNotificationChannels();
   }, []);
+
+  // Remote push is a POST-LAUNCH feature, DISABLED by default via Remote Config
+  // (`enable_push_notifications`). This effect keys off the flag, so it starts
+  // registration the moment Remote Config loads and flips it true; while off
+  // (the default) the app never requests a native token. registerDevice is
+  // idempotent (upsert by token), so the AppState re-registration and any effect
+  // re-run cannot create duplicate endpoints.
+  useEffect(() => {
+    if (!pushEnabled) return;
+
+    const cleanups: Array<() => void> = [];
+
+    // Foreground display + tap → centralized navigation.
+    cleanups.push(setupNotificationListeners());
+
+    // Native push token rotation → re-register with the new token.
+    const tokenSub = Notifications.addPushTokenListener((t) => {
+      registerDeviceToken(String(t.data), t.type === 'ios' ? 'ios' : 'android');
+    });
+    cleanups.push(() => tokenSub.remove());
+
+    // Killed/cold-start: app launched by tapping a notification.
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => { if (response) handleNotificationResponse(response); })
+      .catch(() => {});
+
+    // Register shortly after open, and again whenever the app returns to fg
+    // (covers login, token rotation and permission changes). Registration is
+    // deduped by token in notificationsService.
+    const timer = setTimeout(() => { registerForPushNotifications(); }, 3000);
+    cleanups.push(() => clearTimeout(timer));
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') registerForPushNotifications();
+    });
+    cleanups.push(() => appStateSub.remove());
+
+    return () => { cleanups.forEach((fn) => fn()); };
+  }, [pushEnabled]);
 
   const hideSplash = async () => {
     // Hide immediately — the JS SplashScreen component handles the animated branding
     await SplashScreen.hideAsync().catch(() => {});
+  };
+
+  const setupNotificationChannels = async () => {
+    if (Platform.OS !== 'android') return;
+    try {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'General',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#6C63FF',
+      });
+      await Notifications.setNotificationChannelAsync('compliance', {
+        name: 'Compliance Alerts',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 500],
+        lightColor: '#EF4444',
+      });
+      await Notifications.setNotificationChannelAsync('applications', {
+        name: 'Application Updates',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        lightColor: '#6C63FF',
+      });
+    } catch {
+      // expo-notifications not fully supported in Expo Go
+    }
+  };
+
+  // Persist token locally and register the native token with the backend (→ SNS).
+  const registerDeviceToken = async (token: string, platform: 'ios' | 'android') => {
+    try {
+      setPushToken(token);
+      await notificationsService.registerPushToken(token, platform, APP_VERSION).catch(() => {});
+    } catch {
+      // best-effort — user may not be authenticated yet
+    }
   };
 
   const registerForPushNotifications = async () => {
@@ -108,35 +180,25 @@ export default function App() {
         return;
       }
 
-      // getExpoPushTokenAsync needs the EAS project ID (a UUID), NOT the slug.
-      // Read it from app config so there is a single source of truth.
-      const projectId =
-        (Constants.expoConfig?.extra?.eas?.projectId as string | undefined) ??
-        (Constants as any).easConfig?.projectId;
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId,
-      }).catch((err) => {
-        // Log instead of swallowing silently — a failed token means no server push.
-        console.warn('[Push] getExpoPushTokenAsync failed:', err?.message ?? err);
+      // Native device push token — APNs on iOS, FCM on Android — for AWS SNS.
+      // (Replaces getExpoPushTokenAsync / ExponentPushToken.)
+      const tokenData = await Notifications.getDevicePushTokenAsync().catch((err) => {
+        console.warn('[Push] getDevicePushTokenAsync failed:', err?.message ?? err);
         return null;
       });
 
       if (tokenData?.data) {
-        setPushToken(tokenData.data);
-        // Register token with backend so server can send targeted pushes
-        const { Platform } = await import('react-native');
-        const notificationsService = (await import('./src/services/notificationsService')).default;
-        await notificationsService.registerPushToken(
-          tokenData.data,
-          Platform.OS === 'ios' ? 'ios' : 'android'
-        ).catch(() => {}); // silent fail — user may not be logged in yet
+        await registerDeviceToken(
+          String(tokenData.data),
+          tokenData.type === 'ios' ? 'ios' : 'android'
+        );
       }
     } catch (e) {
       // Notifications may not be available in simulator
     }
   };
 
-  const setupNotificationListeners = () => {
+  const setupNotificationListeners = (): (() => void) => {
     try {
       const subscription = Notifications.addNotificationReceivedListener((notification) => {
         const data = notification.request.content;
@@ -151,14 +213,9 @@ export default function App() {
         });
       });
 
+      // Foreground + background tap → single centralized navigation handler.
       const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-        const data = response.notification.request.content.data as Record<string, any>;
-        if (data?.type === 'application' && data?.id) {
-          // navigation handled by RootNavigator via linking config
-        } else if (data?.type === 'expiry') {
-          // Certificate expiry — navigate to RenewalCenter
-        }
-        console.log('[Notification tap]', data);
+        handleNotificationResponse(response);
       });
 
       return () => {

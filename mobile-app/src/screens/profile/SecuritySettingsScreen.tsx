@@ -8,6 +8,8 @@ import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../components/common/ToastProvider';
 import authService from '../../services/authService';
+import * as SecureStore from 'expo-secure-store';
+import { STORAGE_KEYS } from '../../utils/constants';
 
 const SecuritySettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -15,7 +17,6 @@ const SecuritySettingsScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
   const { isBiometricEnabled, setBiometricEnabled, logout } = useAuthStore();
   const { showToast } = useToast();
-  const [twoFactor, setTwoFactor] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
@@ -25,6 +26,13 @@ const SecuritySettingsScreen: React.FC = () => {
     setDeleting(true);
     try {
       await authService.deleteAccount();
+      // The account — and its server-side Device/push-token records — is now
+      // deleted, so the session token is invalid. Drop the locally-cached push
+      // token BEFORE logout so logout's unregisterPushToken() has nothing to send,
+      // keeping the sign-out instant. logout() + the api interceptor are also
+      // independently hardened to never block or deadlock on that dead-token call
+      // (see authStore.logout / clearSession and services/api.ts).
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.PUSH_TOKEN).catch(() => {});
       showToast('Account deleted', 'Your account has been deleted successfully.', 'success');
       // Clears secure tokens + cached profile and resets auth state; the root
       // navigator reacts to isAuthenticated=false and returns to Login.
@@ -61,19 +69,28 @@ const SecuritySettingsScreen: React.FC = () => {
     );
   };
 
-  const MENU_ITEMS = [
-    {
-      icon: 'lock-closed-outline' as const,
-      title: 'Change Password',
-      subtitle: 'Last changed 30 days ago',
-      onPress: () => navigation.navigate('ChangePassword'),
-      type: 'nav',
-      color: colors.primary,
-    },
+  // DICE authenticates via Sign in with Apple, Google, and Email OTP — there is
+  // no password login, so no "Change Password". Only genuinely-implemented
+  // controls are shown here: biometric app-lock (real) and Two-Factor Auth,
+  // which has no backend yet and is therefore shown as an honest, non-toggleable
+  // "Not available" state rather than a fake switch. Non-functional placeholder
+  // rows (Active Sessions, Login History) were removed.
+  type SecurityItem = {
+    icon: any;
+    title: string;
+    subtitle: string;
+    type: 'toggle' | 'info' | 'nav';
+    color: string;
+    value?: boolean;
+    onToggle?: () => void;
+    onPress?: () => void;
+    note?: string;
+  };
+  const MENU_ITEMS: SecurityItem[] = [
     {
       icon: 'finger-print' as const,
       title: 'Biometric Login',
-      subtitle: 'Use fingerprint or Face ID',
+      subtitle: 'Use fingerprint or Face ID to unlock the app',
       type: 'toggle',
       value: isBiometricEnabled,
       onToggle: () => setBiometricEnabled(!isBiometricEnabled),
@@ -81,28 +98,11 @@ const SecuritySettingsScreen: React.FC = () => {
     },
     {
       icon: 'shield-checkmark-outline' as const,
-      title: 'Two-Factor Auth',
-      subtitle: 'Add extra layer of security',
-      type: 'toggle',
-      value: twoFactor,
-      onToggle: () => setTwoFactor(!twoFactor),
-      color: colors.secondary,
-    },
-    {
-      icon: 'phone-portrait-outline' as const,
-      title: 'Active Sessions',
-      subtitle: '2 devices logged in',
-      onPress: () => navigation.navigate('DeviceSessions'),
-      type: 'nav',
-      color: colors.warning,
-    },
-    {
-      icon: 'time-outline' as const,
-      title: 'Login History',
-      subtitle: 'View recent login activity',
-      onPress: () => {},
-      type: 'nav',
-      color: colors.textSecondary,
+      title: 'Two-Factor Authentication',
+      subtitle: 'An extra verification step at sign-in',
+      type: 'info',
+      note: 'Not available',
+      color: colors.textTertiary,
     },
   ];
 
@@ -126,7 +126,7 @@ const SecuritySettingsScreen: React.FC = () => {
             <View style={styles.scoreLeft}>
               <Text style={styles.scoreLabel}>SECURITY SCORE</Text>
               <Text style={styles.scoreValue}>72/100</Text>
-              <Text style={styles.scoreSubtitle}>Enable 2FA to improve your score</Text>
+              <Text style={styles.scoreSubtitle}>Enable biometric login to keep your account secure</Text>
             </View>
             <Ionicons name="shield-checkmark" size={48} color="rgba(255,255,255,0.3)" />
           </LinearGradient>
@@ -144,6 +144,7 @@ const SecuritySettingsScreen: React.FC = () => {
                   style={styles.menuRow}
                   onPress={item.type === 'nav' ? item.onPress : undefined}
                   activeOpacity={item.type === 'nav' ? 0.7 : 1}
+                  disabled={item.type !== 'nav'}
                 >
                   <View style={[styles.menuIcon, { backgroundColor: `${item.color}20` }]}>
                     <Ionicons name={item.icon} size={20} color={item.color} />
@@ -159,6 +160,8 @@ const SecuritySettingsScreen: React.FC = () => {
                       trackColor={{ false: colors.bgCardLight, true: `${item.color}60` }}
                       thumbColor={item.value ? item.color : colors.textTertiary}
                     />
+                  ) : item.type === 'info' ? (
+                    <Text style={styles.notAvailable}>{item.note}</Text>
                   ) : (
                     <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
                   )}
@@ -212,6 +215,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     menuInfo: { flex: 1 },
     menuTitle: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
     menuSubtitle: { fontSize: 12, color: colors.textTertiary, marginTop: 2 },
+    notAvailable: { fontSize: 12, fontWeight: '600', color: colors.textTertiary, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' },
     divider: { height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : colors.border, marginHorizontal: 12 },
     dangerLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginTop: 24, marginBottom: 8, paddingHorizontal: 4 },
     deleteBtn: {

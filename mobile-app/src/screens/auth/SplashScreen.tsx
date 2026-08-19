@@ -8,7 +8,7 @@ const SplashScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0A0B0F' : '#FFFFFF' }]}>
       <Image
-        source={require('../../../assets/icon.png')}
+        source={isDark ? require('../../../assets/logo-light.png') : require('../../../assets/logo-dark.png')}
         style={styles.logoImage}
         resizeMode="contain"
         accessibilityRole="image"

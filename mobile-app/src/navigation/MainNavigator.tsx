@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform } from 'react-native';
+import { NavigatorScreenParams } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,7 +17,7 @@ export type MainTabParamList = {
   Insights: undefined;
   Certifications: undefined;
   Identifier: undefined;
-  Profile: undefined;
+  Profile: NavigatorScreenParams<{ ProfileHome: undefined }> | undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -41,7 +42,24 @@ const MainNavigator: React.FC = () => {
       <Tab.Screen name="Insights" component={InsightsStackNavigator} />
       <Tab.Screen name="Certifications" component={CertificationsStackNavigator} />
       <Tab.Screen name="Identifier" component={AIStackNavigator} />
-      <Tab.Screen name="Profile" component={ProfileStackNavigator} />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStackNavigator}
+        listeners={({ navigation }) => ({
+          // The Profile tab must ALWAYS open the Profile root screen. Deep-links
+          // into the Profile stack from elsewhere — e.g. the Home "Consultant
+          // Workspace" card navigating to ConsultantVerification — otherwise
+          // leave sticky nested params/state so the tab re-opens that sub-screen
+          // instead of Profile. Resetting to ProfileHome on tab press keeps
+          // Consultant Verification an explicit workflow entry, never a Profile
+          // navigation guard. (Sub-screens like Security Settings → Delete
+          // Account are reached by in-stack navigation, which is unaffected.)
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Profile', { screen: 'ProfileHome' });
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 };

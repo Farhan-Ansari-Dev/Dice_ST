@@ -23,7 +23,9 @@ export default function ConsultantVerificationPage() {
   const { data: consultants = [], isLoading } = useQuery({
     queryKey: ['consultants_verification'],
     queryFn: async () => {
-      const res = await apiClient.get('/users?role=consultant&limit=200')
+      // Consultants self-declare via onboarding (business_role='consultant');
+      // their `role` stays 'client', so filtering by role returned nobody.
+      const res = await apiClient.get('/users?business_role=consultant&limit=200')
       return (res.data.data || []).filter((u: any) => u.consultant_verification_status)
     },
   })

@@ -53,6 +53,12 @@ const applicationsService = {
   getAll: (params?: { page?: number; limit?: number; status?: string; cert_type?: string }) =>
     api.get<ApplicationsResponse>('/applications', { params }),
 
+  /** Applications where the current user is an assignee (verified consultants).
+   *  The backend scopes strictly to `assignees: me`, so this never leaks other
+   *  users' applications regardless of client-side gating. */
+  getAssignedToMe: (params?: { page?: number; limit?: number; status?: string }) =>
+    api.get<ApplicationsResponse>('/applications', { params: { ...params, assignee_to_me: 'true' } }),
+
   getById: (id: string) =>
     api.get<{ data: Application }>(`/applications/${id}`),
 

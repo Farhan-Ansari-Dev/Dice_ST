@@ -56,6 +56,21 @@ const authService = {
     };
   },
 
+  // Sign in with Apple — the native identityToken is verified server-side and the
+  // user is upserted by email (same account as Google/OTP). fullName is only
+  // provided by Apple on the very first authorization.
+  appleSignIn: async (
+    identityToken: string,
+    fullName?: { givenName?: string | null; familyName?: string | null } | null,
+  ) => {
+    const res = await api.post<{ success: boolean, data: { accessToken: string, refreshToken: string, user: User } }>('/auth/apple', { identityToken, fullName });
+    return {
+      token: res.data.accessToken,
+      refreshToken: res.data.refreshToken,
+      user: res.data.user
+    };
+  },
+
   refreshToken: (refreshToken: string) =>
     api.post<{ token: string }>('/auth/refresh', { refreshToken }),
 

@@ -256,6 +256,33 @@ router.post('/google', validate(googleSchema), async (req: Request, res: Respons
     }
   });
 
+/**
+ * True when `name` is not a real user-provided name but a placeholder we (or a
+ * previous build) generated: empty, a generic default, the email local-part, or
+ * a relay-style alias (e.g. "72vg442y42"). Used to decide when it is safe to
+ * overwrite a stored name with a real Apple-provided one.
+ */
+function isPlaceholderName(name?: string, email?: string): boolean {
+  const n = (name ?? '').trim();
+  if (!n) return true;
+  if (n === 'User' || n === 'DICE User') return true;
+  if (email) {
+    const local = email.split('@')[0];
+    if (local && n.toLowerCase() === local.toLowerCase()) return true;
+  }
+  // Relay-style alias: a single lowercase-alphanumeric token with a digit and no
+  // spaces (real names have spaces or aren't digit-bearing single tokens).
+  if (/^[a-z0-9]{6,}$/.test(n) && /\d/.test(n)) return true;
+  return false;
+}
+
+/** Non-random display fallback when Apple provides no name (subsequent logins). */
+function appleDisplayFallback(email: string, isPrivateRelay: boolean): string {
+  if (isPrivateRelay) return 'DICE User';           // relay alias is not a name
+  const local = email.split('@')[0];
+  return local && local.length >= 2 ? local : 'DICE User';
+}
+
 // ═══════════════════════════════════════════════════════════════
 // POST /auth/apple  { identityToken, fullName? }  → Sign in with Apple
 // Verifies Apple's identity token, then upserts the user BY EMAIL — exactly like
@@ -267,22 +294,50 @@ router.post('/apple', validate(appleSchema), async (req: Request, res: Response)
   const { identityToken, fullName } = req.body;
   try {
     const claims = await verifyAppleIdentityToken(identityToken);
+    const appleSub = claims.sub;                       // stable identity key
     const email = claims.email?.toLowerCase();
-    if (!email) return res.status(401).json({ error: 'apple_no_email' });
+    // Apple's Hide My Email relay local-part is a random alias (e.g. 72vg442y42),
+    // NOT a human name. Never derive a display name from it.
+    const isPrivateRelay = !!email && email.endsWith('@privaterelay.appleid.com');
 
-    let user = await User.findOne({ email });
+    // Real name — only provided by Apple on the FIRST authorization for this app.
+    const appleName = [fullName?.givenName, fullName?.familyName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    // Identity resolution: prefer the stable Apple subject so the same Apple
+    // account always maps to the same DICE account (even if Hide My Email is
+    // toggled). Fall back to email to link a pre-existing Google/OTP account.
+    let user = appleSub ? await User.findOne({ apple_sub: appleSub }) : null;
+    if (!user && email) user = await User.findOne({ email });
+
     if (!user) {
-      const name = [fullName?.givenName, fullName?.familyName].filter(Boolean).join(' ').trim();
+      if (!email) return res.status(401).json({ error: 'apple_no_email' });
       user = await User.create({
         email,
-        name: name || email.split('@')[0],
+        apple_sub: appleSub,
+        // Prefer Apple's real name. Otherwise use a neutral, non-random
+        // placeholder (never the relay alias / sub / random string) that the
+        // user can correct via Edit Profile.
+        name: appleName || appleDisplayFallback(email, isPrivateRelay),
         email_verified_at: new Date(),
         role: 'client',
         otp_attempts: 0,
       });
-    } else if (!user.email_verified_at) {
-      user.email_verified_at = new Date();
-      await user.save();
+    } else {
+      let changed = false;
+      // Backfill the stable identity key on an account first created via email.
+      if (appleSub && !user.apple_sub) { user.apple_sub = appleSub; changed = true; }
+      if (!user.email_verified_at) { user.email_verified_at = new Date(); changed = true; }
+      // Persist a real Apple name if we have one AND the stored name is still a
+      // placeholder (empty / relay-alias / email local-part). NEVER overwrite a
+      // real, user-provided name.
+      if (appleName && isPlaceholderName(user.name, user.email)) {
+        user.name = appleName;
+        changed = true;
+      }
+      if (changed) await user.save();
     }
 
     const { accessToken, refreshToken } = issueTokens(user);

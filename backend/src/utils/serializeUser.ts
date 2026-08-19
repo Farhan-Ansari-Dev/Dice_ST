@@ -94,6 +94,13 @@ export async function serializeUser(user: any, options: SerializeOptions = {}) {
     isOnboardingComplete: isOnboardingComplete(user),
     profileCompletion: computeProfileCompletion(user),
 
+    // Consultant verification state machine (NOT_SUBMITTED=null → pending →
+    // verified/rejected). The mobile Consultant Zone reads these to show the
+    // real backend status instead of assuming approval from business_role.
+    consultantVerificationStatus: user.consultant_verification_status ?? null,
+    consultantRejectionReason: user.consultant_rejection_reason ?? null,
+    consultantVerificationDocuments: user.consultant_verification_documents ?? [],
+
     applicationsCount,
     certificationsCount,
     insightsRead,
