@@ -156,6 +156,35 @@ const SYSTEM_PROMPT = `You are an expert AI compliance assistant for Sanyog Conf
 
 Always provide accurate, actionable compliance advice. Reference specific standards and regulations when possible. If you're unsure, say so.`
 
+// ── Company contact + about, injected into AI chat answers ────────────────────
+// Verified from the app (SupportCenter/Communication screens) and the official
+// website www.sanyogconformity.com. Kept as constants so the numbers/details are
+// never AI-fabricated.
+const SANYOG_CONTACT_NUMBER = '+91 78970 01049';
+const SANYOG_CONTACT_BLOCK =
+  `\n\n---\n📞 **Ready to apply?** Sanyog Conformity Solutions can handle it for you:\n` +
+  `• Call: ${SANYOG_CONTACT_NUMBER} (Mon–Fri, 9am–6pm)\n` +
+  `• WhatsApp: https://wa.me/917897001049\n` +
+  `• Website: https://www.sanyogconformity.com`;
+
+// Factual company overview drawn only from the official website — no invented
+// facts (email/address are intentionally omitted; users are pointed to the site).
+const ABOUT_SANYOG =
+  `**Sanyog Conformity Solutions** — Certification & Compliance Experts.\n\n` +
+  `We help businesses obtain the product certifications and regulatory approvals needed to sell in India and export worldwide, end to end.\n\n` +
+  `**Domestic (India):** BIS (ISI / CRS / FMCS / Scheme-X), WPC, TEC, LMPC, PESO, EPR, FSSAI, CDSCO, ISO, GMP, and company / GST / MSME registration.\n` +
+  `**International:** SASO & SABER (Saudi Arabia), ECAS/MOIAT & G-Mark (GCC/UAE), CE Marking & REACH (EU), PVoC / CoC schemes (Egypt, Iraq, Nigeria SONCAP, Tanzania, Uganda, Ethiopia, Zimbabwe, Kuwait, and more), and USFDA / FDA registration.\n` +
+  `**Testing & Inspection:** product testing (RoHS, textiles, electronics, building materials, etc.), pre-shipment and container inspection.\n\n` +
+  `📞 ${SANYOG_CONTACT_NUMBER} · 🌐 https://www.sanyogconformity.com`;
+
+/** True when the user's message expresses intent to apply / start a certification. */
+const isApplyIntent = (m: string): boolean =>
+  /\bappl(y|ied|ying|ication|ications)\b|\bhow (do|can) i (get|start|obtain)\b|\bstart (the )?(process|certification|application)\b/i.test(m);
+
+/** True only for questions ABOUT the company (not "about <a certification>"). */
+const isAboutCompanyIntent = (m: string): boolean =>
+  /\babout (sanyog|you|us|the company|your company|this company)\b|who (are|is) (you|sanyog|this)|what is sanyog|tell me about (sanyog|the company|your company|yourself)/i.test(m);
+
 /**
  * Server-side customer context. The signed-in user's onboarding/company profile
  * is injected into AI prompts so answers are tailored to their business — without
@@ -234,8 +263,19 @@ export const aiService = {
       throw new AIUnavailableError(`The AI provider could not be reached: ${detail}`)
     }
 
-    const response = completion.choices[0].message.content ?? ''
-    
+    let response = completion.choices[0].message.content ?? ''
+
+    // Company "about us" question → answer with verified company details rather
+    // than whatever the model recalls, so facts are never fabricated.
+    if (isAboutCompanyIntent(message)) {
+      response = ABOUT_SANYOG
+    }
+    // Any message expressing intent to apply → append the real Sanyog contact
+    // details so the user always gets a way to proceed.
+    if (isApplyIntent(message)) {
+      response += SANYOG_CONTACT_BLOCK
+    }
+
     // Remove the context we appended invisibly before saving to history
     messages[messages.length - 1].content = message
     messages.push({ role: 'assistant', content: response })
