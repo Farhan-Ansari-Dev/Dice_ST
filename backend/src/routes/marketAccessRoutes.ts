@@ -4,11 +4,13 @@ import {
   getCertifications,
   getCountries,
   getMarketRules,
-  checkMarketAccess
+  checkMarketAccess,
+  getCoverage
 } from '../controllers/marketAccessController';
 
 const router = Router();
 
+router.get('/coverage', getCoverage);
 router.get('/product-categories', getProductCategories);
 router.get('/certifications', getCertifications);
 router.get('/countries', getCountries);

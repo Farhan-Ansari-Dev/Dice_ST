@@ -46,3 +46,15 @@ export function marketForCode(code: string | undefined | null): string | null {
 
 /** The ISO codes we have a verified market for. */
 export const SUPPORTED_MARKET_CODES: string[] = Object.keys(ISO_TO_MARKET);
+
+/**
+ * Reverse lookup: market name → a representative ISO code. Used by the coverage
+ * endpoint so the mobile can offer only markets that actually have data and send
+ * a code the resolver understands (e.g. "India" → "IN", "Europe" → "DE").
+ */
+export function codeForMarket(name: string | undefined | null): string | null {
+  if (!name) return null;
+  const target = String(name).trim();
+  const entry = Object.entries(ISO_TO_MARKET).find(([, v]) => v === target);
+  return entry ? entry[0] : null;
+}
