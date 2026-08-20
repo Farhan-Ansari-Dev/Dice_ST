@@ -127,11 +127,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   const asStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
   const application_id = asStr(req.query.application_id);
   const doc_type = asStr(req.query.doc_type);
+  const category = asStr(req.query.category);
   const q = asStr(req.query.q);
 
   const filter: any = { ...orgScope(req) };
   if (application_id) filter.application_ids = application_id;
   if (doc_type) filter.doc_type = doc_type;
+  if (category) filter.category = category;
   if (q) filter.$text = { $search: q };
 
   const pageN = Math.max(1, parseInt(asStr(req.query.page) ?? '1', 10) || 1);
