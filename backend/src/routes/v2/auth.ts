@@ -238,9 +238,17 @@ router.post('/google', validate(googleSchema), async (req: Request, res: Respons
           role: 'client',
           otp_attempts: 0,
         });
-      } else if (!user.email_verified_at) {
-        user.email_verified_at = new Date();
-        await user.save();
+      } else {
+        let changed = false;
+        if (!user.email_verified_at) { user.email_verified_at = new Date(); changed = true; }
+        // Backfill a real Google name when the stored name is still a placeholder
+        // (empty / "DICE User" / email local-part / relay alias). Never overwrite
+        // a real, user-provided name. Mirrors the Apple sign-in name handling.
+        if (payload.name && isPlaceholderName(user.name, user.email)) {
+          user.name = payload.name;
+          changed = true;
+        }
+        if (changed) await user.save();
       }
 
       const { accessToken, refreshToken } = issueTokens(user);
@@ -364,17 +372,33 @@ router.post('/verify-otp', verifyLimiter, validate(verifyOtpSchema), async (req:
 
   if (!user) return res.status(401).json({ error: 'invalid_credentials' });
 
+  // ── App Review demo bypass ──────────────────────────────────────────────
+  // Lets ONE allowlisted email sign in with a fixed OTP from env, so Apple's
+  // reviewer (who cannot receive the emailed code) can reach a normal `client`
+  // account. Scoped to a single email — every other account is unaffected.
+  // Constant-time compare. Disable at any time by removing the two env vars.
+  const reviewEmail = process.env.REVIEW_DEMO_EMAIL?.toLowerCase();
+  const reviewOtp = process.env.REVIEW_DEMO_OTP;
+  const isReviewBypass =
+    !!reviewEmail && !!reviewOtp &&
+    email.toLowerCase() === reviewEmail &&
+    (() => {
+      const a = Buffer.from(String(otp));
+      const b = Buffer.from(reviewOtp);
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    })();
+
   // Lock after 5 failed attempts
-  if (user.otp_attempts >= 5) {
+  if (user.otp_attempts >= 5 && !isReviewBypass) {
     return res.status(429).json({ error: 'too_many_attempts', message: 'Request a new OTP.' });
   }
 
-  if (!user.otp_hash || !user.otp_expires_at || user.otp_expires_at < new Date()) {
+  if ((!user.otp_hash || !user.otp_expires_at || user.otp_expires_at < new Date()) && !isReviewBypass) {
     return res.status(401).json({ error: 'otp_expired' });
   }
 
   const devBypass = process.env.NODE_ENV === 'development' && otp === '123456';
-  if (hashOTP(otp) !== user.otp_hash && !devBypass) {
+  if (!isReviewBypass && hashOTP(otp) !== user.otp_hash && !devBypass) {
     user.otp_attempts += 1;
     await user.save();
     return res.status(401).json({ error: 'invalid_otp' });
