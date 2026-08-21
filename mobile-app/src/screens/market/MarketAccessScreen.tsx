@@ -97,20 +97,20 @@ export default function MarketAccessScreen() {
             <Text style={styles.subtitle}>Unlock global trade insights, regulations, and high-growth opportunities.</Text>
           </View>
 
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
+          {/* Search Bar — opens the full domain search screen */}
+          <TouchableOpacity
+            style={styles.searchContainer}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('MarketSearch', { query: searchQuery })}
+          >
             <Ionicons name="search" size={20} color={colors.primary} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search markets, products, HS code..."
-              placeholderTextColor={colors.textSecondary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+            <Text style={[styles.searchInput, { color: colors.textSecondary }]} numberOfLines={1}>
+              {searchQuery || 'Search markets, products, HS code...'}
+            </Text>
             <View style={styles.searchBadge}>
-              <Ionicons name="mic-outline" size={16} color="#FFF" />
+              <Ionicons name="arrow-forward" size={16} color="#FFF" />
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Quick Categories */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesContainer} contentContainerStyle={{ paddingHorizontal: Spacing.xl }}>

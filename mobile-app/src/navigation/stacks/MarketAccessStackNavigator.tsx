@@ -13,6 +13,7 @@ import SavedItemsScreen from '../../screens/market/SavedItemsScreen';
 import ApplyOpportunityScreen from '../../screens/market/ApplyOpportunityScreen';
 import BusinessGuideScreen from '../../screens/market/BusinessGuideScreen';
 import MyRequestsScreen from '../../screens/market/MyRequestsScreen';
+import MarketSearchScreen from '../../screens/market/MarketSearchScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -32,6 +33,7 @@ export default function MarketAccessStackNavigator() {
       <Stack.Screen name="ApplyOpportunity" component={ApplyOpportunityScreen} />
       <Stack.Screen name="BusinessGuide" component={BusinessGuideScreen} />
       <Stack.Screen name="MyRequests" component={MyRequestsScreen} />
+      <Stack.Screen name="MarketSearch" component={MarketSearchScreen} />
     </Stack.Navigator>
   );
 }

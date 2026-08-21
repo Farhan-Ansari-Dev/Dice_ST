@@ -5,12 +5,15 @@ import {
   getCountries,
   getMarketRules,
   checkMarketAccess,
-  getCoverage
+  getCoverage,
+  searchMarketAccess
 } from '../controllers/marketAccessController';
+import { authenticate } from '../middleware/authMongo';
 
 const router = Router();
 
 router.get('/coverage', getCoverage);
+router.get('/search', authenticate, searchMarketAccess);
 router.get('/product-categories', getProductCategories);
 router.get('/certifications', getCertifications);
 router.get('/countries', getCountries);
