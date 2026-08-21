@@ -59,7 +59,7 @@ export interface HsAiPort {
   rank(product: string, poolCodes: string[]): Promise<string[]>;
 }
 
-const defaultAiPort: HsAiPort = {
+export const defaultAiPort: HsAiPort = {
   compare: (p, d) => aiService.compareProductToHs(p, d),
   rank: (p, codes) => aiService.rankHsCandidates(p, codes),
 };
