@@ -20,3 +20,4 @@ export { Inspection, IInspection } from './Inspection';
 export { Shipment, IShipment } from './Shipment';
 export { Testing, ITesting } from './Testing';
 export { HsCode, IHsCode } from './HsCode';
+export { SavedItem, ISavedItem, SAVED_ITEM_TYPES } from './SavedItem';

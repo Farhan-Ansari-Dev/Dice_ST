@@ -82,8 +82,9 @@ export default function MarketAccessScreen() {
               </View>
             </TouchableOpacity>
             <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.glassBtn}><Ionicons name="bookmark-outline" size={20} color={colors.textPrimary} /></TouchableOpacity>
-              <TouchableOpacity style={[styles.glassBtn, { marginLeft: 12 }]}><Ionicons name="options-outline" size={20} color={colors.textPrimary} /></TouchableOpacity>
+              <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.navigate('SavedItems')}>
+                <Ionicons name="bookmark-outline" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
             </View>
           </View>
           

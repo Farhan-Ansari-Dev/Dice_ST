@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTheme } from '../../theme';
 import Button from '../../components/common/Button';
+import useSavedOpportunities from '../../hooks/useSavedOpportunities';
 
 export default function BusinessOpportunityScreen() {
   const { colors, isDark } = useTheme();
@@ -20,6 +21,12 @@ export default function BusinessOpportunityScreen() {
   const profitMargin = oppData.profitMargin || '10-20%';
   const requiredCerts = oppData.requiredCertifications || ['General Compliance'];
 
+  // Save/bookmark — persisted per user via the backend. Only saveable when we
+  // have the real opportunity id (guards the OpportunitiesList param path).
+  const oppId: string | undefined = oppData?._id;
+  const { isSaved, toggle } = useSavedOpportunities();
+  const saved = oppId ? isSaved(oppId) : false;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -27,8 +34,29 @@ export default function BusinessOpportunityScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn}><Ionicons name="bookmark-outline" size={24} color={colors.textPrimary} /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}><Ionicons name="share-social-outline" size={24} color={colors.textPrimary} /></TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            disabled={!oppId}
+            onPress={() =>
+              oppId &&
+              toggle(oppId, {
+                title,
+                country: oppData.country,
+                industry,
+                investment,
+                demand,
+                profitMargin,
+                overview,
+                requiredCertifications: requiredCerts,
+              })
+            }
+          >
+            <Ionicons
+              name={saved ? 'bookmark' : 'bookmark-outline'}
+              size={24}
+              color={saved ? colors.primary : (oppId ? colors.textPrimary : colors.textSecondary)}
+            />
+          </TouchableOpacity>
         </View>
       </View>
 

@@ -9,6 +9,7 @@ import InvestmentROIScreen from '../../screens/market/InvestmentROIScreen';
 import RiskAnalyzerScreen from '../../screens/market/RiskAnalyzerScreen';
 import TradeTariffsScreen from '../../screens/market/TradeTariffsScreen';
 import TargetMarketsMapScreen from '../../screens/market/TargetMarketsMapScreen';
+import SavedItemsScreen from '../../screens/market/SavedItemsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -24,6 +25,7 @@ export default function MarketAccessStackNavigator() {
       <Stack.Screen name="RiskAnalyzer" component={RiskAnalyzerScreen} />
       <Stack.Screen name="TradeTariffs" component={TradeTariffsScreen} />
       <Stack.Screen name="TargetMarketsMap" component={TargetMarketsMapScreen} />
+      <Stack.Screen name="SavedItems" component={SavedItemsScreen} />
     </Stack.Navigator>
   );
 }
