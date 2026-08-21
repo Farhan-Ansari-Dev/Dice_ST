@@ -61,7 +61,7 @@ export default function MarketAccessScreen() {
     { id: '1', title: 'Product Finder', sub: 'Search by HS Code', icon: 'scan', color: colors.primary, route: 'ProductAnalyzer' },
     { id: '2', title: 'Investment ROI', sub: 'Calculate Profit', icon: 'calculator', color: colors.success, route: 'InvestmentROI' },
     { id: '3', title: 'Risk Analyzer', sub: 'Check Trade Risks', icon: 'shield-checkmark', color: colors.warning, route: 'RiskAnalyzer' },
-    { id: '4', title: 'Trade Tariffs', sub: 'Customs & Duties', icon: 'document-text', color: colors.error, route: 'TradeTariffs' },
+    { id: '4', title: 'Trade Traffic', sub: 'Import/export activity', icon: 'trending-up', color: colors.error, route: 'TradeTariffs' },
   ];
 
   return (

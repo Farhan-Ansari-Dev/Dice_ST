@@ -32,6 +32,7 @@ import productsRoutes from './v2/products';
 import leadsRoutes from './v2/leads';
 import hsRoutes from './v2/hs';
 import savedRoutes from './v2/saved';
+import tradeRoutes from './v2/trade';
 import partnersRoutes from './v2/partners';
 import certificationBodiesRoutes from './v2/certificationBodies';
 
@@ -53,6 +54,7 @@ router.use('/products', productsRoutes);
 router.use('/leads', leadsRoutes);
 router.use('/hs', hsRoutes);
 router.use('/saved', savedRoutes);
+router.use('/trade', tradeRoutes);
 router.use('/partners', partnersRoutes);
 router.use('/certification-bodies', certificationBodiesRoutes);
 router.use('/documents', uploadLimiter, documentsRoutes);
