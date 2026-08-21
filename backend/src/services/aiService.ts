@@ -486,4 +486,90 @@ export const aiService = {
     await redis.setex(cacheKey, 3600, JSON.stringify(recommendations))
     return recommendations
   },
+
+  /**
+   * HS classification — compare a user's product description against a single
+   * OFFICIAL HS description and judge whether they refer to the same kind of
+   * good. AI is used ONLY as a comparator here: it never emits an HS code and
+   * never decides that a code is authoritative. The caller has already looked
+   * the code up in the verified HsCode dataset; this only answers "does the
+   * described product actually belong under this heading?".
+   *
+   * Returns { match, confidence (0..1), reason }. Throws AIUnavailableError when
+   * no provider is configured so the caller can degrade to manual review rather
+   * than silently accepting (or rejecting) the pairing.
+   */
+  async compareProductToHs(
+    product: string,
+    officialDescription: string,
+  ): Promise<{ match: boolean; confidence: number; reason: string }> {
+    const { openai, model } = await getAIClientAndModel()
+    if (!openai) throw new AIUnavailableError()
+
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a customs classification assistant. You are given a PRODUCT description and an OFFICIAL Harmonized System (HS) heading description. Decide whether the product genuinely belongs under that HS description. Respond with JSON only: {"match": boolean, "confidence": number between 0 and 1, "reason": short string}. Do NOT output any HS code. If the product clearly belongs to a different heading, set match=false and explain the mismatch briefly.',
+        },
+        { role: 'user', content: `PRODUCT: ${product}\nOFFICIAL HS DESCRIPTION: ${officialDescription}` },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 200,
+      temperature: 0,
+    })
+
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content)
+    if (typeof parsed.match !== 'boolean') {
+      throw new AIResponseError('The HS comparison response was missing a boolean "match".')
+    }
+    let confidence = Number(parsed.confidence)
+    if (!Number.isFinite(confidence)) confidence = parsed.match ? 0.6 : 0.4
+    confidence = Math.min(1, Math.max(0, confidence))
+    return {
+      match: parsed.match,
+      confidence,
+      reason: String(parsed.reason ?? ''),
+    }
+  },
+
+  /**
+   * HS classification — rank a POOL of candidate HS codes (already fetched from
+   * the verified dataset by the caller) by how well each fits the product. AI
+   * may only REORDER the provided codes; any code it returns that is not in the
+   * input pool is discarded. AI can therefore never introduce a code that isn't
+   * dataset-backed. Throws AIUnavailableError when no provider is configured.
+   */
+  async rankHsCandidates(product: string, poolCodes: string[]): Promise<string[]> {
+    const pool = new Set(poolCodes)
+    if (pool.size <= 1) return [...pool]
+    const { openai, model } = await getAIClientAndModel()
+    if (!openai) throw new AIUnavailableError()
+
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You rank Harmonized System (HS) codes for a product. You will receive a PRODUCT and a fixed LIST of candidate HS codes. Return JSON {"ranked": string[]} containing ONLY codes from the provided list, ordered best-fit first. Never invent or add a code that is not in the list.',
+        },
+        { role: 'user', content: `PRODUCT: ${product}\nCANDIDATES: ${JSON.stringify(poolCodes)}` },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 200,
+      temperature: 0,
+    })
+
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content)
+    const ranked: string[] = Array.isArray(parsed.ranked) ? parsed.ranked.map(String) : []
+    // Guardrail: keep only AI outputs that exist in the pool (never invented),
+    // then append any pool codes the AI omitted so nothing is silently lost.
+    const filtered = ranked.filter((c) => pool.has(c))
+    const seen = new Set(filtered)
+    for (const c of poolCodes) if (!seen.has(c)) filtered.push(c)
+    return filtered
+  },
 }
