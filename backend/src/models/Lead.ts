@@ -32,6 +32,8 @@ export interface ILead extends Document {
   admin_notes: Array<{ note: string; author: Types.ObjectId; at: Date }>;
   assigned_to?: Types.ObjectId;
   converted_application_id?: Types.ObjectId;
+  /** Optional link to the Market Access opportunity this enquiry came from. */
+  opportunity_id?: Types.ObjectId;
 
   source: string;
   created_at: Date;
@@ -64,6 +66,11 @@ const LeadSchema = new Schema<ILead>(
     }],
     assigned_to:              { type: Schema.Types.ObjectId, ref: 'User' },
     converted_application_id: { type: Schema.Types.ObjectId, ref: 'Application' },
+
+    // Additive: links a lead back to the Market Access opportunity it came from
+    // (optional; existing leads are unaffected). Lets admin filter/trace
+    // opportunity-sourced enquiries.
+    opportunity_id: { type: Schema.Types.ObjectId, ref: 'BusinessOpportunity' },
 
     source: { type: String, default: 'mobile_app' },
   },

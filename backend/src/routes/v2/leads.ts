@@ -52,7 +52,11 @@ router.post('/', authenticate, validate(createSchema), wrap(async (req: AuthRequ
     product_description: b.productDescription,
     target_markets: Array.isArray(b.targetMarkets) ? b.targetMarkets : [],
     notes: b.notes,
-    source: 'mobile_app',
+    // Additive: allow the caller to declare where the enquiry came from
+    // (e.g. 'market_opportunity'); defaults to the previous 'mobile_app'.
+    source: b.source || 'mobile_app',
+    // Additive: link back to the originating opportunity when supplied.
+    opportunity_id: b.opportunity_id ?? b.opportunityId,
   });
 
   await audit({

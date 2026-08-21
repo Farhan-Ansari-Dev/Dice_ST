@@ -57,12 +57,12 @@ export default function OpportunitiesListScreen() {
       ) : (
         <FlatList
           data={opportunities}
-          keyExtractor={(item) => item._id || Math.random().toString()}
+          keyExtractor={(item, index) => item._id ?? String(index)}
           contentContainerStyle={styles.listContent}
           renderItem={({ item, index }) => {
             const gradient = getGradient(index);
             return (
-              <TouchableOpacity onPress={() => navigation.navigate('BusinessOpportunity', { title: item.title, industry: item.industry })}>
+              <TouchableOpacity onPress={() => navigation.navigate('BusinessOpportunity', { title: item.title, oppData: item })}>
                 <LinearGradient
                   colors={gradient}
                   start={{ x: 0, y: 0 }}

@@ -10,6 +10,9 @@ import RiskAnalyzerScreen from '../../screens/market/RiskAnalyzerScreen';
 import TradeTariffsScreen from '../../screens/market/TradeTariffsScreen';
 import TargetMarketsMapScreen from '../../screens/market/TargetMarketsMapScreen';
 import SavedItemsScreen from '../../screens/market/SavedItemsScreen';
+import ApplyOpportunityScreen from '../../screens/market/ApplyOpportunityScreen';
+import BusinessGuideScreen from '../../screens/market/BusinessGuideScreen';
+import MyRequestsScreen from '../../screens/market/MyRequestsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -26,6 +29,9 @@ export default function MarketAccessStackNavigator() {
       <Stack.Screen name="TradeTariffs" component={TradeTariffsScreen} />
       <Stack.Screen name="TargetMarketsMap" component={TargetMarketsMapScreen} />
       <Stack.Screen name="SavedItems" component={SavedItemsScreen} />
+      <Stack.Screen name="ApplyOpportunity" component={ApplyOpportunityScreen} />
+      <Stack.Screen name="BusinessGuide" component={BusinessGuideScreen} />
+      <Stack.Screen name="MyRequests" component={MyRequestsScreen} />
     </Stack.Navigator>
   );
 }

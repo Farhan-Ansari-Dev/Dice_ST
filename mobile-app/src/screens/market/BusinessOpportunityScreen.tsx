@@ -92,8 +92,22 @@ export default function BusinessOpportunityScreen() {
           </View>
         </View>
 
-        <Button title="Apply Certification Now" onPress={() => {}} style={{ marginTop: 8 }} />
-        <Button title="View Business Guide" variant="secondary" onPress={() => {}} style={{ marginTop: 12, marginBottom: 32 }} />
+        <Button
+          title="Apply Certification Now"
+          onPress={() => (navigation as any).navigate('ApplyOpportunity', { oppData })}
+          style={{ marginTop: 8 }}
+        />
+        <Button
+          title="View Business Guide"
+          variant="secondary"
+          onPress={() =>
+            (navigation as any).navigate('BusinessGuide', {
+              guide: oppData.businessGuide,
+              guideId: typeof oppData.businessGuide === 'string' ? oppData.businessGuide : oppData.businessGuide?._id,
+            })
+          }
+          style={{ marginTop: 12, marginBottom: 32 }}
+        />
       </ScrollView>
     </SafeAreaView>
   );

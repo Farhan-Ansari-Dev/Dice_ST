@@ -20,6 +20,9 @@ export interface Lead {
   product_description?: string;
   target_markets: string[];
   status: LeadStatus;
+  source?: string;
+  opportunity_id?: string;
+  converted_application_id?: string;
   created_at: string;
 }
 
@@ -35,6 +38,10 @@ export interface CreateLeadInput {
   notes?: string;
   /** "Continue as Manual Application" — no certification mapping was found. */
   manualReview?: boolean;
+  /** Where the enquiry came from, e.g. 'market_opportunity'. */
+  source?: string;
+  /** Links the enquiry back to the originating Market Access opportunity. */
+  opportunityId?: string;
 }
 
 const leadsService = {
