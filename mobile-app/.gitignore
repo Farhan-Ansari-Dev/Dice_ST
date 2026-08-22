@@ -2,3 +2,14 @@
 
 # Committed Metro bundle artifact (should not be tracked or type-checked)
 bundle.js
+
+# Apple signing material downloaded from EAS — NEVER commit (private key + password)
+credentials.json
+credentials/
+*.p12
+*.mobileprovision
+# Firebase config
+google-services.json
+
+# build artifacts
+*.ipa

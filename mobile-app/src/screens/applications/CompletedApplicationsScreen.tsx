@@ -1,20 +1,18 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, View, Text, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import EmptyState from '../../components/common/EmptyState';
-
-const COMPLETED: any[] = [];
+import { useApplicationsByBucket } from '../../hooks/useApplicationsByBucket';
 
 const CompletedApplicationsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => { setRefreshing(true); await new Promise(r => setTimeout(r, 800)); setRefreshing(false); };
+  const { items: COMPLETED, loading, refreshing, error, refresh } = useApplicationsByBucket('completed');
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
@@ -27,16 +25,19 @@ const CompletedApplicationsScreen: React.FC = () => {
         <Text style={styles.headerTitle}>Completed</Text>
         <View style={{ width: 40 }} />
       </View>
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+      ) : (
       <FlatList
         data={COMPLETED}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <EmptyState icon="checkmark-circle-outline" title="No Completed Applications" subtitle="Completed applications will appear here." />
+          <EmptyState icon={error ? 'cloud-offline-outline' : 'checkmark-circle-outline'} title={error ? 'Could not load' : 'No Completed Applications'} subtitle={error ?? 'Completed applications will appear here.'} />
         }
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />
         }
         renderItem={({ item }) => (
           <View style={[styles.compCard, Shadows.md]}>
@@ -48,23 +49,24 @@ const CompletedApplicationsScreen: React.FC = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.compName}>{item.name}</Text>
                   <Text style={styles.compType}>{item.type} • {item.appId}</Text>
-                  <Text style={styles.compCert}>Cert: {item.certNo}</Text>
+                  <Text style={styles.compCert}>Stage: {item.stage}</Text>
                 </View>
                 <View style={[styles.doneBadge, { backgroundColor: `${colors.success}20` }]}>
                   <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                 </View>
               </View>
               <View style={styles.compFooter}>
-                <Text style={styles.completedOn}>Approved: {item.completedOn}</Text>
-                <TouchableOpacity style={[styles.downloadBtn, { backgroundColor: `${colors.primary}20` }]} onPress={() => Alert.alert('Download', 'Certificate downloaded!')} activeOpacity={0.7}>
-                  <Ionicons name="download-outline" size={14} color={colors.primary} />
-                  <Text style={[styles.downloadText, { color: colors.primary }]}>Certificate</Text>
+                <Text style={styles.completedOn}>Updated: {item.updated}</Text>
+                <TouchableOpacity style={[styles.downloadBtn, { backgroundColor: `${colors.primary}20` }]} onPress={() => navigation.navigate('ApplicationDetail', { id: item.id })} activeOpacity={0.7}>
+                  <Ionicons name="open-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.downloadText, { color: colors.primary }]}>View</Text>
                 </TouchableOpacity>
               </View>
             </LinearGradient>
           </View>
         )}
       />
+      )}
     </View>
   );
 };
@@ -72,6 +74,7 @@ const CompletedApplicationsScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
     backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.border, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: colors.textPrimary },

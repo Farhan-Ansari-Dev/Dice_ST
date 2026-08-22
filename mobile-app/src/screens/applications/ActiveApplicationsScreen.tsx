@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, View, Text, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -7,15 +7,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import EmptyState from '../../components/common/EmptyState';
 import ProgressBar from '../../components/common/ProgressBar';
-
-const ACTIVE: any[] = [];
+import { useApplicationsByBucket } from '../../hooks/useApplicationsByBucket';
 
 const ActiveApplicationsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => { setRefreshing(true); await new Promise(r => setTimeout(r, 800)); setRefreshing(false); };
+  const { items, loading, refreshing, error, refresh } = useApplicationsByBucket('active');
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
@@ -27,19 +25,26 @@ const ActiveApplicationsScreen: React.FC = () => {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Active Applications</Text>
         <View style={[styles.countBadge, { backgroundColor: `${colors.primary}20` }]}>
-          <Text style={[styles.countText, { color: colors.primary }]}>{ACTIVE.length}</Text>
+          <Text style={[styles.countText, { color: colors.primary }]}>{items.length}</Text>
         </View>
       </View>
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+      ) : (
       <FlatList
-        data={ACTIVE}
+        data={items}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <EmptyState icon="document-text-outline" title="No Active Applications" subtitle="Submit a new application to get started." />
+          <EmptyState
+            icon={error ? 'cloud-offline-outline' : 'document-text-outline'}
+            title={error ? 'Could not load' : 'No Active Applications'}
+            subtitle={error ?? 'Submit a new application to get started.'}
+          />
         }
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />
         }
         renderItem={({ item }) => (
           <TouchableOpacity style={[styles.appCard, Shadows.md]} onPress={() => navigation.navigate('ApplicationDetail', { id: item.id })} activeOpacity={0.85}>
@@ -62,6 +67,7 @@ const ActiveApplicationsScreen: React.FC = () => {
           </TouchableOpacity>
         )}
       />
+      )}
     </View>
   );
 };
@@ -69,6 +75,7 @@ const ActiveApplicationsScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
     backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.border, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: colors.textPrimary },

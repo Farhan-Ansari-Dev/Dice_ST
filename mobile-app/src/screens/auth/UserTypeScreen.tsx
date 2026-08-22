@@ -3,6 +3,7 @@ import {
   StyleSheet,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   ScrollView,
   Animated,
@@ -201,6 +202,16 @@ const UserTypeScreen: React.FC = () => {
   // STEPS entry because every step index here (canContinue, selectionCount,
   // skip rules) is positional; prepending a step would shift all of them.
   const [showWelcome, setShowWelcome] = useState(true);
+  // Name capture: Sign in with Apple only provides the name on the first-ever
+  // authorization, so a new Apple user may arrive with a placeholder name. Let
+  // them enter their real name here (prefilled when we already have a real one).
+  // We NEVER fabricate a name; we ask the person for it.
+  const isPlaceholderName = (n?: string) => {
+    const s = (n ?? '').trim();
+    return !s || s === 'User' || s === 'DICE User' || s === 'DICE';
+  };
+  const needsName = isPlaceholderName(user?.name);
+  const [fullName, setFullName] = useState(needsName ? '' : (user?.name ?? ''));
   const [step, setStep] = useState(0);
   const [businessRole, setBusinessRole]         = useState<BusinessRoleId | null>(null);
   const [industries, setIndustries]             = useState<Set<IndustryId>>(new Set());
@@ -249,6 +260,7 @@ const UserTypeScreen: React.FC = () => {
       setSubmitting(true);
       try {
         await setOnboardingProfile({
+          name: fullName.trim() || undefined,
           businessRole: businessRole!,
           industries: Array.from(industries),
           targetMarkets: Array.from(targetMarkets),
@@ -381,6 +393,32 @@ const UserTypeScreen: React.FC = () => {
             arrive already tailored to your business.
           </Text>
 
+          <View style={{ width: '100%', marginBottom: 20 }}>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Your name{needsName ? '' : ' (confirm)'}
+            </Text>
+            <TextInput
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="e.g. Priya Sharma"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
+              accessibilityLabel="Your name"
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: isDark ? colors.bgCard : '#FFFFFF',
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                fontSize: 15,
+                color: colors.textPrimary,
+              }}
+            />
+          </View>
+
           <View style={welcomeStyle.points}>
             {WELCOME_POINTS.map((point) => (
               <View key={point.label} style={welcomeStyle.point}>
@@ -398,6 +436,7 @@ const UserTypeScreen: React.FC = () => {
         <View style={[welcomeStyle.footer, { paddingBottom: insets.bottom + 20 }]}>
           <TouchableOpacity
             onPress={() => setShowWelcome(false)}
+            disabled={needsName && !fullName.trim()}
             activeOpacity={0.88}
             accessibilityRole="button"
             accessibilityLabel="Get started"
@@ -407,7 +446,7 @@ const UserTypeScreen: React.FC = () => {
               colors={['#6C63FF', '#4D45CC']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={welcomeStyle.cta}
+              style={[welcomeStyle.cta, needsName && !fullName.trim() ? { opacity: 0.5 } : null]}
             >
               <Text style={welcomeStyle.ctaText}>Get Started</Text>
               <Ionicons name="arrow-forward" size={18} color="#fff" />

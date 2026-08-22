@@ -12,7 +12,7 @@ import CertificatesStorageScreen from '../../screens/documents/CertificatesStora
 import RejectedDocumentsScreen from '../../screens/documents/RejectedDocumentsScreen';
 import ExpiryTrackerScreen from '../../screens/documents/ExpiryTrackerScreen';
 import SearchDocumentsScreen from '../../screens/documents/SearchDocumentsScreen';
-import DigiLockerScreen from '../../screens/documents/DigiLockerScreen';
+// DigiLocker is DEFERRED / out of scope for v1.0 — screen intentionally not registered.
 
 const Stack = createNativeStackNavigator();
 const DocumentsStackNavigator: React.FC = () => (
@@ -29,7 +29,6 @@ const DocumentsStackNavigator: React.FC = () => (
     <Stack.Screen name="RejectedDocuments" component={RejectedDocumentsScreen} />
     <Stack.Screen name="ExpiryTracker" component={ExpiryTrackerScreen} />
     <Stack.Screen name="SearchDocuments" component={SearchDocumentsScreen} />
-    <Stack.Screen name="DigiLocker" component={DigiLockerScreen} />
   </Stack.Navigator>
 );
 export default DocumentsStackNavigator;

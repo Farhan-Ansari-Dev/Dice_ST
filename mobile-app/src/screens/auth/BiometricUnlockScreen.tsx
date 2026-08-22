@@ -16,21 +16,10 @@ const BiometricUnlockScreen: React.FC = () => {
   const authenticate = async () => {
     setLoading(true);
     try {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-      if (!hasHardware || !isEnrolled) {
-        Alert.alert(
-          'Biometrics Unavailable',
-          'Biometrics are not set up on this device. Would you like to proceed with your device passcode?',
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-            { text: 'Use Passcode', onPress: () => { setBiometricAuthenticated(true); setLoading(false); } }
-          ]
-        );
-        return;
-      }
-
+      // Always require a REAL authentication before unlocking. We never flip
+      // isBiometricAuthenticated without a successful OS auth. When biometrics
+      // aren't enrolled, disableDeviceFallback:false makes iOS/Android present
+      // the device passcode — that still counts as a genuine auth.
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Authenticate to unlock Sanyog Conformity Solutions',
         fallbackLabel: 'Use Device Passcode',
@@ -40,7 +29,20 @@ const BiometricUnlockScreen: React.FC = () => {
 
       if (result.success) {
         setBiometricAuthenticated(true);
+        return;
       }
+
+      // No biometrics AND no device passcode → there is no local secret to
+      // verify against. Do NOT expose the session; require a full re-login.
+      if (result.error === 'passcode_not_set' || result.error === 'not_enrolled' || result.error === 'not_available') {
+        Alert.alert(
+          'Device lock required',
+          'This device has no biometrics or passcode set, so the app cannot be unlocked securely. Please log in again.',
+          [{ text: 'Log out', onPress: () => logout() }],
+        );
+      }
+      // User cancelled or failed the prompt: stay locked. They can retry
+      // ("Unlock App") or "Log out instead". No silent bypass.
     } catch (e) {
       console.warn('Biometric error:', e);
     } finally {
@@ -86,13 +88,6 @@ const BiometricUnlockScreen: React.FC = () => {
           
           <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
             <Text style={styles.logoutText}>Log out instead</Text>
-          </TouchableOpacity>
-
-          {/* Fallback button if they get completely stuck on a simulator */}
-          <TouchableOpacity style={{ marginTop: 12, padding: 8 }} onPress={() => setBiometricAuthenticated(true)}>
-            <Text style={{ color: colors.textSecondary, fontSize: 13, textDecorationLine: 'underline' }}>
-              Use Device Passcode
-            </Text>
           </TouchableOpacity>
         </View>
       </View>

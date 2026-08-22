@@ -176,8 +176,14 @@ const ProfileScreen: React.FC = () => {
           <Avatar name={user?.name ?? 'User'} uri={user?.avatar} size="xl" online />
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{user?.name ?? 'User'}</Text>
-            <Text style={styles.profileEmail}>{user?.email ?? 'user@example.com'}</Text>
-            <Text style={styles.profilePhone}>{user?.phone ?? '+91 99999 99999'}</Text>
+            {!!user?.email && <Text style={styles.profileEmail}>{user.email}</Text>}
+            {user?.phone ? (
+              <Text style={styles.profilePhone}>{user.phone}</Text>
+            ) : (
+              <TouchableOpacity onPress={() => navigation.navigate('CompanyProfile')}>
+                <Text style={[styles.profilePhone, { color: colors.primary }]}>+ Add phone number</Text>
+              </TouchableOpacity>
+            )}
             <View style={styles.profileMeta}>
               <Badge
                 label={user?.subscription?.toUpperCase() ?? 'FREE'}

@@ -1,20 +1,19 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import EmptyState from '../../components/common/EmptyState';
-
-const DOCS: any[] = [];
+import { useDocuments } from '../../hooks/useDocuments';
+import { openDocument } from '../../utils/documentDisplay';
 
 const CompanyDocumentsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => { setRefreshing(true); await new Promise(r => setTimeout(r, 800)); setRefreshing(false); };
+  const { items: DOCS, loading, refreshing, error, refresh } = useDocuments('company');
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
@@ -29,16 +28,19 @@ const CompanyDocumentsScreen: React.FC = () => {
           <Ionicons name="add" size={22} color={colors.primary} />
         </TouchableOpacity>
       </View>
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+      ) : (
       <FlatList
         data={DOCS}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <EmptyState icon="business-outline" title="No Company Documents" subtitle="Upload your company documents." />
+          <EmptyState icon={error ? 'cloud-offline-outline' : 'business-outline'} title={error ? 'Could not load' : 'No Company Documents'} subtitle={error ?? 'Upload your company documents.'} />
         }
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />
         }
         renderItem={({ item }) => (
           <View style={[styles.docCard, Shadows.sm]}>
@@ -51,13 +53,14 @@ const CompanyDocumentsScreen: React.FC = () => {
                 <Text style={styles.docMeta}>{item.size} • {item.date}</Text>
                 {item.category && <Text style={styles.docCategory}>{item.category}</Text>}
               </View>
-              <TouchableOpacity onPress={() => Alert.alert('Download', item.name)} style={styles.downloadBtn}>
+              <TouchableOpacity onPress={() => openDocument(item.id, item.name)} style={styles.downloadBtn}>
                 <Ionicons name="download-outline" size={18} color={colors.primary} />
               </TouchableOpacity>
             </LinearGradient>
           </View>
         )}
       />
+      )}
     </View>
   );
 };
@@ -65,6 +68,7 @@ const CompanyDocumentsScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
     backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.border, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: colors.textPrimary },

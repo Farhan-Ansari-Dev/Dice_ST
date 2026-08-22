@@ -78,6 +78,7 @@ interface AuthState {
   setOnboardingDone: () => Promise<void>;
   setUserType: (type: string) => Promise<void>;
   setOnboardingProfile: (profile: {
+    name?: string;
     businessRole: string;
     industries: string[];
     targetMarkets: string[];
@@ -191,14 +192,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setOnboardingProfile: async (profile) => {
     let updatedUser: User | null = null;
     try {
-      updatedUser = await authService.updateProfile({
+      const profilePayload: Record<string, any> = {
         businessRole: profile.businessRole,
         industries: profile.industries,
         targetMarkets: profile.targetMarkets,
         interestedCertifications: profile.interestedCertifications,
         companySize: profile.companySize,
         businessGoals: profile.businessGoals,
-      });
+      };
+      // Persist a real display name captured during onboarding (e.g. when Apple
+      // did not provide one). Only send a genuine, non-placeholder value — never
+      // overwrite the stored name with an empty string or a placeholder.
+      const trimmedName = profile.name?.trim();
+      if (trimmedName) profilePayload.name = trimmedName;
+      updatedUser = await authService.updateProfile(profilePayload);
 
       await SecureStore.setItemAsync(STORAGE_KEYS.USER_TYPE, profile.businessRole);
       await SecureStore.setItemAsync(STORAGE_KEYS.USER_TYPE_DONE, 'true');

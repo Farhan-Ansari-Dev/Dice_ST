@@ -14,7 +14,6 @@ import { handleNotificationResponse } from './src/services/notificationRouter';
 import { APP_VERSION } from './src/utils/constants';
 import { useNotificationStore } from './src/store/notificationStore';
 import { useAuthStore } from './src/store/authStore';
-import { useConfigStore } from './src/store/configStore';
 import { ThemeProvider, loadPersistedTheme, useTheme } from './src/theme';
 import OfflineBanner from './src/components/common/OfflineBanner';
 import { ToastProvider } from './src/components/common/ToastProvider';
@@ -70,11 +69,7 @@ const queryClient = new QueryClient({
 
 export default function App() {
   const { addNotification, setPushToken } = useNotificationStore();
-  const { loadStoredAuth } = useAuthStore();
-  // Subscribe to the push flag. Remote Config hydrates asynchronously, so reading
-  // it once at mount always sees the default `false`; subscribing lets the push
-  // effect below re-run the instant the flag flips true after config loads.
-  const pushEnabled = useConfigStore((s) => s.featureFlags.enable_push_notifications);
+  const { loadStoredAuth, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
     hideSplash();
@@ -87,14 +82,18 @@ export default function App() {
     setupNotificationChannels();
   }, []);
 
-  // Remote push is a POST-LAUNCH feature, DISABLED by default via Remote Config
-  // (`enable_push_notifications`). This effect keys off the flag, so it starts
-  // registration the moment Remote Config loads and flips it true; while off
-  // (the default) the app never requests a native token. registerDevice is
-  // idempotent (upsert by token), so the AppState re-registration and any effect
-  // re-run cannot create duplicate endpoints.
+  // Notification authorization is requested ONLY AFTER successful authentication
+  // (Apple Guideline 2.1 — never on the unauthenticated launch screen). Keying
+  // this effect on isAuthenticated means a fresh install shows NO prompt at
+  // launch; the system prompt appears right after a successful sign-in.
+  // registerForPushNotifications() calls getPermissionsAsync first, so iOS is
+  // asked at most once (the OS suppresses re-prompts after the user decides),
+  // and a denial is non-fatal — the app continues normally. This is independent
+  // of `enable_push_notifications`, which remains a backend send-side toggle
+  // only. registerDevice is idempotent (upsert by token), so the AppState
+  // re-registration cannot create duplicate endpoints.
   useEffect(() => {
-    if (!pushEnabled) return;
+    if (!isAuthenticated) return;
 
     const cleanups: Array<() => void> = [];
 
@@ -124,7 +123,7 @@ export default function App() {
     cleanups.push(() => appStateSub.remove());
 
     return () => { cleanups.forEach((fn) => fn()); };
-  }, [pushEnabled]);
+  }, [isAuthenticated]);
 
   const hideSplash = async () => {
     // Hide immediately — the JS SplashScreen component handles the animated branding

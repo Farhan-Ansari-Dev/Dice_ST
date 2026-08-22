@@ -1,20 +1,18 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, View, Text, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import EmptyState from '../../components/common/EmptyState';
-
-const REJECTED: any[] = [];
+import { useApplicationsByBucket } from '../../hooks/useApplicationsByBucket';
 
 const RejectedApplicationsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => { setRefreshing(true); await new Promise(r => setTimeout(r, 800)); setRefreshing(false); };
+  const { items: REJECTED, loading, refreshing, error, refresh } = useApplicationsByBucket('rejected');
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
@@ -27,16 +25,19 @@ const RejectedApplicationsScreen: React.FC = () => {
         <Text style={styles.headerTitle}>Rejected Applications</Text>
         <View style={{ width: 40 }} />
       </View>
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+      ) : (
       <FlatList
         data={REJECTED}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <EmptyState icon="close-circle-outline" title="No Rejected Applications" subtitle="Great — nothing has been rejected." />
+          <EmptyState icon={error ? 'cloud-offline-outline' : 'close-circle-outline'} title={error ? 'Could not load' : 'No Rejected Applications'} subtitle={error ?? 'Great — nothing has been rejected.'} />
         }
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />
         }
         renderItem={({ item }) => (
           <View style={[styles.rejCard, Shadows.md]}>
@@ -48,12 +49,12 @@ const RejectedApplicationsScreen: React.FC = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rejName}>{item.name}</Text>
                   <Text style={styles.rejMeta}>{item.type} • {item.appId}</Text>
-                  <Text style={styles.rejDate}>Rejected: {item.rejectedOn}</Text>
+                  <Text style={styles.rejDate}>Updated: {item.updated}</Text>
                 </View>
               </View>
               <View style={[styles.reasonCard, { backgroundColor: `${colors.error}10`, borderColor: `${colors.error}30` }]}>
                 <Text style={styles.reasonTitle}>Reason: </Text>
-                <Text style={styles.reasonText}>{item.reason}</Text>
+                <Text style={styles.reasonText}>{item.reason ?? 'Not specified — open the application for details.'}</Text>
               </View>
               <TouchableOpacity style={[styles.reapplyBtn, Shadows.sm]} onPress={() => navigation.navigate('NewApplication')} activeOpacity={0.85}>
                 <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.reapplyBtnGradient}>
@@ -65,6 +66,7 @@ const RejectedApplicationsScreen: React.FC = () => {
           </View>
         )}
       />
+      )}
     </View>
   );
 };
@@ -72,6 +74,7 @@ const RejectedApplicationsScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
     backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : colors.border, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: colors.textPrimary },

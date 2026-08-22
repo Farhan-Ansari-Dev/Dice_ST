@@ -20,7 +20,7 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "bundleIdentifier": "com.sanyogconformity.app",
-      "buildNumber": "2",
+      "buildNumber": "10",
       "infoPlist": {
         "NSCameraUsageDescription": "Used for document scanning and OCR",
         "NSPhotoLibraryUsageDescription": "Used to upload documents",
@@ -36,7 +36,7 @@
       },
       "package": "com.sanyogconformity.app",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 1,
+      "versionCode": 7,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
