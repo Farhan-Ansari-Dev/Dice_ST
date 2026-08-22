@@ -152,6 +152,20 @@ async function lookup(normalized: string): Promise<IHsCode | null> {
 }
 
 /**
+ * Generic modifier tokens that describe HOW a product works, not WHAT it is.
+ * They frequently appear inside multi-word keywords ("wireless earbuds",
+ * "smart speaker", "portable charger"), so matching on them would drag an
+ * unrelated category into the candidate set — e.g. "wireless mouse" matching
+ * "wireless earbuds" (851830). A candidate must match on a MEANINGFUL token.
+ */
+const GENERIC_TOKENS = new Set([
+  'wireless', 'bluetooth', 'smart', 'portable', 'voice', 'digital', 'electric',
+  'electronic', 'rechargeable', 'mini', 'micro', 'pro', 'max', 'plus', 'ultra',
+  'lite', 'premium', 'usb', 'type', 'wifi', 'wi', 'fi', 'hd', 'uhd', 'new',
+  'best', 'cheap', 'high', 'quality', 'device', 'gadget', 'the', 'and', 'for', 'with',
+]);
+
+/**
  * Derive dataset-backed candidate codes for a product description, ranked by AI
  * where available. Candidates ALWAYS come from the dataset (keyword match) — AI
  * only reorders — so a candidate can never be an invented code.
@@ -163,7 +177,11 @@ async function suggestCandidates(
   const term = String(productDescription || '').trim().toLowerCase();
   if (!term) return [];
 
-  const tokens = Array.from(new Set(term.split(/[^a-z0-9]+/).filter((t) => t.length > 2)));
+  const rawTokens = Array.from(new Set(term.split(/[^a-z0-9]+/).filter((t) => t.length > 2)));
+  // Match only on MEANINGFUL tokens. Dropping generic modifiers prevents an
+  // unrelated category being pulled in solely because a descriptor like
+  // "wireless" appears inside one of its keywords.
+  const tokens = rawTokens.filter((t) => !GENERIC_TOKENS.has(t));
   if (!tokens.length) return [];
 
   // Keyword match against the verified dataset. Prefer 6-digit subheadings

@@ -77,11 +77,11 @@ describe('analyzeProductHs', () => {
     expect(r.recommended?.source).toBe('WCO HS-2022');
   });
 
-  it('5: ambiguous product (low confidence) → AMBIGUOUS + alternatives + review', async () => {
+  it('5: low-confidence / non-affirmative match → NO_VERIFIED_MATCH, NO recommendation', async () => {
     const lowAi: HsAiPort = { compare: async () => ({ match: false, confidence: 0.3, reason: 'unclear' }), rank: async (_p, c) => c };
     const r = await analyzeProductHs({ productName: 'speaker' }, lowAi);
-    expect(r.status).toBe('AMBIGUOUS');
-    expect(r.candidates.length).toBeGreaterThan(0);
+    expect(r.status).toBe('NO_VERIFIED_MATCH');
+    expect(r.recommended).toBeNull();
     expect(r.requiresManualReview).toBe(true);
   });
 
@@ -109,11 +109,11 @@ describe('analyzeProductHs', () => {
     expect(withCode.recommended?.code).toBe('851713');
     expect(withCode.recommended?.confidence).toBeNull();
 
-    // Description path: candidates still surface, but confidence unknown → ambiguous.
+    // Description path under outage: NEVER a fabricated recommendation — the
+    // unconfirmed candidate routes to expert review instead.
     const noCode = await analyzeProductHs({ productName: 'LED bulb' }, outageAi);
-    expect(noCode.candidates.length).toBeGreaterThan(0);
-    expect(noCode.status).toBe('AMBIGUOUS');
-    expect(noCode.recommended?.confidence).toBeNull();
+    expect(noCode.status).toBe('NO_VERIFIED_MATCH');
+    expect(noCode.recommended).toBeNull();
   });
 
   it('9: AI returns a non-dataset code → filtered; recommendations stay dataset-backed', async () => {

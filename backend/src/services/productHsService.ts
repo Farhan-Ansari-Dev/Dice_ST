@@ -207,15 +207,20 @@ export async function analyzeProductHs(
     // VERIFIED_MISMATCH → the "wrong HS code" case. Offer a dataset-backed
     // alternative but NEVER silently replace the user's code.
     if (providedCode.status === 'VERIFIED_MISMATCH') {
-      const alt = providedCode.candidates[0] || null;
+      // Offer a dataset-backed alternative ONLY if one genuinely relevant to the
+      // product exists — and never the very code we just flagged as a mismatch.
+      const pc = providedCode; // non-null in this block; keeps closures type-safe
+      const alt = pc.candidates.find((c) => c.code !== pc.code) || null;
       return {
         ...base,
         providedCode,
-        candidates: providedCode.candidates,
+        candidates: pc.candidates.filter((c) => c.code !== pc.code),
         recommended: alt ? toRecommended(alt, null, 'A better-matching verified code for the product you described.') : null,
         status: 'PROVIDED_MISMATCH',
         requiresManualReview: true,
-        message: 'HS Code may not match this product. Review the recommended alternative or request expert review.',
+        message: alt
+          ? 'HS Code may not match this product. Review the recommended alternative or request expert review.'
+          : 'HS Code may not match this product. Expert review required.',
       };
     }
 
@@ -238,25 +243,29 @@ export async function analyzeProductHs(
     };
   }
 
-  // Score the top candidate against the product (AI comparator; degrades to
-  // null confidence under outage, which routes to ambiguous/manual review).
+  // Score the top candidate against the product. The AI must AFFIRMATIVELY match
+  // the product to the candidate's official description AND clear the confidence
+  // threshold before we recommend anything. A merely-closest candidate, a
+  // non-affirmative comparison, or an AI outage NEVER produces a recommendation —
+  // it routes to expert review. This is what stops an unrelated code (e.g. a
+  // headphone heading for "wireless mouse") from being presented as resolved.
   const top = candidates[0];
   let confidence: number | null = null;
+  let matched = false;
   let reason = 'Best match from verified HS coverage based on the product description.';
   try {
     const cmp = await ai.compare(product, top.description);
     confidence = cmp.confidence;
+    matched = cmp.match === true;
     if (cmp.reason) reason = cmp.reason;
   } catch {
     confidence = null;
+    matched = false;
   }
 
-  const decisive =
-    confidence != null && confidence >= RESOLVE_THRESHOLD && candidates.length === 1;
-  const confidentTop =
-    confidence != null && confidence >= RESOLVE_THRESHOLD;
+  const strong = matched && confidence != null && confidence >= RESOLVE_THRESHOLD;
 
-  if (decisive || confidentTop) {
+  if (strong) {
     return {
       ...base,
       providedCode,
@@ -268,18 +277,18 @@ export async function analyzeProductHs(
     };
   }
 
-  // Multiple plausible options, or low/unknown confidence → ambiguous.
+  // Not a confident, affirmative match → never recommend the closest candidate.
+  // Return an honest no-match that routes to expert review. Dataset-backed
+  // candidates are still surfaced for the reviewer's context, but NONE is
+  // presented as recommended/verified/resolved.
   return {
     ...base,
     providedCode,
-    recommended: toRecommended(top, confidence, reason),
+    recommended: null,
     candidates,
-    status: 'AMBIGUOUS',
+    status: 'NO_VERIFIED_MATCH',
     requiresManualReview: true,
-    message:
-      confidence == null
-        ? 'We identified possible HS codes but couldn’t confirm a match automatically. Review the alternatives or request expert review.'
-        : 'Several HS codes could apply to this product. Review the alternatives or request expert review.',
+    message: 'No verified HS classification found for this product. Expert review required.',
   };
 }
 
