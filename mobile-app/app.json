@@ -20,7 +20,7 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "bundleIdentifier": "com.sanyogconformity.app",
-      "buildNumber": "10",
+      "buildNumber": "11",
       "infoPlist": {
         "NSCameraUsageDescription": "Used for document scanning and OCR",
         "NSPhotoLibraryUsageDescription": "Used to upload documents",
