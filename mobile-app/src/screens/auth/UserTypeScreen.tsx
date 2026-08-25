@@ -186,7 +186,9 @@ const chipStyle = StyleSheet.create({
   flag:     { fontSize: 22, width: 32, textAlign: 'center' },
   label:    { fontSize: 13, fontWeight: '600', flexShrink: 1 },
   desc:     { fontSize: 10, marginTop: 2 },
-  tick:     { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  // Absolute so the checkmark never steals width from the label — selecting a
+  // chip must not reflow a 2-line label into 3 lines / break a word.
+  tick:     { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
 });
 
 // ── Main Screen ──────────────────────────────────────────────────────────────
