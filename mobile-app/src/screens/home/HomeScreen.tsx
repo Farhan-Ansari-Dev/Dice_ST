@@ -24,6 +24,7 @@ import { Skeleton } from '../../components/common/SkeletonLoader';
 import AISearchBar from '../../components/home/AISearchBar';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useAuthStore } from '../../store/authStore';
+import { SERVICE_GROUPS } from '../../data/services';
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -365,6 +366,29 @@ const HomeScreen: React.FC = () => {
           </View>
         )}
 
+        {/* SECTION: SERVICES */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.servicesHead}>
+            <Text style={styles.sectionTitle}>Services</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Services')}>
+              <Text style={styles.servicesMore}>View More</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.servicesList}>
+            {SERVICE_GROUPS.map((g, i) => (
+              <TouchableOpacity
+                key={g.key}
+                style={[styles.serviceRow, i < SERVICE_GROUPS.length - 1 && styles.serviceRowDivider]}
+                onPress={() => navigation.navigate('Services', { key: g.key })}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.serviceRowText} numberOfLines={1}>{g.title}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* SECTION 3: BUSINESS IMPACT */}
         <View style={styles.sectionContainer}>
           <Text style={[styles.sectionTitle, { marginBottom: 16, paddingHorizontal: 20 }]}>Business Impact</Text>
@@ -449,6 +473,12 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
 
     // Shared
     sectionContainer: { marginTop: 24 },
+    servicesHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 8 },
+    servicesMore: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+    servicesList: { paddingHorizontal: 20 },
+    serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15 },
+    serviceRowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border },
+    serviceRowText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Platform.OS === 'ios' ? 12 : 16, paddingHorizontal: 20 },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
     seeAll: { fontSize: 13, color: colors.primary, fontWeight: '600' },

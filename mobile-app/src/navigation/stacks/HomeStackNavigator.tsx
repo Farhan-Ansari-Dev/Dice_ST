@@ -9,6 +9,8 @@ import NotificationsScreen from '../../screens/notifications/NotificationsScreen
 import NotificationDetailScreen from '../../screens/communication/NotificationDetailScreen';
 import AISearchScreen from '../../screens/ai-assistant/AISearchScreen';
 import MyWorkScreen from '../../screens/home/MyWorkScreen';
+import ServicesScreen from '../../screens/home/ServicesScreen';
+import ServiceDetailScreen from '../../screens/home/ServiceDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const HomeStackNavigator: React.FC = () => (
@@ -34,6 +36,8 @@ const HomeStackNavigator: React.FC = () => (
     <Stack.Screen name="NotificationDetail" component={NotificationDetailScreen} />
     <Stack.Screen name="AISearch" component={AISearchScreen} />
     <Stack.Screen name="MyWork" component={MyWorkScreen} />
+    <Stack.Screen name="Services" component={ServicesScreen} />
+    <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen} />
   </Stack.Navigator>
 );
 export default HomeStackNavigator;

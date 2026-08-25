@@ -49,7 +49,6 @@ const ProfileScreen: React.FC = () => {
         { icon: 'business-outline' as const, label: 'Company Details', onPress: () => navigation.navigate('CompanyProfile') },
         { icon: 'shield-outline' as const, label: 'Security Settings', onPress: () => navigation.navigate('SecuritySettings') },
         { icon: 'notifications-outline' as const, label: 'Notifications', onPress: () => navigation.navigate('NotificationSettings'), toggle: notifications, onToggle: setNotifications },
-        { icon: 'trash-outline' as const, label: 'Delete Account', onPress: () => navigation.navigate('DeleteAccount'), danger: true },
       ],
     },
     ...(isConsultant ? [{
@@ -257,21 +256,6 @@ const ProfileScreen: React.FC = () => {
           </View>
         )}
 
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          {[
-            { label: 'Applications', value: user?.applicationsCount ?? 0, icon: 'document-text' as const, color: colors.primary },
-            { label: 'Certifications', value: user?.certificationsCount ?? 0, icon: 'shield-checkmark' as const, color: colors.success },
-            { label: 'Insights Read', value: user?.insightsRead ?? 0, icon: 'bulb' as const, color: colors.secondary },
-          ].map((stat, i) => (
-            <View key={i} style={styles.statItem}>
-              <Ionicons name={stat.icon} size={18} color={stat.color} />
-              <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
-          ))}
-        </View>
-
         {/* Menu Sections */}
         {MENU_SECTIONS.map((section, sIdx) => (
           <View key={sIdx} style={styles.menuSection}>
@@ -313,6 +297,12 @@ const ProfileScreen: React.FC = () => {
             </View>
           </View>
         ))}
+
+        {/* Delete Account — discoverable, directly above Sign Out (App Store 5.1.1(v)) */}
+        <TouchableOpacity style={styles.deleteAccountBtn} onPress={() => navigation.navigate('DeleteAccount')} activeOpacity={0.7}>
+          <Ionicons name="trash-outline" size={18} color={colors.error} />
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
+        </TouchableOpacity>
 
         {/* Logout */}
         <TouchableOpacity style={[styles.logoutBtn, Platform.OS === 'ios' ? Shadows.sm : {}]} onPress={handleLogout}>
@@ -427,7 +417,9 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     menuIconWrapper: { width: 30, height: 30, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 14 },
     menuLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: colors.textPrimary },
     menuValue: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
-    logoutBtn: { borderRadius: BorderRadius.lg, overflow: 'hidden', marginTop: 8, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255,71,87,0.2)' },
+    deleteAccountBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8 },
+    deleteAccountText: { fontSize: 15, fontWeight: '700', color: colors.error },
+    logoutBtn: { borderRadius: BorderRadius.lg, overflow: 'hidden', marginTop: 4, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255,71,87,0.2)' },
     logoutBtnInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, gap: 8 },
     logoutText: { fontSize: 15, fontWeight: '700' },
     versionText: { textAlign: 'center', fontSize: 11, color: colors.textTertiary, letterSpacing: 1, marginBottom: 4 },
