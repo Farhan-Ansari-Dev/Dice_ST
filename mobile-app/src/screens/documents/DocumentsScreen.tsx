@@ -51,7 +51,7 @@ const DocumentsScreen: React.FC = () => {
       id: doc._id,
       name: doc.name,
       docType: doc.doc_type,
-      status: doc.status || 'approved',
+      status: doc.status || 'pending',
       size: doc.size_bytes,
       uploadedAt: doc.created_at,
       uploadedBy: doc.uploaded_by?.name,
