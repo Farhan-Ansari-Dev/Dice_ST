@@ -27,9 +27,20 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
 }));
 
 // POST new test (Admin only)
-router.post('/', authenticate, requireRole('admin', 'super_admin'), wrap(async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   try {
-    const test = await Testing.create(stripProtected(req.body));
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'super_admin';
+    // A customer submits a test REQUEST (no lab/standard yet — a manager assigns
+    // them during triage). Staff-created tests keep the supplied client_id and
+    // fields. Sample id is server-generated to satisfy the unique constraint.
+    const count = await Testing.countDocuments({});
+    const sampleId = req.body.sample_id || `TEST-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
+    const test = await Testing.create({
+      ...stripProtected(req.body),
+      sample_id: sampleId,
+      client_id: isStaff && req.body.client_id ? req.body.client_id : req.user?._id,
+      status: req.body.status || 'pending',
+    });
     // Timeline: attribute to the customer (client_id) so it shows on their 360.
     await audit({
       actor: req.user!._id as any,

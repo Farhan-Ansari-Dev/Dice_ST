@@ -433,17 +433,85 @@ export const aiService = {
       (m) => m.verified && m.requiredCertifications.length > 0,
     );
 
+    // Verified DB mapping ALWAYS wins. Only when there is no verified mapping do
+    // we ask the AI for non-authoritative SUGGESTIONS — clearly flagged as such,
+    // never presented as verified. If no AI key is configured (or the call
+    // fails) we fall back to the honest "specialist will review" result.
+    if (!hasVerified) {
+      const suggested = await this.suggestCertificationsAI(productName, effectiveMarkets).catch(() => []);
+      if (suggested.length > 0) {
+        return {
+          isValid: true,
+          productValidationRequired: true,
+          source: 'ai_suggestion' as const,
+          aiSuggested: true,
+          message: 'AI suggestion — pending specialist review. This is not a verified compliance mapping.',
+          certifications: suggested.map((c) => ({ ...c, verified: false, source: 'ai_suggestion' })),
+          intelligence,
+        };
+      }
+    }
+
     return {
       // Never block draft creation on analysis — unknown products proceed and
       // are flagged for a specialist to validate.
       isValid: true,
       productValidationRequired: intelligence.productValidationRequired || !hasVerified,
+      source: hasVerified ? ('verified' as const) : ('none' as const),
+      aiSuggested: false,
       message: hasVerified
         ? undefined
         : "We don't currently have a verified compliance mapping for this product and market. A certification specialist will review it.",
-      certifications,
+      certifications: certifications.map((c) => ({ ...c, verified: true, source: 'verified' })),
       intelligence,
     };
+  },
+
+  /**
+   * Non-authoritative AI suggestion of certifications for a product + markets.
+   * Best-effort: returns [] when no AI key is configured or the provider fails,
+   * so the caller keeps its honest "specialist will review" behaviour. Results
+   * are SUGGESTIONS pending specialist verification — never verified data.
+   */
+  async suggestCertificationsAI(
+    productName: string,
+    markets: string[],
+  ): Promise<Array<{ code: string; name: string; market: string; reason?: string }>> {
+    const { openai, model } = await getAIClientAndModel();
+    if (!openai) return [];
+
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a product-compliance assistant for an Indian export/certification consultancy. ' +
+            'Given a product and its target markets, list the certifications, approvals or registrations ' +
+            'that are TYPICALLY required to legally sell that product in those markets. Use widely-recognised ' +
+            'certification names and codes (e.g. CE, FCC, BIS CRS, SASO SABER, RoHS, REACH). Do NOT invent ' +
+            'obscure or fictional schemes; if unsure, return fewer. These are non-binding suggestions that a ' +
+            'human specialist will verify. Respond ONLY as JSON: ' +
+            '{"certifications":[{"code":"","name":"","market":"","reason":""}]}.',
+        },
+        { role: 'user', content: `Product: ${productName}\nTarget markets: ${markets.join(', ') || 'not specified'}` },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 500,
+      temperature: 0.2,
+    });
+
+    const parsed = parseJsonCompletion<any>(completion.choices[0].message.content);
+    const list = Array.isArray(parsed?.certifications) ? parsed.certifications : [];
+    return list
+      .filter((c: any) => c && (c.name || c.code))
+      .slice(0, 8)
+      .map((c: any) => ({
+        code: String(c.code || c.name).toUpperCase().replace(/[^A-Z0-9]+/g, '_').slice(0, 40),
+        name: String(c.name || c.code),
+        market: String(c.market || markets[0] || ''),
+        reason: c.reason ? String(c.reason) : undefined,
+      }));
   },
 
   async getComplianceRecommendations(userId: string): Promise<string[]> {

@@ -5,8 +5,8 @@ export interface ITesting extends Document {
   client_id: mongoose.Types.ObjectId;
   application_id?: mongoose.Types.ObjectId;   // links the lab test to its Application workflow
   product_name: string;
-  standard: string;
-  lab_name: string;
+  standard?: string;
+  lab_name?: string;
   expected_completion?: Date;
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
   report_file?: string;
@@ -21,8 +21,10 @@ const TestingSchema: Schema = new Schema(
     client_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     application_id: { type: Schema.Types.ObjectId, ref: 'Application', index: true },
     product_name: { type: String, required: true },
-    standard: { type: String, required: true },
-    lab_name: { type: String, required: true },
+    // Optional at intake: a customer test request has no lab/standard yet — a
+    // manager assigns them during triage. Staff-created tests still supply them.
+    standard: { type: String },
+    lab_name: { type: String },
     expected_completion: { type: Date },
     status: {
       type: String,
