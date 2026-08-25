@@ -43,12 +43,13 @@ const ProfileScreen: React.FC = () => {
 
   const MENU_SECTIONS = [
     {
-      title: 'Account',
+      title: 'Account & Security',
       items: [
         { icon: 'person-outline' as const, label: 'Edit Profile', onPress: () => navigation.navigate('Settings') },
         { icon: 'business-outline' as const, label: 'Company Details', onPress: () => navigation.navigate('CompanyProfile') },
         { icon: 'shield-outline' as const, label: 'Security Settings', onPress: () => navigation.navigate('SecuritySettings') },
         { icon: 'notifications-outline' as const, label: 'Notifications', onPress: () => navigation.navigate('NotificationSettings'), toggle: notifications, onToggle: setNotifications },
+        { icon: 'trash-outline' as const, label: 'Delete Account', onPress: () => navigation.navigate('DeleteAccount'), danger: true },
       ],
     },
     ...(isConsultant ? [{
@@ -288,9 +289,9 @@ const ProfileScreen: React.FC = () => {
                       activeOpacity={item.onPress ? 0.7 : 1}
                     >
                       <View style={styles.menuIconWrapper}>
-                        <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+                        <Ionicons name={item.icon} size={18} color={item.danger ? colors.error : colors.textSecondary} />
                       </View>
-                      <Text style={styles.menuLabel}>{item.label}</Text>
+                      <Text style={[styles.menuLabel, item.danger && { color: colors.error }]}>{item.label}</Text>
                       {item.toggle !== undefined ? (
                         <Switch
                           value={item.toggle}
