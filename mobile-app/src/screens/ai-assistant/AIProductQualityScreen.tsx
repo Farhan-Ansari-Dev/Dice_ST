@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
   Image,
   Alert,
   Modal,
@@ -13,113 +12,98 @@ import {
   TouchableWithoutFeedback,
   TextInput,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { Linking, Share } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withRepeat, 
-  withTiming, 
-  withSequence, 
-  withSpring, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withRepeat,
+  withTiming,
   Easing,
   FadeIn,
   FadeOut,
   SlideInDown,
-  FadeInDown
+  FadeInDown,
 } from 'react-native-reanimated';
-
-import { Linking, Share } from 'react-native';
-import { useTheme } from '../../theme';
+import { useTheme, Typography, Spacing, BorderRadius, Shadows } from '../../theme';
 import productAnalysisService, { ProductAnalysis, Finding } from '../../services/productAnalysisService';
 
-const { width, height } = Dimensions.get('window');
+type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
-const COLORS = {
-  primary: '#2563EB',
-  accent: '#4F46E5',
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  background: '#F8FAFC',
-  glassWhite: 'rgba(255, 255, 255, 0.7)',
-  glassDark: 'rgba(15, 23, 42, 0.6)',
-  borderLight: 'rgba(255, 255, 255, 0.2)',
-  borderDark: 'rgba(255, 255, 255, 0.1)',
-  textMain: '#0F172A',
-  textSub: '#64748B',
-  textDarkMain: '#F8FAFC',
-  textDarkSub: '#94A3B8',
-};
-
-const CAPABILITIES = [
-  { id: '1', title: 'Product Detection', desc: 'Auto-identifies categories', icon: 'scan-outline' },
-  { id: '2', title: 'Compliance Intelligence', desc: 'Matches global regulations', icon: 'globe-outline' },
-  { id: '3', title: 'Certification Recs', desc: 'Suggests required certs', icon: 'shield-checkmark-outline' },
-  { id: '4', title: 'Quality Evaluation', desc: 'Analyzes safety indicators', icon: 'analytics-outline' },
-  { id: '5', title: 'Risk Assessment', desc: 'Detects compliance risks', icon: 'warning-outline' },
+const CAPABILITIES: { title: string; desc: string; icon: string }[] = [
+  { title: 'Identifies the product', desc: 'Reads labels, marks and packaging to classify what it is', icon: 'scan-outline' },
+  { title: 'Matches regulations', desc: 'Finds the standards and rules that apply in your markets', icon: 'globe-outline' },
+  { title: 'Flags whatʼs missing', desc: 'Spots absent certification marks and required declarations', icon: 'alert-circle-outline' },
+  { title: 'Recommends certifications', desc: 'Tells you exactly which certificates to pursue next', icon: 'shield-checkmark-outline' },
 ];
 
 // Shown while the request is genuinely in flight. These describe the real
 // backend stages; the sequence stops advancing at the last step and waits for
 // the response rather than pretending to finish.
 const LOADING_STEPS = [
-  'Uploading image...',
-  'Reading labels and markings...',
-  'Identifying product category...',
-  'Matching applicable regulations...',
-  'Assessing missing declarations...',
-  'Generating report...',
+  'Uploading image',
+  'Reading labels and markings',
+  'Identifying product category',
+  'Matching applicable regulations',
+  'Assessing missing declarations',
+  'Generating report',
 ];
 
-const SEVERITY_STYLE: Record<Finding['severity'], { color: string; icon: string; label: string }> = {
-  critical:  { color: '#DC2626', icon: 'alert-circle',   label: 'Critical' },
-  important: { color: '#EA580C', icon: 'warning',        label: 'Important' },
-  advisory:  { color: '#CA8A04', icon: 'information-circle', label: 'Advisory' },
-  info:      { color: '#0284C7', icon: 'ellipse-outline',    label: 'Info' },
+/**
+ * Severity → semantic theme colour + icon + label. Four distinct compliance
+ * levels are preserved (critical/important/advisory/info) using theme tokens
+ * only — no ad-hoc hex.
+ */
+const severityMeta = (severity: Finding['severity'], colors: ThemeColors) => {
+  const map: Record<Finding['severity'], { color: string; icon: string; label: string }> = {
+    critical:  { color: colors.error,       icon: 'alert-circle',        label: 'Critical' },
+    important: { color: colors.warningDark,  icon: 'warning',             label: 'Important' },
+    advisory:  { color: colors.warning,      icon: 'information-circle',  label: 'Advisory' },
+    info:      { color: colors.info,         icon: 'ellipse-outline',     label: 'Info' },
+  };
+  return map[severity];
 };
 
-const riskBand = (score: number) =>
-  score >= 70 ? { label: 'High', color: '#DC2626' }
-  : score >= 40 ? { label: 'Moderate', color: '#EA580C' }
-  : score >= 15 ? { label: 'Low', color: '#CA8A04' }
-  : { label: 'Minimal', color: '#16A34A' };
+const riskBand = (score: number, colors: ThemeColors) =>
+  score >= 70 ? { label: 'High risk', color: colors.error }
+  : score >= 40 ? { label: 'Moderate risk', color: colors.warningDark }
+  : score >= 15 ? { label: 'Low risk', color: colors.warning }
+  : { label: 'Minimal risk', color: colors.success };
 
-const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
-
-/**
- * Renders a group of findings. Every finding shows its severity, confidence and
- * the evidence it rests on — the user must be able to judge how much weight to
- * put on each statement.
- */
 const FindingSection: React.FC<{
   title: string;
   findings: Finding[];
-  isDark: boolean;
+  colors: ThemeColors;
+  styles: ReturnType<typeof makeStyles>;
   emptyNote: string;
-}> = ({ title, findings, isDark, emptyNote }) => (
-  <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.resultCard}>
-    <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{title}</Text>
+}> = ({ title, findings, colors, styles, emptyNote }) => (
+  <View style={styles.card}>
+    <Text style={styles.cardTitle}>{title}</Text>
     {findings.length === 0 ? (
-      <Text style={styles.insightDesc}>{emptyNote}</Text>
+      <View style={styles.emptyRow}>
+        <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+        <Text style={styles.insightDesc}>{emptyNote}</Text>
+      </View>
     ) : (
       findings.map((f) => {
-        const sev = SEVERITY_STYLE[f.severity];
+        const sev = severityMeta(f.severity, colors);
         return (
           <View key={f.id} style={styles.insightRow}>
-            <View style={[styles.insightIcon, { backgroundColor: `${sev.color}15` }]}>
+            <View style={[styles.insightIcon, { backgroundColor: `${sev.color}1A` }]}>
               <Ionicons name={sev.icon as any} size={18} color={sev.color} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.severityTag, { color: sev.color }]}>
                 {sev.label} · {Math.round(f.confidence * 100)}% confidence
               </Text>
-              <Text style={[styles.insightTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{f.title}</Text>
+              <Text style={styles.insightTitle}>{f.title}</Text>
               <Text style={styles.insightDesc}>{f.detail}</Text>
               {!!f.reference && <Text style={styles.referenceText}>Reference: {f.reference}</Text>}
               <Text style={styles.evidenceText}>Evidence: {f.evidence}</Text>
@@ -128,29 +112,28 @@ const FindingSection: React.FC<{
         );
       })
     )}
-  </BlurView>
+  </View>
 );
 
-const ScoreRing = ({ value, label, color, size = 100 }: { value: number, label: string, color: string, size?: number }) => {
-  return (
-    <View style={{ alignItems: 'center' }}>
-      <View style={{ width: size, height: size, borderRadius: size/2, borderWidth: 8, borderColor: `${color}20`, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{
-          position: 'absolute', width: size, height: size, borderRadius: size/2, borderWidth: 8, borderColor: color,
-          borderRightColor: 'transparent', borderBottomColor: value > 50 ? color : 'transparent', borderLeftColor: value > 75 ? color : 'transparent',
-          transform: [{ rotate: '-45deg' }]
-        }} />
-        <Text style={{ fontSize: 24, fontWeight: '900', color }}>{value}</Text>
-      </View>
-      <Text style={{ marginTop: 8, fontSize: 12, fontWeight: '700', color: COLORS.textSub, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
+const ScoreRing = ({ value, label, color, colors, size = 108 }: { value: number; label: string; color: string; colors: ThemeColors; size?: number }) => (
+  <View style={{ alignItems: 'center' }}>
+    <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 9, borderColor: `${color}22`, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{
+        position: 'absolute', width: size, height: size, borderRadius: size / 2, borderWidth: 9, borderColor: color,
+        borderRightColor: 'transparent', borderBottomColor: value > 50 ? color : 'transparent', borderLeftColor: value > 75 ? color : 'transparent',
+        transform: [{ rotate: '-45deg' }],
+      }} />
+      <Text style={{ fontSize: 30, fontWeight: '800', color }}>{value}</Text>
     </View>
-  );
-};
+    <Text style={{ marginTop: 10, fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</Text>
+  </View>
+);
 
 const AIProductQualityScreen = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
+  const styles = React.useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   const [phase, setPhase] = useState<'pick' | 'analysing' | 'result'>('pick');
   const [loadingStep, setLoadingStep] = useState(0);
@@ -159,26 +142,21 @@ const AIProductQualityScreen = () => {
   const [isManualExpanded, setIsManualExpanded] = useState(false);
   const [showPickerModal, setShowPickerModal] = useState(false);
   const [analysis, setAnalysis] = useState<ProductAnalysis | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Reanimated Values
-  const pulseScale = useSharedValue(1);
-  const laserTranslateY = useSharedValue(-100);
   const buttonScale = useSharedValue(1);
   const manualHeight = useSharedValue(0);
+  const orbPulse = useSharedValue(1);
 
-  useEffect(() => {
-    if (phase === 'pick') {
-      pulseScale.value = withRepeat(withSequence(
-        withTiming(1.05, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) })
-      ), -1, true);
-
-      laserTranslateY.value = withRepeat(withSequence(
-        withTiming(150, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(-150, { duration: 2500, easing: Easing.inOut(Easing.ease) })
-      ), -1, true);
+  React.useEffect(() => {
+    if (phase === 'analysing') {
+      orbPulse.value = withRepeat(
+        withTiming(1.12, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true,
+      );
+    } else {
+      orbPulse.value = 1;
     }
   }, [phase]);
 
@@ -195,7 +173,6 @@ const AIProductQualityScreen = () => {
 
     setPhase('analysing');
     setLoadingStep(0);
-    setErrorMessage(null);
     setAnalysis(null);
 
     // Advances through the stage labels while the request is genuinely in
@@ -212,7 +189,6 @@ const AIProductQualityScreen = () => {
       const message =
         err?.response?.data?.message ??
         'Could not analyse this image. Check your connection and try again.';
-      setErrorMessage(message);
       setPhase('pick');
       Alert.alert('Analysis Failed', message);
     } finally {
@@ -233,7 +209,6 @@ const AIProductQualityScreen = () => {
         title: 'DICE Compliance Report',
       });
     } catch {
-      // Sharing unavailable or dismissed — fall back to opening the PDF.
       const url = analysis.report?.downloadUrl;
       if (url) {
         const canOpen = await Linking.canOpenURL(url).catch(() => false);
@@ -244,6 +219,8 @@ const AIProductQualityScreen = () => {
       setExporting(false);
     }
   };
+
+  const resetToPick = () => { setPhase('pick'); setImageUri(null); setManualInput(''); setIsManualExpanded(false); };
 
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -259,315 +236,290 @@ const AIProductQualityScreen = () => {
     if (!result.canceled && result.assets[0]) { setImageUri(result.assets[0].uri); setShowPickerModal(false); }
   };
 
-  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulseScale.value }] }));
-  const laserStyle = useAnimatedStyle(() => ({ transform: [{ translateY: laserTranslateY.value }] }));
   const buttonAnimatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: buttonScale.value }] }));
   const manualAnimatedStyle = useAnimatedStyle(() => ({ height: manualHeight.value, opacity: manualHeight.value > 10 ? 1 : 0 }));
-
+  const orbAnimatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: orbPulse.value }] }));
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#020617' : COLORS.background, paddingTop: insets.top }]}>
-      
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={isDark ? '#FFF' : COLORS.textMain} />
-        </TouchableOpacity>
-        
-        <View style={styles.headerContent}>
-          <View style={styles.aiBadge}>
-            <View style={styles.onlineDot} />
-            <Text style={styles.aiBadgeText}>DICE AI ONLINE</Text>
-          </View>
-          <Text style={[styles.headerTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>AI Quality Analyzer</Text>
-        </View>
+    <View style={styles.container}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled">
 
-        {phase === 'result' && (
-          <TouchableOpacity onPress={() => { setPhase('pick'); setImageUri(null); setManualInput(''); }}>
-            <Ionicons name="refresh" size={24} color={COLORS.primary} />
-          </TouchableOpacity>
-        )}
-      </View>
+          {/* PHASE 1: PICK */}
+          {phase === 'pick' && (
+            <Animated.View entering={FadeIn} exiting={FadeOut}>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
-        
-        {/* PHASE 1: PICK / SCAN */}
-        {phase === 'pick' && (
-          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.contentPadding}>
-            <Text style={[styles.heroSubtitle, { color: isDark ? COLORS.textDarkSub : COLORS.textSub }]}>
-              Scan a product, label, packaging or manual to instantly identify certifications, regulations, and market readiness.
-            </Text>
-
-            {/* HERO SCANNER */}
-            <TouchableOpacity activeOpacity={0.9} onPress={() => setShowPickerModal(true)}>
-              <AnimatedBlurView intensity={isDark ? 20 : 60} tint={isDark ? "dark" : "light"} style={[styles.heroScanner, pulseStyle]}>
-                <View style={[styles.scannerCorner, styles.tl]} />
-                <View style={[styles.scannerCorner, styles.tr]} />
-                <View style={[styles.scannerCorner, styles.bl]} />
-                <View style={[styles.scannerCorner, styles.br]} />
-                
-                {imageUri ? (
-                  <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFillObject} borderRadius={24} />
-                ) : (
-                  <>
-                    <View style={styles.heroCenter}>
-                      <View style={styles.heroIconWrap}>
-                        <Ionicons name="scan" size={48} color={COLORS.primary} />
-                      </View>
-                      <Text style={[styles.heroTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>Tap to Smart Scan</Text>
-                      <Text style={styles.heroSubText}>Camera • Gallery • Label • Packaging</Text>
-                    </View>
-                    <Animated.View style={[styles.laserLine, laserStyle]}>
-                      <LinearGradient colors={['transparent', COLORS.primary, 'transparent']} start={{x:0, y:0.5}} end={{x:1, y:0.5}} style={{flex:1}} />
-                    </Animated.View>
-                  </>
-                )}
-              </AnimatedBlurView>
-            </TouchableOpacity>
-
-            {/* QUICK ACTIONS */}
-            <View style={styles.quickActions}>
-              {[
-                { icon: 'camera', label: 'Camera', action: handleTakePhoto },
-                { icon: 'images', label: 'Gallery', action: handlePickImage },
-                { icon: 'barcode', label: 'Label', action: handleTakePhoto },
-                { icon: 'cube', label: 'Package', action: handleTakePhoto }
-              ].map((item, i) => (
-                <TouchableOpacity key={i} style={[styles.quickChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#FFF' }]} onPress={item.action}>
-                  <Ionicons name={item.icon as any} size={18} color={COLORS.primary} />
-                  <Text style={[styles.quickChipText, { color: isDark ? '#FFF' : COLORS.textMain }]}>{item.label}</Text>
+              {/* BRAND HERO */}
+              <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, { paddingTop: insets.top + Spacing.base }]}>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.heroBack} hitSlop={10}>
+                  <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
                 </TouchableOpacity>
-              ))}
-            </View>
 
-            {/* AI CAPABILITIES CAROUSEL */}
-            <Text style={[styles.sectionTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>AI Capabilities</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.carousel} contentContainerStyle={{ paddingHorizontal: 24 }}>
-              {CAPABILITIES.map((cap, i) => (
-                <Animated.View key={cap.id} entering={FadeInDown.delay(i * 100)} style={{ marginRight: 12 }}>
-                  <TouchableOpacity activeOpacity={0.7}>
-                    <BlurView intensity={isDark ? 30 : 80} tint={isDark ? "dark" : "light"} style={styles.capCard}>
-                      <View style={styles.capIcon}>
-                        <Ionicons name={cap.icon as any} size={24} color={COLORS.primary} />
-                      </View>
-                      <Text style={[styles.capTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>{cap.title}</Text>
-                      <Text style={styles.capDesc}>{cap.desc}</Text>
-                    </BlurView>
-                  </TouchableOpacity>
-                </Animated.View>
-              ))}
-            </ScrollView>
-
-            {/* PRODUCT DETAILS EXPANDABLE */}
-            <TouchableOpacity activeOpacity={0.8} onPress={toggleManual}>
-              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? "dark" : "light"} style={styles.manualCard}>
-                <View style={styles.manualHeader}>
-                  <Ionicons name="create-outline" size={20} color={COLORS.primary} />
-                  <Text style={[styles.manualTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>Product Details</Text>
-                  <Ionicons name={isManualExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={COLORS.textSub} style={{ marginLeft: 'auto' }} />
+                <View style={styles.heroBadge}>
+                  <Ionicons name="sparkles" size={13} color="#FFFFFF" />
+                  <Text style={styles.heroBadgeText}>DICE AI · COMPLIANCE INTELLIGENCE</Text>
                 </View>
-                <Animated.View style={[styles.manualContent, manualAnimatedStyle]}>
-                  <TextInput
-                    style={[styles.manualInput, { backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : '#F1F5F9', color: isDark ? '#FFF' : COLORS.textMain }]}
-                    placeholder="e.g. Wireless Bluetooth Speaker, LED Driver..."
-                    placeholderTextColor={COLORS.textSub}
-                    multiline
-                    value={manualInput}
-                    onChangeText={setManualInput}
-                  />
-                </Animated.View>
-              </BlurView>
-            </TouchableOpacity>
-
-            {/* BOTTOM CTA */}
-            <TouchableOpacity 
-              activeOpacity={0.9} 
-              onPressIn={() => { buttonScale.value = withSpring(0.95); }}
-              onPressOut={() => { buttonScale.value = withSpring(1); }}
-              onPress={startAnalysis}
-            >
-              <Animated.View style={[styles.ctaButton, buttonAnimatedStyle]}>
-                <LinearGradient colors={[COLORS.primary, COLORS.accent]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-                <Text style={styles.ctaText}>Analyze with DICE AI</Text>
-                <Ionicons name="sparkles" size={18} color="#FFF" />
-              </Animated.View>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {/* PHASE 2: ANALYSING */}
-        {phase === 'analysing' && (
-          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.analysingContainer}>
-            <View style={styles.aiOrbWrap}>
-              <Animated.View style={[styles.aiOrbGlow, pulseStyle]} />
-              <LinearGradient colors={[COLORS.primary, COLORS.accent]} style={styles.aiOrb}>
-                <Ionicons name="hardware-chip" size={48} color="#FFF" />
+                <Text style={styles.heroTitle}>Scan a product.{'\n'}Know its compliance.</Text>
+                <Text style={styles.heroSub}>
+                  Photograph any product, label or packaging and DICE AI identifies the certifications, regulations and market readiness — in seconds.
+                </Text>
               </LinearGradient>
-            </View>
-            <Text style={[styles.loadingTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>DICE AI Processing</Text>
-            
-            <View style={styles.stepsContainer}>
-              {LOADING_STEPS.map((step, i) => {
-                const isActive = i === loadingStep;
-                const isPassed = i < loadingStep;
-                return (
-                  <View key={i} style={[styles.stepRow, { opacity: isActive ? 1 : isPassed ? 0.5 : 0.2 }]}>
-                    <Ionicons name={isPassed ? "checkmark-circle" : "radio-button-off"} size={16} color={isPassed ? COLORS.success : COLORS.primary} />
-                    <Text style={[styles.stepText, { color: isDark ? '#FFF' : COLORS.textMain }]}>{step}</Text>
+
+              <View style={styles.body}>
+                {/* SCAN CARD — floats over the hero edge */}
+                {imageUri ? (
+                  <View style={[styles.scanCard, styles.previewCard]}>
+                    <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.previewReady}>Photo ready</Text>
+                      <Text style={styles.previewHint}>Add product details below for a sharper result, or analyze now.</Text>
+                      <TouchableOpacity onPress={() => setShowPickerModal(true)} style={styles.previewChange}>
+                        <Ionicons name="swap-horizontal" size={14} color={colors.primary} />
+                        <Text style={styles.previewChangeText}>Change photo</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                );
-              })}
-            </View>
-          </Animated.View>
-        )}
+                ) : (
+                  <TouchableOpacity activeOpacity={0.9} onPress={() => setShowPickerModal(true)} style={styles.scanCard}>
+                    <View style={styles.scanIconTile}>
+                      <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                      <Ionicons name="scan-outline" size={30} color="#FFFFFF" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.scanTitle}>Scan or upload a photo</Text>
+                      <Text style={styles.scanSub}>Camera · Gallery · label, packaging or manual</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                )}
 
-        {/* PHASE 3: RESULTS DASHBOARD */}
-        {phase === 'result' && analysis && (
-          <Animated.View entering={SlideInDown.springify().damping(20)} style={styles.contentPadding}>
-
-            {/* Risk + category confidence — both server-computed */}
-            <View style={styles.scoreRow}>
-              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.scoreCard}>
-                <ScoreRing
-                  value={analysis.riskScore}
-                  label={`${riskBand(analysis.riskScore).label} risk`}
-                  color={riskBand(analysis.riskScore).color}
-                />
-              </BlurView>
-              <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.scoreCard}>
-                <ScoreRing
-                  value={Math.round(analysis.confidence * 100)}
-                  label="ID confidence"
-                  color={COLORS.primary}
-                />
-              </BlurView>
-            </View>
-
-            {/* Product identity */}
-            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.resultCard}>
-              <View style={styles.identityHeader}>
-                <View style={[styles.iconBox, { backgroundColor: `${COLORS.accent}20` }]}>
-                  <Ionicons name="cube-outline" size={28} color={COLORS.accent} />
+                {/* QUICK ACTIONS */}
+                <View style={styles.quickActions}>
+                  <TouchableOpacity style={styles.quickChip} onPress={handleTakePhoto}>
+                    <Ionicons name="camera-outline" size={18} color={colors.primary} />
+                    <Text style={styles.quickChipText}>Camera</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.quickChip} onPress={handlePickImage}>
+                    <Ionicons name="images-outline" size={18} color={colors.primary} />
+                    <Text style={styles.quickChipText}>Gallery</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={{ flex: 1, marginLeft: 16 }}>
-                  <Text style={[styles.resultProductTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>
-                    {analysis.productType}
-                  </Text>
-                  <Text style={styles.confidenceText}>
-                    {analysis.productCategory}
-                    {analysis.brand ? ` · ${analysis.brand}` : ''}
-                  </Text>
+
+                {/* PRODUCT DETAILS (optional) */}
+                <TouchableOpacity activeOpacity={0.85} onPress={toggleManual} style={styles.card}>
+                  <View style={styles.manualHeader}>
+                    <Ionicons name="create-outline" size={20} color={colors.primary} />
+                    <Text style={styles.manualTitle}>Product details (optional)</Text>
+                    <Ionicons name={isManualExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textTertiary} style={{ marginLeft: 'auto' }} />
+                  </View>
+                  <Animated.View style={[styles.manualContent, manualAnimatedStyle]}>
+                    <TextInput
+                      style={styles.manualInput}
+                      placeholder="e.g. Wireless Bluetooth speaker, LED driver, cosmetic cream…"
+                      placeholderTextColor={colors.textTertiary}
+                      multiline
+                      value={manualInput}
+                      onChangeText={setManualInput}
+                    />
+                  </Animated.View>
+                </TouchableOpacity>
+
+                {/* PRIMARY CTA */}
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPressIn={() => { buttonScale.value = withSpring(0.97); }}
+                  onPressOut={() => { buttonScale.value = withSpring(1); }}
+                  onPress={startAnalysis}
+                >
+                  <Animated.View style={[styles.ctaButton, buttonAnimatedStyle, !imageUri && styles.ctaButtonDisabled]}>
+                    <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                    <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                    <Text style={styles.ctaText}>Analyze with DICE AI</Text>
+                  </Animated.View>
+                </TouchableOpacity>
+
+                {/* WHAT IT CHECKS */}
+                <Text style={styles.sectionTitle}>What DICE AI checks</Text>
+                <View style={styles.card}>
+                  {CAPABILITIES.map((cap, i) => (
+                    <Animated.View key={cap.title} entering={FadeInDown.delay(i * 70)}>
+                      <View style={[styles.capRow, i < CAPABILITIES.length - 1 && styles.capRowDivider]}>
+                        <View style={styles.capIcon}>
+                          <Ionicons name={cap.icon as any} size={20} color={colors.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.capTitle}>{cap.title}</Text>
+                          <Text style={styles.capDesc}>{cap.desc}</Text>
+                        </View>
+                      </View>
+                    </Animated.View>
+                  ))}
+                </View>
+
+                {/* TRUST */}
+                <View style={styles.trustRow}>
+                  <Ionicons name="lock-closed-outline" size={13} color={colors.textTertiary} style={styles.trustIcon} />
+                  <Text style={styles.trustText}>Indicative assessment — never a certificate. Your photo is processed securely.</Text>
                 </View>
               </View>
+            </Animated.View>
+          )}
 
-              {analysis.observations.imageQualityNotes ? (
-                <Text style={[styles.insightDesc, { color: COLORS.warning, marginTop: 10 }]}>
-                  {analysis.observations.imageQualityNotes}
-                </Text>
-              ) : null}
-            </BlurView>
-
-            {/* What the image showed */}
-            <BlurView intensity={isDark ? 20 : 80} tint={isDark ? 'dark' : 'light'} style={styles.resultCard}>
-              <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>What the image shows</Text>
-              {analysis.detectedText.length ? (
-                <View style={styles.certGrid}>
-                  {analysis.detectedText.slice(0, 12).map((t, i) => (
-                    <View key={i} style={[styles.certChip, { borderColor: `${COLORS.primary}40`, backgroundColor: `${COLORS.primary}10` }]}>
-                      <Ionicons name="text-outline" size={13} color={COLORS.primary} />
-                      <Text style={[styles.certText, { color: COLORS.primary }]} numberOfLines={1}>{t}</Text>
+          {/* PHASE 2: ANALYSING */}
+          {phase === 'analysing' && (
+            <Animated.View entering={FadeIn} exiting={FadeOut} style={[styles.analysingContainer, { paddingTop: insets.top + 80 }]}>
+              <Animated.View style={[styles.orb, orbAnimatedStyle]}>
+                <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+                <ActivityIndicator size="large" color="#FFFFFF" />
+              </Animated.View>
+              <Text style={styles.loadingTitle}>Analyzing your product</Text>
+              <Text style={styles.loadingSub}>DICE AI is reading the label and matching requirements.</Text>
+              <View style={styles.stepsContainer}>
+                {LOADING_STEPS.map((step, i) => {
+                  const isActive = i === loadingStep;
+                  const isPassed = i < loadingStep;
+                  return (
+                    <View key={i} style={[styles.stepRow, { opacity: isActive ? 1 : isPassed ? 0.6 : 0.3 }]}>
+                      <Ionicons name={isPassed ? 'checkmark-circle' : isActive ? 'ellipse' : 'ellipse-outline'} size={16} color={isPassed ? colors.success : colors.primary} />
+                      <Text style={[styles.stepText, isActive && { fontWeight: '700' }]}>{step}</Text>
                     </View>
-                  ))}
+                  );
+                })}
+              </View>
+            </Animated.View>
+          )}
+
+          {/* PHASE 3: RESULTS */}
+          {phase === 'result' && analysis && (
+            <Animated.View entering={SlideInDown.springify().damping(20)}>
+
+              {/* RESULT HERO */}
+              <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.resultHero, { paddingTop: insets.top + Spacing.base }]}>
+                <View style={styles.resultHeroTop}>
+                  <TouchableOpacity onPress={resetToPick} style={styles.heroBack} hitSlop={10}>
+                    <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={resetToPick} style={styles.newScanBtn} hitSlop={10}>
+                    <Ionicons name="scan-outline" size={15} color="#FFFFFF" />
+                    <Text style={styles.newScanText}>New scan</Text>
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <Text style={styles.insightDesc}>No legible text was detected in this image.</Text>
-              )}
+                <Text style={styles.resultProductTitle}>{analysis.productType}</Text>
+                <Text style={styles.resultProductSub}>
+                  {analysis.productCategory}{analysis.brand ? ` · ${analysis.brand}` : ''}
+                </Text>
+              </LinearGradient>
 
-              {analysis.observations.visibleCertifications.length > 0 && (
-                <>
-                  <Text style={[styles.cardTitle, { color: isDark ? '#FFF' : COLORS.textMain, fontSize: 13, marginTop: 14 }]}>
-                    Marks present on artwork
-                  </Text>
-                  {analysis.observations.visibleCertifications.map((c, i) => (
-                    <View key={i} style={styles.insightRow}>
-                      <View style={[styles.insightIcon, { backgroundColor: `${COLORS.success}15` }]}>
-                        <Ionicons name="ribbon-outline" size={18} color={COLORS.success} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.insightTitle, { color: isDark ? '#FFF' : COLORS.textMain }]}>
-                          {c.mark} · {Math.round(c.confidence * 100)}%
-                        </Text>
-                        <Text style={styles.insightDesc}>{c.observation}</Text>
-                      </View>
+              <View style={styles.body}>
+                {/* SCORES */}
+                <View style={styles.scoreRow}>
+                  <View style={[styles.card, styles.scoreCard]}>
+                    <ScoreRing
+                      value={analysis.riskScore}
+                      label={riskBand(analysis.riskScore, colors).label}
+                      color={riskBand(analysis.riskScore, colors).color}
+                      colors={colors}
+                    />
+                  </View>
+                  <View style={[styles.card, styles.scoreCard]}>
+                    <ScoreRing
+                      value={Math.round(analysis.confidence * 100)}
+                      label="ID confidence"
+                      color={colors.primary}
+                      colors={colors}
+                    />
+                  </View>
+                </View>
+
+                {analysis.observations.imageQualityNotes ? (
+                  <View style={styles.noteBox}>
+                    <Ionicons name="alert-circle-outline" size={15} color={colors.warning} />
+                    <Text style={styles.noteText}>{analysis.observations.imageQualityNotes}</Text>
+                  </View>
+                ) : null}
+
+                {/* WHAT THE IMAGE SHOWS */}
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>What the image shows</Text>
+                  {analysis.detectedText.length ? (
+                    <View style={styles.certGrid}>
+                      {analysis.detectedText.slice(0, 12).map((t, i) => (
+                        <View key={i} style={styles.certChip}>
+                          <Ionicons name="text-outline" size={13} color={colors.primary} />
+                          <Text style={styles.certText} numberOfLines={1}>{t}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ))}
-                </>
-              )}
-            </BlurView>
+                  ) : (
+                    <Text style={styles.insightDesc}>No legible text was detected in this image.</Text>
+                  )}
 
-            <FindingSection
-              title="Applicable certifications"
-              findings={analysis.assessment.applicableCertifications}
-              isDark={isDark}
-              emptyNote="No certification scheme was identified for this category."
-            />
+                  {analysis.observations.visibleCertifications.length > 0 && (
+                    <>
+                      <Text style={[styles.cardTitle, { fontSize: 13, marginTop: Spacing.base }]}>Marks present on artwork</Text>
+                      {analysis.observations.visibleCertifications.map((c, i) => (
+                        <View key={i} style={styles.insightRow}>
+                          <View style={[styles.insightIcon, { backgroundColor: `${colors.success}1A` }]}>
+                            <Ionicons name="ribbon-outline" size={18} color={colors.success} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.insightTitle}>{c.mark} · {Math.round(c.confidence * 100)}%</Text>
+                            <Text style={styles.insightDesc}>{c.observation}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+                </View>
 
-            <FindingSection
-              title="Markings & declarations not visible"
-              findings={[...analysis.assessment.missingVisibleMarkings, ...analysis.assessment.missingDeclarations]}
-              isDark={isDark}
-              emptyNote="All expected markings and declarations were identified."
-            />
+                <FindingSection title="Applicable certifications" findings={analysis.assessment.applicableCertifications} colors={colors} styles={styles} emptyNote="No certification scheme was identified for this category." />
+                <FindingSection title="Markings & declarations not visible" findings={[...analysis.assessment.missingVisibleMarkings, ...analysis.assessment.missingDeclarations]} colors={colors} styles={styles} emptyNote="All expected markings and declarations were identified." />
+                <FindingSection title="Applicable regulations & standards" findings={[...analysis.assessment.applicableRegulations, ...analysis.assessment.applicableStandards]} colors={colors} styles={styles} emptyNote="No specific regulation was identified." />
+                <FindingSection title="Recommended next steps" findings={analysis.assessment.recommendedNextSteps} colors={colors} styles={styles} emptyNote="No further action identified." />
 
-            <FindingSection
-              title="Applicable regulations & standards"
-              findings={[...analysis.assessment.applicableRegulations, ...analysis.assessment.applicableStandards]}
-              isDark={isDark}
-              emptyNote="No specific regulation was identified."
-            />
+                {/* DISCLAIMER */}
+                <View style={styles.disclaimerBox}>
+                  <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+                  <Text style={styles.disclaimerText}>{analysis.disclaimer}</Text>
+                </View>
 
-            <FindingSection
-              title="Recommended next steps"
-              findings={analysis.assessment.recommendedNextSteps}
-              isDark={isDark}
-              emptyNote="No further action identified."
-            />
+                {/* EXPORT */}
+                <TouchableOpacity style={styles.exportBtn} onPress={handleExportReport} disabled={exporting} activeOpacity={0.9}>
+                  <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                  <Ionicons name={exporting ? 'hourglass-outline' : 'document-text-outline'} size={18} color="#FFFFFF" />
+                  <Text style={styles.exportBtnText}>{exporting ? 'Preparing report…' : 'Export full report'}</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          )}
 
-            {/* Scope — this is an indicative assessment, never a certificate */}
-            <View style={styles.disclaimerBox}>
-              <Ionicons name="information-circle" size={16} color="#991B1B" />
-              <Text style={styles.disclaimerText}>{analysis.disclaimer}</Text>
-            </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
-            {/* Final Actions */}
-            <TouchableOpacity style={styles.exportBtn} onPress={handleExportReport} disabled={exporting}>
-              <LinearGradient colors={['#0F172A', '#1E293B'] as const} style={[StyleSheet.absoluteFill, { borderRadius: 16 }]} />
-              <Ionicons name={exporting ? 'hourglass-outline' : 'document-text'} size={18} color="#FFF" />
-              <Text style={styles.exportBtnText}>
-                {exporting ? 'Preparing report...' : 'Export Comprehensive Report'}
-              </Text>
-            </TouchableOpacity>
-
-          </Animated.View>
-        )}
-
-      </ScrollView>
-
-      {/* MODAL */}
+      {/* PICKER MODAL */}
       <Modal visible={showPickerModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalBg} onPress={() => setShowPickerModal(false)} activeOpacity={1}>
           <TouchableWithoutFeedback>
-            <BlurView intensity={60} tint="dark" style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Input Method</Text>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Add a product photo</Text>
               <TouchableOpacity style={styles.modalOption} onPress={handleTakePhoto}>
-                <Ionicons name="camera" size={24} color="#FFF" />
-                <Text style={styles.modalOptionText}>Launch Camera</Text>
+                <View style={styles.modalOptIcon}><Ionicons name="camera-outline" size={22} color={colors.primary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalOptionText}>Take a photo</Text>
+                  <Text style={styles.modalOptionSub}>Use the camera to capture the label</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalOption} onPress={handlePickImage}>
-                <Ionicons name="image" size={24} color="#FFF" />
-                <Text style={styles.modalOptionText}>Choose from Gallery</Text>
+                <View style={styles.modalOptIcon}><Ionicons name="images-outline" size={22} color={colors.primary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalOptionText}>Choose from gallery</Text>
+                  <Text style={styles.modalOptionSub}>Pick an existing product photo</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
-            </BlurView>
+            </View>
           </TouchableWithoutFeedback>
         </TouchableOpacity>
       </Modal>
@@ -576,97 +528,113 @@ const AIProductQualityScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  contentPadding: { paddingHorizontal: 24, paddingTop: 12 },
-  
-  // Header
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
-  backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  headerContent: { flex: 1 },
-  aiBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: `${COLORS.success}20`, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginBottom: 4 },
-  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.success, marginRight: 6 },
-  aiBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.success, letterSpacing: 0.5 },
-  headerTitle: { fontSize: 24, fontWeight: '800' },
-  heroSubtitle: { fontSize: 14, lineHeight: 22, marginBottom: 24 },
+const makeStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bgDark },
+  body: { paddingHorizontal: Spacing.xl, marginTop: -Spacing.xl },
 
-  // Scanner
-  heroScanner: { height: 280, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.borderDark, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
-  scannerCorner: { position: 'absolute', width: 40, height: 40, borderColor: COLORS.primary },
-  tl: { top: 20, left: 20, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 16 },
-  tr: { top: 20, right: 20, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 16 },
-  bl: { bottom: 20, left: 20, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 16 },
-  br: { bottom: 20, right: 20, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 16 },
-  heroCenter: { alignItems: 'center' },
-  heroIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: `${COLORS.primary}20`, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  heroTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8 },
-  heroSubText: { fontSize: 12, color: COLORS.textSub, fontWeight: '600' },
-  laserLine: { position: 'absolute', width: '100%', height: 3, top: '50%' },
+  // Hero
+  hero: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing['3xl'], borderBottomLeftRadius: BorderRadius['2xl'], borderBottomRightRadius: BorderRadius['2xl'] },
+  heroBack: { width: 40, height: 40, marginLeft: -Spacing.sm, alignItems: 'flex-start', justifyContent: 'center' },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: Spacing.md, paddingVertical: 6, borderRadius: BorderRadius.full, marginTop: Spacing.sm, marginBottom: Spacing.base },
+  heroBadgeText: { fontSize: 10.5, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.6 },
+  heroTitle: { fontSize: 30, lineHeight: 36, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  heroSub: { fontSize: 14, lineHeight: 21, color: 'rgba(255,255,255,0.9)', marginTop: Spacing.md },
 
-  // Quick Actions
-  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 32 },
-  quickChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, gap: 6, borderWidth: 1, borderColor: COLORS.borderDark },
-  quickChipText: { fontSize: 13, fontWeight: '600' },
+  // Scan card
+  scanCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, backgroundColor: colors.bgCard, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: colors.border, padding: Spacing.base, ...Shadows.md },
+  scanIconTile: { width: 60, height: 60, borderRadius: BorderRadius.base, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', ...Shadows.primary },
+  scanTitle: { ...Typography.h5, fontSize: 17, color: colors.textPrimary, marginBottom: 3 },
+  scanSub: { ...Typography.caption, color: colors.textTertiary },
+  previewCard: { alignItems: 'flex-start' },
+  previewImage: { width: 68, height: 68, borderRadius: BorderRadius.md, backgroundColor: colors.bgCardLight },
+  previewReady: { ...Typography.h5, fontSize: 16, color: colors.textPrimary, marginBottom: 3 },
+  previewHint: { ...Typography.caption, color: colors.textSecondary, lineHeight: 17 },
+  previewChange: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: Spacing.sm },
+  previewChangeText: { ...Typography.caption, color: colors.primary, fontWeight: '700' },
 
-  // Capabilities
-  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16 },
-  carousel: { marginHorizontal: -24, marginBottom: 32 },
-  capCard: { width: 160, padding: 16, borderRadius: 20, borderWidth: 1, borderColor: COLORS.borderDark, overflow: 'hidden' },
-  capIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: `${COLORS.primary}15`, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  capTitle: { fontSize: 14, fontWeight: '800', marginBottom: 4 },
-  capDesc: { fontSize: 12, color: COLORS.textSub, lineHeight: 18 },
+  // Quick actions
+  quickActions: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.base },
+  quickChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md, borderRadius: BorderRadius.md, gap: Spacing.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bgCard },
+  quickChipText: { ...Typography.button, color: colors.textPrimary },
 
-  // Manual Input
-  manualCard: { borderRadius: 20, borderWidth: 1, borderColor: COLORS.borderDark, overflow: 'hidden', marginBottom: 32 },
-  manualHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
-  manualTitle: { fontSize: 15, fontWeight: '700' },
-  manualContent: { paddingHorizontal: 16, overflow: 'hidden' },
-  manualInput: { height: 100, borderRadius: 12, padding: 16, textAlignVertical: 'top', fontSize: 14 },
+  // Card
+  card: { backgroundColor: colors.bgCard, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: colors.border, padding: Spacing.lg, marginTop: Spacing.base, ...Shadows.sm },
+
+  // Manual
+  manualHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  manualTitle: { ...Typography.h5, fontSize: 15, color: colors.textPrimary },
+  manualContent: { overflow: 'hidden' },
+  manualInput: { height: 100, marginTop: Spacing.md, borderRadius: BorderRadius.md, padding: Spacing.base, textAlignVertical: 'top', ...Typography.body2, color: colors.textPrimary, backgroundColor: colors.bgCardLight, borderWidth: 1, borderColor: colors.border },
 
   // CTA
-  ctaButton: { height: 60, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, elevation: 4 },
-  ctaText: { color: '#FFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  ctaButton: { height: 58, borderRadius: BorderRadius.base, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, overflow: 'hidden', marginTop: Spacing.lg, ...Shadows.primary },
+  ctaButtonDisabled: { opacity: 0.55 },
+  ctaText: { ...Typography.button, fontSize: 16, color: '#FFFFFF' },
 
-  // Loading
-  analysingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
-  aiOrbWrap: { width: 120, height: 120, alignItems: 'center', justifyContent: 'center', marginBottom: 32 },
-  aiOrbGlow: { position: 'absolute', width: '100%', height: '100%', borderRadius: 60, backgroundColor: COLORS.primary, opacity: 0.4 },
-  aiOrb: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
-  loadingTitle: { fontSize: 24, fontWeight: '800', marginBottom: 40 },
-  stepsContainer: { width: '80%', gap: 16 },
-  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepText: { fontSize: 14, fontWeight: '600' },
+  // Capabilities
+  sectionTitle: { ...Typography.h5, color: colors.textPrimary, marginTop: Spacing['2xl'], marginBottom: Spacing.sm, paddingHorizontal: 2 },
+  capRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, paddingVertical: Spacing.md },
+  capRowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  capIcon: { width: 42, height: 42, borderRadius: BorderRadius.md, backgroundColor: `${colors.primary}14`, alignItems: 'center', justifyContent: 'center' },
+  capTitle: { ...Typography.label, fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  capDesc: { ...Typography.caption, color: colors.textTertiary, lineHeight: 17 },
 
-  // Results
-  scoreRow: { flexDirection: 'row', gap: 16, marginBottom: 16 },
-  scoreCard: { flex: 1, padding: 20, borderRadius: 24, borderWidth: 1, borderColor: COLORS.borderDark, overflow: 'hidden' },
-  resultCard: { padding: 20, borderRadius: 24, borderWidth: 1, borderColor: COLORS.borderDark, overflow: 'hidden', marginBottom: 16 },
+  // Trust
+  trustRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, justifyContent: 'center', marginTop: Spacing.xl, paddingHorizontal: Spacing.base },
+  trustIcon: { marginTop: 2 },
+  trustText: { ...Typography.caption, fontSize: 11, lineHeight: 16, color: colors.textTertiary, textAlign: 'center', flexShrink: 1 },
+
+  // Analysing
+  analysingContainer: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing.xl },
+  orb: { width: 108, height: 108, borderRadius: 54, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.xl, ...Shadows.primary },
+  loadingTitle: { ...Typography.h3, color: colors.textPrimary, marginBottom: Spacing.xs },
+  loadingSub: { ...Typography.body2, color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing['2xl'] },
+  stepsContainer: { alignSelf: 'stretch', gap: Spacing.base, backgroundColor: colors.bgCard, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: colors.border, padding: Spacing.lg, ...Shadows.sm },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  stepText: { ...Typography.body2, color: colors.textPrimary },
+
+  // Result hero
+  resultHero: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing['3xl'], borderBottomLeftRadius: BorderRadius['2xl'], borderBottomRightRadius: BorderRadius['2xl'] },
+  resultHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.base },
+  newScanBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: BorderRadius.full },
+  newScanText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  resultProductTitle: { fontSize: 26, lineHeight: 32, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.4 },
+  resultProductSub: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
+
+  // Scores
+  scoreRow: { flexDirection: 'row', gap: Spacing.base },
+  scoreCard: { flex: 1, alignItems: 'center', marginTop: 0 },
+  noteBox: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start', backgroundColor: `${colors.warning}12`, borderColor: `${colors.warning}40`, borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md, marginTop: Spacing.base },
+  noteText: { flex: 1, ...Typography.caption, color: colors.textSecondary, lineHeight: 17 },
+
+  // Result cards
   identityHeader: { flexDirection: 'row', alignItems: 'center' },
-  iconBox: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  resultProductTitle: { fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  confidenceText: { fontSize: 13, color: COLORS.success, fontWeight: '700' },
-  cardTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16 },
-  certGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  certChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
-  certText: { fontSize: 12, fontWeight: '700' },
-  insightRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
-  insightIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  insightTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4 },
-  insightDesc: { fontSize: 13, color: COLORS.textSub, lineHeight: 20 },
-  exportBtn: { height: 56, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10 },
-  severityTag: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 2 },
-  referenceText: { fontSize: 11, color: '#6C63FF', fontWeight: '600', marginTop: 3 },
-  evidenceText: { fontSize: 11, color: '#94A3B8', marginTop: 3, lineHeight: 15 },
-  disclaimerBox: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16 },
-  disclaimerText: { flex: 1, fontSize: 11, lineHeight: 16, color: '#7F1D1D' },
-  exportBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  cardTitle: { ...Typography.h5, fontSize: 16, color: colors.textPrimary, marginBottom: Spacing.base },
+  certGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  certChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: `${colors.primary}40`, backgroundColor: `${colors.primary}10` },
+  certText: { ...Typography.caption, fontWeight: '700', color: colors.primary, maxWidth: 150 },
+  emptyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  insightRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, marginBottom: Spacing.base },
+  insightIcon: { width: 32, height: 32, borderRadius: BorderRadius.sm, alignItems: 'center', justifyContent: 'center' },
+  severityTag: { ...Typography.overline, fontSize: 10, marginBottom: 2 },
+  insightTitle: { ...Typography.label, fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  insightDesc: { ...Typography.caption, fontSize: 13, color: colors.textSecondary, lineHeight: 20, flex: 1 },
+  referenceText: { ...Typography.caption, fontSize: 11, color: colors.primary, fontWeight: '600', marginTop: 3 },
+  evidenceText: { ...Typography.caption, fontSize: 11, color: colors.textTertiary, marginTop: 3, lineHeight: 15 },
+  disclaimerBox: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'flex-start', backgroundColor: `${colors.warning}12`, borderColor: `${colors.warning}40`, borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md, marginTop: Spacing.base },
+  disclaimerText: { flex: 1, ...Typography.caption, fontSize: 11, lineHeight: 16, color: colors.textSecondary },
+  exportBtn: { height: 56, borderRadius: BorderRadius.base, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, overflow: 'hidden', marginTop: Spacing.base, ...Shadows.primary },
+  exportBtnText: { ...Typography.button, fontSize: 15, color: '#FFFFFF' },
 
   // Modal
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
-  modalContent: { width: '80%', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: COLORS.borderDark, overflow: 'hidden' },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#FFF', marginBottom: 24, textAlign: 'center' },
-  modalOption: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 16, marginBottom: 12, gap: 16 },
-  modalOptionText: { fontSize: 16, fontWeight: '600', color: '#FFF' },
+  modalBg: { flex: 1, backgroundColor: colors.bgOverlay, justifyContent: 'flex-end' },
+  modalContent: { padding: Spacing.xl, paddingBottom: Spacing['3xl'], borderTopLeftRadius: BorderRadius['2xl'], borderTopRightRadius: BorderRadius['2xl'], backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border, ...Shadows.lg },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderLight, alignSelf: 'center', marginBottom: Spacing.lg },
+  modalTitle: { ...Typography.h4, color: colors.textPrimary, marginBottom: Spacing.lg },
+  modalOption: { flexDirection: 'row', alignItems: 'center', padding: Spacing.base, backgroundColor: colors.bgCardLight, borderRadius: BorderRadius.md, marginBottom: Spacing.md, gap: Spacing.base, borderWidth: 1, borderColor: colors.border },
+  modalOptIcon: { width: 44, height: 44, borderRadius: BorderRadius.md, backgroundColor: `${colors.primary}14`, alignItems: 'center', justifyContent: 'center' },
+  modalOptionText: { ...Typography.body1, fontWeight: '700', color: colors.textPrimary },
+  modalOptionSub: { ...Typography.caption, color: colors.textTertiary, marginTop: 2 },
 });
 
 export default AIProductQualityScreen;

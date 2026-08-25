@@ -100,24 +100,27 @@ const InsightsScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
+      {/* BRAND HERO */}
       <LinearGradient
-        colors={isDark ? [colors.bgDark, '#0C0D14'] : [colors.bgDark, '#E8ECF4']}
-        style={StyleSheet.absoluteFill}
-      />
-
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.openDrawer()}>
-          <Ionicons name="menu-outline" size={26} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Insights</Text>
-          <Text style={styles.headerSubtitle}>Regulatory intelligence & updates</Text>
+        colors={colors.gradientHero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.hero, { paddingTop: insets.top + 10 }]}
+      >
+        <View style={styles.heroRow}>
+          <TouchableOpacity style={styles.heroIconBtn} onPress={() => navigation.openDrawer()} hitSlop={8}>
+            <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroTitle}>Insights</Text>
+            <Text style={styles.heroSubtitle}>Regulatory intelligence, personalized</Text>
+          </View>
+          <TouchableOpacity style={styles.heroIconBtn} onPress={() => navigation.navigate('SearchInsights')} hitSlop={8}>
+            <Ionicons name="search-outline" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.searchBtn} onPress={() => navigation.navigate('SearchInsights')}>
-          <Ionicons name="search-outline" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Search + filters sit OUTSIDE FlatList — naturally pinned, no sticky tricks */}
       <View style={styles.controls}>
@@ -181,21 +184,19 @@ const InsightsScreen: React.FC = () => {
           }
 
           // Insight card
+          const catColor = CATEGORIES.find((c) => c.id === item.category)?.color ?? colors.primary;
           return (
             <TouchableOpacity
               style={[styles.insightCard, Shadows.sm]}
               onPress={() => navigation.navigate('InsightDetail', { id: item.id })}
               activeOpacity={0.85}
             >
-              <LinearGradient
-                colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
-                style={styles.insightCardInner}
-              >
+              <View style={styles.insightCardInner}>
                 {/* Category row */}
                 <View style={styles.tagsRow}>
-                  <View style={[styles.impactBadge, { backgroundColor: colors.primary + '20' }]}>
-                    <View style={[styles.impactDot, { backgroundColor: colors.primary }]} />
-                    <Text style={[styles.impactText, { color: colors.primary }]}>
+                  <View style={[styles.impactBadge, { backgroundColor: catColor + '20' }]}>
+                    <View style={[styles.impactDot, { backgroundColor: catColor }]} />
+                    <Text style={[styles.impactText, { color: catColor }]}>
                       {String(item.category).replace(/_/g, ' ').toUpperCase()}
                     </Text>
                   </View>
@@ -228,7 +229,7 @@ const InsightsScreen: React.FC = () => {
                   <Text style={styles.insightSource}>{item.source}</Text>
                   <Text style={styles.insightDate}>{formatRelativeTime(item.publishedAt)}</Text>
                 </View>
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           );
         }}
@@ -240,27 +241,18 @@ const InsightsScreen: React.FC = () => {
 const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.bgDark },
-    menuBtn: {
-      width: 40,
-      height: 32,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 12,
+    hero: {
       paddingHorizontal: 20,
-      paddingTop: 12,
-      paddingBottom: 12,
+      paddingBottom: 18,
+      borderBottomLeftRadius: BorderRadius['2xl'],
+      borderBottomRightRadius: BorderRadius['2xl'],
     },
-    headerTitle: { fontSize: 24, fontWeight: '800', color: colors.textPrimary },
-    headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-    searchBtn: { width: 40, height: 32, alignItems: 'center', justifyContent: 'center' },
-    aiChatBtn: { borderRadius: 14, overflow: 'hidden' },
-    aiChatBtnGradient: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    heroRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    heroIconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    heroTitle: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.4 },
+    heroSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
     controls: {
-      paddingTop: 8,
+      paddingTop: 14,
     },
     searchWrapper: { paddingHorizontal: 20, marginBottom: 12 },
     categoriesRow: { paddingHorizontal: 20, gap: 8, alignItems: 'center' },
@@ -285,7 +277,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
       borderWidth: 1,
       borderColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border,
     },
-    insightCardInner: { padding: 16 },
+    insightCardInner: { padding: 16, backgroundColor: colors.bgCard },
     tagsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
     impactBadge: {
       flexDirection: 'row',

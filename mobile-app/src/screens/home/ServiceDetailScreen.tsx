@@ -125,7 +125,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     noteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 20, paddingHorizontal: 2 },
     noteText: { fontSize: 11, color: colors.textTertiary, flex: 1, lineHeight: 16 },
     applyBar: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 12, paddingHorizontal: 20, backgroundColor: isDark ? 'rgba(10,11,15,0.92)' : 'rgba(240,242,248,0.92)', borderTopWidth: 1, borderTopColor: colors.border },
-    applyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 54, borderRadius: BorderRadius.base, backgroundColor: colors.primary, alignSelf: 'stretch', maxWidth: 320, ...Shadows.sm },
+    applyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 54, borderRadius: BorderRadius.base, backgroundColor: colors.primary, alignSelf: 'stretch', ...Shadows.sm },
     applyText: { fontSize: 16, fontWeight: '700', color: colors.textInverse },
   });
 
