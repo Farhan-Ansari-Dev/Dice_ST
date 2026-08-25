@@ -338,34 +338,6 @@ const HomeScreen: React.FC = () => {
           ))}
         </ScrollView>
 
-        {/* SECTION 2: ACTION REQUIRED (HIGHEST PRIORITY) */}
-        {actionRequiredItems.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Action Required</Text>
-              <View style={styles.alertBadge}><Text style={styles.alertBadgeText}>{actionRequiredItems.length}</Text></View>
-            </View>
-            <View style={styles.actionStack}>
-              {actionRequiredItems.map((item: ActionRequiredItem) => (
-                <View key={item.id} style={[styles.actionCard, { borderColor: item.urgency === 'critical' ? colors.error : colors.warning, backgroundColor: isDark ? colors.bgCardLight : '#fff' }]}>
-                  <View style={styles.actionCardLeft}>
-                    <View style={[styles.actionIconWrap, { backgroundColor: item.urgency === 'critical' ? `${colors.error}15` : `${colors.warning}15` }]}>
-                      <Ionicons name="warning" size={18} color={item.urgency === 'critical' ? colors.error : colors.warning} />
-                    </View>
-                    <View style={styles.actionCardTextWrap}>
-                      <Text style={styles.actionCardTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.actionCardSub}>{item.subtitle}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity style={[styles.resolveBtn, { backgroundColor: item.urgency === 'critical' ? colors.error : colors.warning }]}>
-                    <Text style={styles.resolveBtnText}>Open</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
         {/* SECTION: SERVICES */}
         <View style={styles.sectionContainer}>
           <View style={styles.servicesHead}>

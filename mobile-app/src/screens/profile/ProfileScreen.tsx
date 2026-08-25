@@ -9,6 +9,7 @@ import {
   Switch,
   Linking,
   Platform,
+  Image,
 } from 'react-native';
 import * as StoreReview from 'expo-store-review';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -29,6 +30,8 @@ const ProfileScreen: React.FC = () => {
   const [notifications, setNotifications] = useState(true);
 
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
+
+  const initials = (user?.name ?? 'User').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || 'U';
 
   // The Consultant Zone gates the verification centre. Consultant intent is the
   // self-declared onboarding type (businessRole), which is where it actually
@@ -168,35 +171,50 @@ const ProfileScreen: React.FC = () => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        {/* Profile Hero */}
-        <LinearGradient
-          colors={['rgba(108,99,255,0.25)', 'rgba(0,212,255,0.12)']}
-          style={[styles.profileHero, Platform.OS === 'ios' ? Shadows.lg : {}]}
-        >
-          <Avatar name={user?.name ?? 'User'} uri={user?.avatar} size="xl" online />
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{user?.name ?? 'User'}</Text>
-            {!!user?.email && <Text style={styles.profileEmail}>{user.email}</Text>}
-            {user?.phone ? (
-              <Text style={styles.profilePhone}>{user.phone}</Text>
-            ) : (
-              <TouchableOpacity onPress={() => navigation.navigate('CompanyProfile')}>
-                <Text style={[styles.profilePhone, { color: colors.primary }]}>+ Add phone number</Text>
-              </TouchableOpacity>
-            )}
+        {/* Profile Hero — clean brand card */}
+        <View style={[styles.profileHero, Platform.OS === 'ios' ? Shadows.sm : {}]}>
+          <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.heroAccent} />
+          <View style={styles.heroBody}>
+            <TouchableOpacity style={styles.editProfileBtn} onPress={() => navigation.navigate('Settings')} hitSlop={8}>
+              <Ionicons name="pencil" size={15} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <View style={styles.profileTopRow}>
+              <View style={styles.avatarWrap}>
+                {user?.avatar ? (
+                  <Image source={{ uri: user.avatar }} style={styles.avatarImg} />
+                ) : (
+                  <LinearGradient colors={colors.gradientHero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatarGradient}>
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  </LinearGradient>
+                )}
+                <View style={styles.onlineDot} />
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={styles.profileName} numberOfLines={1}>{user?.name ?? 'User'}</Text>
+                {!!user?.email && <Text style={styles.profileEmail} numberOfLines={1}>{user.email}</Text>}
+                {user?.phone ? (
+                  <Text style={styles.profilePhone}>{user.phone}</Text>
+                ) : (
+                  <TouchableOpacity onPress={() => navigation.navigate('CompanyProfile')} hitSlop={6}>
+                    <Text style={styles.addPhone}>+ Add phone number</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
             <View style={styles.profileMeta}>
-              <Badge
-                label={user?.subscription?.toUpperCase() ?? 'FREE'}
-                variant={user?.subscription === 'pro' ? 'primary' : 'default'}
-                size="sm"
-              />
-              <Badge label={(userType || user?.role || 'User').toUpperCase()} variant="info" size="sm" />
+              <View style={styles.metaPillOutline}>
+                <Ionicons name={user?.subscription === 'pro' ? 'star' : 'pricetag-outline'} size={12} color={colors.textSecondary} />
+                <Text style={styles.metaPillOutlineText}>{user?.subscription?.toUpperCase() ?? 'FREE'}</Text>
+              </View>
+              <View style={styles.metaPillAccent}>
+                <Ionicons name="briefcase-outline" size={12} color={colors.primary} />
+                <Text style={styles.metaPillAccentText}>{(userType || user?.role || 'User').toUpperCase()}</Text>
+              </View>
             </View>
           </View>
-          <TouchableOpacity style={styles.editProfileBtn} onPress={() => navigation.navigate('Settings')}>
-            <Ionicons name="pencil" size={16} color={isDark ? "#fff" : colors.textSecondary} />
-          </TouchableOpacity>
-        </LinearGradient>
+        </View>
 
         {/* Profile completion — server-computed, links to the company profile editor */}
         {typeof user?.profileCompletion === 'number' && user.profileCompletion < 100 && (
@@ -208,9 +226,10 @@ const ProfileScreen: React.FC = () => {
               borderWidth: 1,
               borderColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border,
               borderRadius: 16,
-              padding: 16,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
               marginBottom: 16,
-              gap: 8,
+              gap: 6,
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -219,11 +238,11 @@ const ProfileScreen: React.FC = () => {
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
             </View>
-            <View style={{ height: 8, borderRadius: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border, overflow: 'hidden' }}>
-              <View style={{ height: 8, borderRadius: 4, width: `${user.profileCompletion}%`, backgroundColor: colors.primary }} />
+            <View style={{ height: 3, borderRadius: 999, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : colors.border, overflow: 'hidden' }}>
+              <View style={{ height: 3, borderRadius: 999, width: `${user.profileCompletion}%`, backgroundColor: colors.primary }} />
             </View>
-            <Text style={{ fontSize: 12, color: colors.textTertiary }}>
-              Add company & compliance details to speed up applications.
+            <Text style={{ fontSize: 12, color: colors.textTertiary }} numberOfLines={1}>
+              Add company details to speed up applications.
             </Text>
           </TouchableOpacity>
         )}
@@ -343,29 +362,42 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     settingsBtn: { padding: 8 },
     content: { paddingHorizontal: 20, paddingTop: 8 },
     profileHero: {
-      borderRadius: BorderRadius.xl,
-      padding: 20,
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 16,
+      borderRadius: BorderRadius.base,
       marginBottom: 16,
+      overflow: 'hidden',
+      backgroundColor: colors.bgCard,
       borderWidth: 1,
-      borderColor: 'rgba(108,99,255,0.2)',
-      position: 'relative',
+      borderColor: colors.border,
     },
+    heroAccent: { height: 6, width: '100%' },
+    heroBody: { padding: 18 },
+    profileTopRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    avatarWrap: { width: 64, height: 64 },
+    avatarGradient: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+    avatarImg: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.bgCardLight },
+    avatarInitials: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
+    onlineDot: { position: 'absolute', bottom: 1, right: 1, width: 15, height: 15, borderRadius: 7.5, backgroundColor: colors.success, borderWidth: 2.5, borderColor: colors.bgCard },
     profileInfo: { flex: 1 },
-    profileName: { fontSize: 18, fontWeight: '800', color: isDark ? '#FFFFFF' : colors.textPrimary },
-    profileEmail: { fontSize: 12, color: isDark ? 'rgba(255,255,255,0.7)' : colors.textSecondary, marginTop: 2 },
-    profilePhone: { fontSize: 12, color: isDark ? 'rgba(255,255,255,0.55)' : colors.textTertiary, marginTop: 1 },
-    profileMeta: { flexDirection: 'row', gap: 8, marginTop: 8 },
+    profileName: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3 },
+    profileEmail: { fontSize: 13, color: colors.textSecondary, marginTop: 3 },
+    profilePhone: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+    addPhone: { fontSize: 13, fontWeight: '600', color: colors.primary, marginTop: 5 },
+    profileMeta: { flexDirection: 'row', gap: 8, marginTop: 16 },
+    metaPillOutline: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.bgCardLight, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 11, paddingVertical: 6, borderRadius: BorderRadius.full },
+    metaPillOutlineText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, letterSpacing: 0.4 },
+    metaPillAccent: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: `${colors.primary}14`, paddingHorizontal: 11, paddingVertical: 6, borderRadius: BorderRadius.full },
+    metaPillAccentText: { fontSize: 11, fontWeight: '700', color: colors.primary, letterSpacing: 0.4 },
     editProfileBtn: {
       position: 'absolute',
       top: 16,
       right: 16,
+      zIndex: 2,
       width: 32,
       height: 32,
-      borderRadius: 10,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)',
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bgCard,
       alignItems: 'center',
       justifyContent: 'center',
     },
