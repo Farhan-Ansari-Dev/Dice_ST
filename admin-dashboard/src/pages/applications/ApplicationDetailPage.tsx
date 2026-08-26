@@ -190,7 +190,10 @@ export default function ApplicationDetailPage() {
         <Field label="Certification">{app.cert_type}</Field>
         <Field label="Priority"><span style={{ textTransform: 'capitalize' }}>{app.priority || 'medium'}</span></Field>
         <Field label="Created">{formatDate(app.created_at)}</Field>
-        <Field label="Created By">{app.created_by?.name || '—'}</Field>
+        <Field label="Applicant">{app.created_by?.name || app.created_by?.email || '—'}</Field>
+        <Field label="Email">{app.created_by?.email || '—'}</Field>
+        <Field label="Phone">{app.created_by?.phone || '—'}</Field>
+        <Field label="Company">{app.created_by?.company_name || '—'}</Field>
         <Field label="Assigned To">{app.primary_assignee?.name || 'Unassigned'}</Field>
       </div>
 

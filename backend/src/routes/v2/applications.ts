@@ -100,7 +100,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     .populate({ path: 'product_id', options: { includeDeleted: true } })   // archived products still resolve
     .populate('assignees', 'name email avatar_url role')
     .populate('primary_assignee', 'name email avatar_url')
-    .populate('created_by', 'name email')
+    .populate('created_by', 'name email phone company_name')
     .populate('documents.document_id');
 
   if (!app) return res.status(404).json({ error: 'not_found' });
