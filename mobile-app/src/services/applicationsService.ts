@@ -31,6 +31,18 @@ export interface Application {
     label: string;
     added_at: string;
   }>;
+  // Staff-requested documents the applicant must supply (certification flow).
+  required_documents?: Array<{
+    _id: string;
+    doc_type: string;
+    label: string;
+    stage?: string;
+    status: 'pending' | 'submitted' | 'accepted' | 'rejected';
+    document_id?: string | { _id: string; name?: string };
+    note?: string;
+    requested_at?: string;
+    submitted_at?: string;
+  }>;
   estimated_completion_at?: string;
   submitted_at?: string;
   created_at: string;
@@ -75,6 +87,10 @@ const applicationsService = {
 
   uploadDocument: (id: string, formData: FormData, onProgress?: (p: number) => void) =>
     api.uploadFile<{ data: any }>(`/applications/${id}/documents`, formData, onProgress),
+
+  // Certification flow — link an uploaded Document to a requested requirement.
+  submitDocument: (id: string, requirementId: string, documentId: string) =>
+    api.post<{ data: Application }>(`/applications/${id}/submit-document`, { requirement_id: requirementId, document_id: documentId }),
 
   // Unified activity feed: status history + audit + linked testing/inspection.
   getTimeline: (id: string) =>

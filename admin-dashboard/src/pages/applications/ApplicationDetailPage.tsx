@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Loader2, Package, GitBranch, UserPlus, StickyNote, Clock, History,
   FileText, Award, CreditCard, Shield, FlaskConical, Truck, Download, AlertTriangle,
+  ClipboardList, Plus, Check, X, Receipt,
 } from 'lucide-react'
 import Badge from '../../components/common/Badge'
 import Avatar from '../../components/common/Avatar'
@@ -34,6 +35,11 @@ const pretty = (s: string) => (s || '').replace(/_/g, ' ')
 const card: React.CSSProperties = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20 }
 const sectionTitle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontSize: 14, fontWeight: 700, margin: '0 0 14px' }
 const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 13 }
+const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'var(--bg-body)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text-primary)', outline: 'none', marginBottom: 10 }
+const linkBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, padding: 0, color: 'var(--accent-purple)' }
+
+const CUR: Record<string, string> = { INR: '₹', USD: '$', AED: 'AED ', EUR: '€' }
+const money = (paise: number, cur = 'INR') => `${CUR[cur] || ''}${((paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -60,6 +66,17 @@ export default function ApplicationDetailPage() {
   const [pickProduct, setPickProduct] = useState('')
   const [hsCode, setHsCode] = useState('')
   const [certTypeInput, setCertTypeInput] = useState('')
+  // Request-documents composer
+  const [reqLabel, setReqLabel] = useState('')
+  const [reqDocType, setReqDocType] = useState('')
+  // Payment-demand composer
+  const [payAmount, setPayAmount] = useState('')
+  const [payCurrency, setPayCurrency] = useState('INR')
+  const [payGov, setPayGov] = useState('')
+  const [payLab, setPayLab] = useState('')
+  const [payConsult, setPayConsult] = useState('')
+  const [payTax, setPayTax] = useState('')
+  const [payDesc, setPayDesc] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['application', id] })
 
@@ -102,7 +119,7 @@ export default function ApplicationDetailPage() {
   const { data: payments } = useQuery({
     queryKey: ['app_payments', id],
     queryFn: async () => ((await apiClient.get('/payments')).data.data || []).filter((p: any) => String(p.application_id) === String(id)),
-    enabled: tab === 'payments',
+    enabled: !!id,
   })
 
   const transitionMut = useMutation({
@@ -135,6 +152,33 @@ export default function ApplicationDetailPage() {
     onSuccess: () => { invalidate(); queryClient.invalidateQueries({ queryKey: ['application_audit', id] }); toast.success('Product resolved — workflow can continue'); setPickProduct(''); setHsCode(''); setCertTypeInput('') },
     onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to resolve product'),
   })
+  const requestDocsMut = useMutation({
+    mutationFn: (documents: Array<{ doc_type: string; label: string }>) => apiClient.post(`/applications/${id}/request-documents`, { documents }),
+    onSuccess: () => { invalidate(); queryClient.invalidateQueries({ queryKey: ['application_audit', id] }); toast.success('Documents requested'); setReqLabel(''); setReqDocType('') },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to request documents'),
+  })
+  const reviewDocMut = useMutation({
+    mutationFn: (body: { requirement_id: string; decision: 'accept' | 'reject'; note?: string }) => apiClient.post(`/applications/${id}/review-document`, body),
+    onSuccess: () => { invalidate(); toast.success('Document reviewed') },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to review document'),
+  })
+  const demandMut = useMutation({
+    mutationFn: (body: any) => apiClient.post(`/applications/${id}/payment-demand`, body),
+    onSuccess: () => {
+      invalidate(); queryClient.invalidateQueries({ queryKey: ['app_payments', id] }); queryClient.invalidateQueries({ queryKey: ['application_audit', id] })
+      toast.success('Payment demand raised — applicant notified')
+      setPayAmount(''); setPayGov(''); setPayLab(''); setPayConsult(''); setPayTax(''); setPayDesc('')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to raise payment demand'),
+  })
+  const downloadInvoice = async (paymentId: string) => {
+    try {
+      const res = await apiClient.get(`/payments/${paymentId}/invoice`)
+      const url = res.data?.invoice_url
+      if (url) window.open(url, '_blank')
+      else toast.error('Invoice unavailable')
+    } catch { toast.error('Failed to get invoice') }
+  }
   const downloadDoc = async (docId: string) => {
     try {
       const res = await apiClient.get(`/documents/${docId}/download`)
@@ -337,6 +381,89 @@ export default function ApplicationDetailPage() {
               </Button>
             </div>
           )}
+
+          {/* Request documents + review checklist */}
+          <div style={card}>
+            <h3 style={sectionTitle}><ClipboardList size={15} /> Documents Requested</h3>
+            {(app.required_documents || []).length === 0
+              ? <p style={{ ...muted, marginTop: 0, marginBottom: 12 }}>No documents requested yet.</p>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                  {app.required_documents.map((r: any) => {
+                    const doc = r.document_id && typeof r.document_id === 'object' ? r.document_id : null
+                    return (
+                      <div key={r._id} style={{ padding: '8px 10px', background: 'var(--bg-body)', borderRadius: 'var(--radius)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                          <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{r.label}</span>
+                          <Badge status={r.status === 'accepted' ? 'paid' : r.status} size="sm" />
+                        </div>
+                        {r.note && <div style={{ ...muted, marginTop: 2 }}>{r.note}</div>}
+                        {(doc || r.status === 'submitted') && (
+                          <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
+                            {doc && <button onClick={() => downloadDoc(doc.id || doc._id)} style={linkBtn}><Download size={12} /> View</button>}
+                            {r.status === 'submitted' && <>
+                              <button onClick={() => reviewDocMut.mutate({ requirement_id: r._id, decision: 'accept' })} style={{ ...linkBtn, color: 'var(--accent-green)' }}><Check size={12} /> Accept</button>
+                              <button onClick={() => { const note = window.prompt('Reason for rejection (optional)') ?? undefined; reviewDocMut.mutate({ requirement_id: r._id, decision: 'reject', note }) }} style={{ ...linkBtn, color: 'var(--accent-coral)' }}><X size={12} /> Reject</button>
+                            </>}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>}
+            <input value={reqLabel} onChange={e => setReqLabel(e.target.value)} placeholder="Document name (e.g. GST Certificate)" style={inputStyle} />
+            <input value={reqDocType} onChange={e => setReqDocType(e.target.value)} placeholder="Type key (optional, e.g. gst_certificate)" style={inputStyle} />
+            <Button size="sm" variant="secondary" disabled={!reqLabel.trim() || requestDocsMut.isPending}
+              onClick={() => requestDocsMut.mutate([{ label: reqLabel.trim(), doc_type: (reqDocType.trim() || reqLabel.trim().toLowerCase().replace(/\s+/g, '_')) }])}>
+              <Plus size={13} /> {requestDocsMut.isPending ? 'Requesting…' : 'Request Document'}
+            </Button>
+          </div>
+
+          {/* Payment demand + invoice */}
+          <div style={card}>
+            <h3 style={sectionTitle}><CreditCard size={15} /> Payment &amp; Invoice</h3>
+            {(payments || []).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                {payments.map((p: any) => (
+                  <div key={p._id} style={{ padding: '8px 10px', background: 'var(--bg-body)', borderRadius: 'var(--radius)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{money(p.total_paise, p.currency)}</span>
+                      <Badge status={p.status === 'captured' ? 'paid' : p.status} size="sm" />
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
+                      <span style={muted}>{p.invoice_number || String(p._id).slice(-6)}</span>
+                      <button onClick={() => downloadInvoice(p._id)} style={linkBtn}><Receipt size={12} /> Invoice</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p style={{ ...muted, marginTop: 0, marginBottom: 10 }}>Raise a demand the applicant pays in-app. Enter a flat amount, or a fee breakdown.</p>
+            <input value={payAmount} onChange={e => setPayAmount(e.target.value)} inputMode="decimal" placeholder="Amount" style={inputStyle} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={payGov} onChange={e => setPayGov(e.target.value)} inputMode="decimal" placeholder="Gov fee" style={inputStyle} />
+              <input value={payLab} onChange={e => setPayLab(e.target.value)} inputMode="decimal" placeholder="Lab fee" style={inputStyle} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={payConsult} onChange={e => setPayConsult(e.target.value)} inputMode="decimal" placeholder="Consultancy" style={inputStyle} />
+              <input value={payTax} onChange={e => setPayTax(e.target.value)} inputMode="decimal" placeholder="Tax %" style={inputStyle} />
+            </div>
+            <select value={payCurrency} onChange={e => setPayCurrency(e.target.value)} style={inputStyle}>
+              {['INR', 'USD', 'AED', 'EUR'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <input value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="Description (optional)" style={inputStyle} />
+            <Button size="sm" disabled={demandMut.isPending || (!payAmount && !payGov && !payLab && !payConsult)}
+              onClick={() => demandMut.mutate({
+                amount: payAmount ? Number(payAmount) : undefined,
+                currency: payCurrency,
+                gov_fee: payGov ? Number(payGov) : undefined,
+                lab_fee: payLab ? Number(payLab) : undefined,
+                consultancy_fee: payConsult ? Number(payConsult) : undefined,
+                tax_rate: payTax ? Number(payTax) : undefined,
+                description: payDesc || undefined,
+              })}>
+              {demandMut.isPending ? 'Raising…' : 'Raise Payment Demand'}
+            </Button>
+          </div>
 
           {/* Change status */}
           <div style={card}>

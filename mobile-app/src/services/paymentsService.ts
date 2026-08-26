@@ -40,8 +40,15 @@ const paymentsService = {
       signature,
     }),
 
+  getById: (id: string) =>
+    api.get<{ data: Payment }>(`/payments/${id}`),
+
   getInvoice: (id: string) =>
     api.get<{ data: Payment }>(`/payments/${id}/invoice`),
+
+  // Backend returns { success, invoice_url } (a short-lived signed S3 link).
+  getInvoiceUrl: (id: string) =>
+    api.get<{ invoice_url: string }>(`/payments/${id}/invoice`),
 
   getStats: () =>
     api.get<{ data: { total_paid: number; total_pending: number; monthly_trend: any[] } }>('/payments/stats'),

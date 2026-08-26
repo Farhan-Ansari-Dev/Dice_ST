@@ -91,6 +91,25 @@ export interface IApplication extends Document {
     added_at: Date;
   }>;
 
+  // Requested-documents checklist — staff ask the applicant for specific files.
+  // Distinct from `documents[]` (actual uploaded refs): a requirement can sit
+  // 'pending' long before any file exists. When a requirement is accepted the
+  // linked upload is also copied into `documents[]` so the workflow doc-gate
+  // (which reads `documents`) sees it.
+  required_documents: Array<{
+    _id: Types.ObjectId;
+    doc_type: string;                      // machine key, e.g. "gst_certificate"
+    label: string;                         // human label shown to the applicant
+    stage?: string;                        // stage this doc unlocks (defaults to current)
+    status: 'pending' | 'submitted' | 'accepted' | 'rejected';
+    document_id?: Types.ObjectId;          // set once the applicant uploads
+    note?: string;                         // staff instruction / rejection reason
+    requested_by?: Types.ObjectId;
+    requested_at: Date;
+    submitted_at?: Date;
+    reviewed_at?: Date;
+  }>;
+
   // Preferred Certification Body for this application (per certification).
   // Default is Sanyog-managed (staff assign the CB later); the customer may also
   // find/enter a CB, which a manager then accepts or overrides. Same
@@ -211,6 +230,22 @@ const ApplicationSchema = new Schema<IApplication>(
         label:              { type: String, required: true },
         added_at:           { type: Date, default: Date.now },
         _id: false,
+      },
+    ],
+
+    // Requested-documents checklist (keeps _id so each requirement is addressable).
+    required_documents: [
+      {
+        doc_type:     { type: String, required: true },
+        label:        { type: String, required: true },
+        stage:        { type: String },
+        status:       { type: String, enum: ['pending', 'submitted', 'accepted', 'rejected'], default: 'pending' },
+        document_id:  { type: Schema.Types.ObjectId, ref: 'Document' },
+        note:         { type: String },
+        requested_by: { type: Schema.Types.ObjectId, ref: 'User' },
+        requested_at: { type: Date, default: Date.now },
+        submitted_at: { type: Date },
+        reviewed_at:  { type: Date },
       },
     ],
 

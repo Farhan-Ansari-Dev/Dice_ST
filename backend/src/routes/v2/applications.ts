@@ -8,15 +8,20 @@
  *   4. Notification fired to assignees + org owner via notify()
  */
 import { Router, Response } from 'express';
+import { Types } from 'mongoose';
 import { Application, ApplicationStatus, Product, AuditLog, Testing, Inspection, audit } from '../../models';
 import { authenticate, AuthRequest, requireRole, ADMIN_ROLES } from '../../middleware/authMongo';
 import { createDraftApplication, ProductNotFoundError } from '../../services/applicationService';
 import { transition as runTransition, TransitionDeniedError, GateDeniedError } from '../../services/workflow/transitionService';
 import { assignApplication, unassignApplication, escalateApplication } from '../../services/assignment';
 import { overrideStatus } from '../../services/workflow/overrideService';
+import { razorpayService } from '../../services/razorpayService';
+import { notificationService } from '../../services/notificationService';
 
 const router = Router();
 router.use(authenticate);
+
+const STAFF_WRITE_ROLES = ['admin', 'super_admin', 'employee'] as const;
 
 // Single-tenant scoping: staff operate platform-wide; other roles are limited to
 // applications they created OR are assigned to (consultants service assigned
@@ -101,7 +106,8 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     .populate('assignees', 'name email avatar_url role')
     .populate('primary_assignee', 'name email avatar_url')
     .populate('created_by', 'name email phone company_name')
-    .populate('documents.document_id');
+    .populate('documents.document_id')
+    .populate('required_documents.document_id');
 
   if (!app) return res.status(404).json({ error: 'not_found' });
   return res.json({ data: app });
@@ -398,6 +404,201 @@ router.post('/:id/resolve-product', requireRole(...ADMIN_ROLES, 'employee'), asy
   });
 
   return res.json({ data: app });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Certification flow — document requests + payment demands
+// ═══════════════════════════════════════════════════════════════
+
+/** Locate a required-document subdocument by its id (typed as a plain array in
+ *  IApplication, so we match by string id rather than the Mongoose `.id()`). */
+function findRequirement(app: any, requirementId: string) {
+  return (app.required_documents as any[]).find((d) => String(d._id) === String(requirementId));
+}
+
+// POST /applications/:id/request-documents — staff ask the applicant for specific
+// files. Appends 'pending' requirements to the checklist and notifies the applicant.
+router.post('/:id/request-documents', requireRole(...STAFF_WRITE_ROLES), async (req: AuthRequest, res: Response) => {
+  const { documents } = req.body as { documents: Array<{ doc_type: string; label: string; stage?: string; note?: string }> };
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return res.status(400).json({ error: 'documents array required' });
+  }
+  const app = await Application.findById(req.params.id);
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  const now = new Date();
+  const added = documents
+    .filter((d) => d && d.doc_type && d.label)
+    .map((d) => ({
+      doc_type: String(d.doc_type).trim(),
+      label: String(d.label).trim(),
+      stage: d.stage ? String(d.stage) : app.current_stage,
+      status: 'pending' as const,
+      note: d.note ? String(d.note).trim() : undefined,
+      requested_by: req.user!._id as any,
+      requested_at: now,
+    }));
+  if (added.length === 0) return res.status(400).json({ error: 'each document needs a doc_type and label' });
+
+  app.required_documents.push(...(added as any));
+  await app.save();
+
+  await audit({
+    actor: req.user!._id as any, org_id: req.user!.org_id as any,
+    resource_type: 'application', resource_id: app._id as any, action: 'updated',
+    notes: `requested ${added.length} document(s): ${added.map((d) => d.label).join(', ')}`,
+  });
+  if (app.created_by) {
+    await notificationService.notify(
+      String(app.created_by), 'Documents requested',
+      `${added.length} document(s) are needed for application ${app.application_number}.`,
+      'application', { application_id: String(app._id) },
+    );
+  }
+  return res.status(201).json({ data: app });
+});
+
+// POST /applications/:id/submit-document — the applicant links an already-uploaded
+// Document to one of the requested requirements (moves it to 'submitted').
+router.post('/:id/submit-document', async (req: AuthRequest, res: Response) => {
+  const { requirement_id, document_id } = req.body as { requirement_id: string; document_id: string };
+  if (!requirement_id || !document_id) return res.status(400).json({ error: 'requirement_id and document_id required' });
+  const app = await Application.findOne(scopeById(req));
+  if (!app) return res.status(404).json({ error: 'not_found' });
+
+  const reqDoc = findRequirement(app, requirement_id);
+  if (!reqDoc) return res.status(404).json({ error: 'requirement_not_found' });
+
+  reqDoc.document_id = new Types.ObjectId(document_id);
+  reqDoc.status = 'submitted';
+  reqDoc.submitted_at = new Date();
+  app.markModified('required_documents');
+  await app.save();
+
+  await audit({
+    actor: req.user!._id as any, org_id: req.user!.org_id as any,
+    resource_type: 'application', resource_id: app._id as any, action: 'updated',
+    notes: `document submitted for "${reqDoc.label}"`,
+  });
+  // Nudge the reviewer(s) that something is waiting.
+  const reviewer = app.primary_assignee || reqDoc.requested_by;
+  if (reviewer) {
+    await notificationService.notify(
+      String(reviewer), 'Document submitted',
+      `A document was submitted for ${app.application_number}: ${reqDoc.label}.`,
+      'application', { application_id: String(app._id) },
+    );
+  }
+  return res.json({ data: app });
+});
+
+// POST /applications/:id/review-document — staff accept or reject a submitted
+// requirement. Acceptance also copies the file into documents[] so the workflow
+// doc-gate (which reads documents[]) recognises it.
+router.post('/:id/review-document', requireRole(...STAFF_WRITE_ROLES), async (req: AuthRequest, res: Response) => {
+  const { requirement_id, decision, note } = req.body as { requirement_id: string; decision: 'accept' | 'reject'; note?: string };
+  if (!requirement_id || (decision !== 'accept' && decision !== 'reject')) {
+    return res.status(400).json({ error: "requirement_id and decision ('accept' | 'reject') required" });
+  }
+  const app = await Application.findById(req.params.id);
+  if (!app) return res.status(404).json({ error: 'not_found' });
+  const reqDoc = findRequirement(app, requirement_id);
+  if (!reqDoc) return res.status(404).json({ error: 'requirement_not_found' });
+
+  reqDoc.reviewed_at = new Date();
+  if (decision === 'accept') {
+    reqDoc.status = 'accepted';
+    if (note) reqDoc.note = String(note).trim();
+    if (reqDoc.document_id) {
+      const stage = reqDoc.stage || app.current_stage || app.status;
+      const already = app.documents.some((d) => String(d.document_id) === String(reqDoc.document_id));
+      if (!already) {
+        app.documents.push({ document_id: reqDoc.document_id, required_for_stage: stage, label: reqDoc.label, added_at: new Date() } as any);
+      }
+    }
+  } else {
+    reqDoc.status = 'rejected';
+    reqDoc.note = note ? String(note).trim() : 'Rejected — please re-upload.';
+  }
+  app.markModified('required_documents');
+  await app.save();
+
+  await audit({
+    actor: req.user!._id as any, org_id: req.user!.org_id as any,
+    resource_type: 'application', resource_id: app._id as any, action: 'updated',
+    notes: `document "${reqDoc.label}" ${reqDoc.status}`,
+  });
+  if (app.created_by) {
+    await notificationService.notify(
+      String(app.created_by),
+      decision === 'accept' ? 'Document accepted' : 'Document needs attention',
+      decision === 'accept'
+        ? `Your "${reqDoc.label}" was accepted for ${app.application_number}.`
+        : `Your "${reqDoc.label}" was rejected for ${app.application_number}: ${reqDoc.note}`,
+      'application', { application_id: String(app._id) },
+    );
+  }
+  return res.json({ data: app });
+});
+
+// POST /applications/:id/payment-demand — staff raise a priced payment demand the
+// applicant pays from the app. Amount is admin-entered (a flat `amount`, or a
+// gov/lab/consultancy breakdown), plus an optional tax_rate. Creates a Razorpay
+// order + pending Payment owned by the applicant, links it to the application fee,
+// and notifies the applicant. Invoice is generated on capture.
+router.post('/:id/payment-demand', requireRole(...STAFF_WRITE_ROLES), async (req: AuthRequest, res: Response) => {
+  const { amount, currency = 'INR', gov_fee, lab_fee, consultancy_fee, tax_rate = 0, description } =
+    req.body as { amount?: number; currency?: 'INR' | 'USD' | 'AED' | 'EUR'; gov_fee?: number; lab_fee?: number; consultancy_fee?: number; tax_rate?: number; description?: string };
+
+  const app = await Application.findById(req.params.id);
+  if (!app) return res.status(404).json({ error: 'not_found' });
+  if (!app.created_by) return res.status(400).json({ error: 'application has no applicant to bill' });
+
+  const gov = Math.max(0, Number(gov_fee) || 0);
+  const lab = Math.max(0, Number(lab_fee) || 0);
+  const cons = Math.max(0, Number(consultancy_fee) || 0);
+  const hasBreakdown = gov > 0 || lab > 0 || cons > 0;
+  const subtotal = hasBreakdown ? gov + lab + cons : Math.max(0, Number(amount) || 0);
+  if (subtotal <= 0) return res.status(400).json({ error: 'a positive amount (or fee breakdown) is required' });
+
+  const rate = Math.max(0, Number(tax_rate) || 0);
+  const taxAmount = subtotal * (rate / 100);
+  const total = subtotal + taxAmount;
+  const toPaise = (n: number) => Math.round(n * 100);
+
+  const breakdown = {
+    gov_fee_paise: toPaise(gov),
+    lab_fee_paise: toPaise(lab),
+    consultancy_fee_paise: toPaise(cons),
+    subtotal_paise: toPaise(subtotal),
+    tax_amount_paise: toPaise(taxAmount),
+    tax_rate: rate,
+  };
+  const desc = (description && description.trim()) || `Certification fees — ${app.application_number}`;
+
+  const { payment } = await razorpayService.createOrder(
+    String(app.created_by), String(app._id), toPaise(total), desc, currency, breakdown, 'application_fee',
+  );
+
+  // base_inr backs the issuance payment-gate (fee.base_inr > 0 && !fee.paid).
+  // It holds the demanded total in the chosen currency's major unit.
+  app.fee.base_inr = Math.round(total);
+  app.fee.paid = false;
+  app.fee.payment_id = payment._id as any;
+  await app.save();
+
+  await audit({
+    actor: req.user!._id as any, org_id: req.user!.org_id as any,
+    resource_type: 'application', resource_id: app._id as any, action: 'updated',
+    notes: `payment demand ${currency} ${total.toFixed(2)} raised (payment ${payment._id})`,
+  });
+  await notificationService.notify(
+    String(app.created_by), 'Payment requested',
+    `A payment of ${currency} ${total.toFixed(2)} is due for application ${app.application_number}.`,
+    'payment', { application_id: String(app._id), payment_id: String(payment._id) },
+  );
+
+  return res.status(201).json({ data: { payment, fee: app.fee } });
 });
 
 export default router;

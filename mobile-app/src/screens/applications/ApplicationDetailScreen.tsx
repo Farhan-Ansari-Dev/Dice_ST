@@ -21,6 +21,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../services/api';
 import * as DocumentPicker from 'expo-document-picker';
 import documentsService from '../../services/documentsService';
+import applicationsService from '../../services/applicationsService';
+import paymentsService from '../../services/paymentsService';
 
 const STATUS_PROGRESS: Record<string, number> = {
   draft: 5,
@@ -83,6 +85,54 @@ const ApplicationDetailScreen: React.FC = () => {
       Alert.alert('Error', err?.response?.data?.error || err?.message || 'Could not upload document. Please try again.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Certification flow — fulfil a staff-requested document: pick a file, upload it
+  // linked to this application, then attach it to the requirement.
+  const [fulfillingId, setFulfillingId] = useState<string | null>(null);
+  const handleFulfillRequirement = async (requirementId: string, docType: string) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: false, copyToCacheDirectory: true });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+      const file = result.assets[0];
+      const mimeType = file.mimeType || 'application/octet-stream';
+      setFulfillingId(requirementId);
+      const uploaded = await documentsService.uploadFromDevice(file.uri, file.name, mimeType, docType || 'general', appId);
+      await applicationsService.submitDocument(appId, requirementId, uploaded._id);
+      await queryClient.invalidateQueries({ queryKey: ['application', appId] });
+      await queryClient.invalidateQueries({ queryKey: ['application-docs', appId] });
+      Alert.alert('Submitted', `"${file.name}" was submitted for review.`);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.error || err?.message || 'Could not submit document. Please try again.');
+    } finally {
+      setFulfillingId(null);
+    }
+  };
+
+  // Pay the outstanding demand raised by staff (a Payment already exists with a
+  // Razorpay order); open the gateway with that order.
+  const [payLoading, setPayLoading] = useState(false);
+  const handlePayNow = async (paymentId: string) => {
+    try {
+      setPayLoading(true);
+      const res = await paymentsService.getById(paymentId) as any;
+      const payment = res?.data;
+      if (!payment?.razorpay_order_id) {
+        Alert.alert('Payment unavailable', 'This demand has no payment order yet. Please contact support.');
+        return;
+      }
+      navigation.navigate('PaymentGateway', {
+        orderId: payment.razorpay_order_id,
+        amount: payment.total_paise,
+        currency: payment.currency,
+        description: payment.description,
+        paymentRecordId: payment._id,
+      });
+    } catch {
+      Alert.alert('Error', 'Could not open the payment. Please try again.');
+    } finally {
+      setPayLoading(false);
     }
   };
 
@@ -214,6 +264,60 @@ const ApplicationDetailScreen: React.FC = () => {
                       <Text style={styles.paymentLabel}>Status</Text>
                     </View>
                   </View>
+                  {!app.fee.paid && (app.fee.base_inr || 0) > 0 && app.fee.payment_id && (
+                    <TouchableOpacity
+                      style={[styles.payNowBtn, Shadows.sm]}
+                      onPress={() => handlePayNow(String(app.fee.payment_id))}
+                      disabled={payLoading}
+                      activeOpacity={0.85}
+                    >
+                      {payLoading
+                        ? <ActivityIndicator size="small" color="#FFFFFF" />
+                        : <Ionicons name="card-outline" size={18} color="#FFFFFF" />}
+                      <Text style={styles.payNowText}>{payLoading ? 'Opening…' : 'Pay Now'}</Text>
+                    </TouchableOpacity>
+                  )}
+                </LinearGradient>
+              </View>
+            )}
+
+            {(app.required_documents || []).length > 0 && (
+              <View style={[styles.card, Shadows.sm]}>
+                <LinearGradient
+                  colors={isDark ? [colors.bgCard, colors.bgCardLight] : ['#FFFFFF', '#F7F8FC']}
+                  style={styles.cardInner}
+                >
+                  <Text style={styles.cardTitle}>Requested Documents</Text>
+                  <Text style={[styles.docSize, { marginBottom: 8 }]}>Documents our team needs to proceed.</Text>
+                  {app.required_documents.map((r: any) => {
+                    const canUpload = r.status === 'pending' || r.status === 'rejected';
+                    const statusColor = r.status === 'accepted' ? colors.success : r.status === 'rejected' ? colors.error : r.status === 'submitted' ? colors.warning : colors.textSecondary;
+                    return (
+                      <View key={r._id} style={styles.docRow}>
+                        <View style={styles.docIcon}>
+                          <Ionicons name={r.status === 'accepted' ? 'checkmark-circle' : 'document-attach-outline'} size={20} color={statusColor} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.docName}>{r.label}</Text>
+                          <Text style={[styles.docSize, { color: statusColor, textTransform: 'capitalize' }]}>
+                            {r.status}{r.note ? ` · ${r.note}` : ''}
+                          </Text>
+                        </View>
+                        {canUpload && (
+                          <TouchableOpacity
+                            style={styles.uploadBtn}
+                            onPress={() => handleFulfillRequirement(r._id, r.doc_type)}
+                            disabled={fulfillingId === r._id}
+                          >
+                            {fulfillingId === r._id
+                              ? <ActivityIndicator size="small" color={colors.primary} />
+                              : <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />}
+                            <Text style={styles.uploadBtnText}>{fulfillingId === r._id ? 'Uploading…' : 'Upload'}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })}
                 </LinearGradient>
               </View>
             )}
@@ -475,6 +579,8 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     paymentAmount: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
     paymentLabel: { fontSize: 11, color: colors.textTertiary, marginTop: 4 },
     paymentDivider: { width: 1, height: 40, backgroundColor: colors.border, alignSelf: 'center' },
+    payNowBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, borderRadius: BorderRadius.md, paddingVertical: 12, marginTop: 14 },
+    payNowText: { fontSize: 14, color: '#FFFFFF', fontWeight: '700' },
     uploadBtn: {
       flexDirection: 'row',
       alignItems: 'center',

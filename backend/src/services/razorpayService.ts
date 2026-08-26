@@ -1,6 +1,7 @@
 import Razorpay from 'razorpay'
 import crypto from 'crypto'
 import { Payment } from '../models/Payment'
+import { Application } from '../models/Application'
 import { User } from '../models/User'
 import { notificationService } from './notificationService'
 import { audit } from '../models/AuditLog'
@@ -24,11 +25,11 @@ function razorpayClient(): Razorpay {
 
 export const razorpayService = {
   async createOrder(
-    userId: string, 
-    applicationId: string | null, 
-    totalPaise: number, 
+    userId: string,
+    applicationId: string | null,
+    totalPaise: number,
     description: string,
-    currency: 'INR' | 'USD' = 'INR',
+    currency: 'INR' | 'USD' | 'AED' | 'EUR' = 'INR',
     breakdown?: {
       gov_fee_paise: number,
       lab_fee_paise: number,
@@ -36,7 +37,8 @@ export const razorpayService = {
       tax_amount_paise: number,
       tax_rate: number,
       subtotal_paise: number
-    }
+    },
+    purpose: 'application_fee' | 'expedited_fee' | 'renewal_fee' | 'subscription' | 'other' = 'other'
   ) {
     const order = await razorpayClient().orders.create({
       amount: totalPaise,
@@ -66,7 +68,7 @@ export const razorpayService = {
       consultancy_fee_paise: breakdown ? breakdown.consultancy_fee_paise : 0,
       currency: currency,
       description,
-      purpose: 'other',
+      purpose,
       invoice_number: invNum,
       razorpay_order_id: order.id,
       status: 'pending',
@@ -122,6 +124,16 @@ export const razorpayService = {
     }
     // Already captured earlier → idempotent no-op (no duplicate side effects).
     if (result.modifiedCount === 0) return true
+
+    // Mark the linked application's fee as paid so the issuance payment-gate
+    // (fee.base_inr > 0 && !fee.paid) is satisfied. Idempotent; only touches the
+    // application this payment was raised against.
+    if (payment.application_id) {
+      await Application.updateOne(
+        { _id: payment.application_id },
+        { $set: { 'fee.paid': true, 'fee.payment_id': payment._id, updated_at: new Date() } }
+      )
+    }
 
     const resolvedUserId = userId || payment.user_id?.toString()
 
