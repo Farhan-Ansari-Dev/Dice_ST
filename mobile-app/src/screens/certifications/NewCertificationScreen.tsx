@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, LayoutAnimation, Platform } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, LayoutAnimation, Platform, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, Shadows } from '../../theme';
+import { useTheme, Shadows, BorderRadius } from '../../theme';
 import { centeredContent } from '../../utils/layout';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
@@ -363,15 +363,36 @@ const NewCertificationScreen: React.FC = () => {
               onSearch={setMarketSearch}
             />
             
-            <View style={{ paddingHorizontal: 20 }}>
-              <Button
-                title={isSubmitting ? "Submitting..." : "Apply"}
-                onPress={handleManualApply}
-                size="lg"
-                style={{ marginTop: 40 }}
-                icon={!isSubmitting && <Ionicons name="paper-plane-outline" size={20} color="#FFFFFF" />}
-                disabled={isSubmitting || !selectedProduct || selectedMarkets.length === 0}
-              />
+            <View style={{ paddingHorizontal: 20, marginTop: 40 }}>
+              {(() => {
+                const canApply = !!selectedProduct && selectedMarkets.length > 0 && !isSubmitting;
+                return (
+                  <TouchableOpacity
+                    onPress={handleManualApply}
+                    disabled={!canApply}
+                    activeOpacity={0.9}
+                    style={[styles.applyBtn, canApply ? Shadows.primary : { opacity: 0.45 }]}
+                  >
+                    <LinearGradient
+                      colors={colors.gradientHero}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    {isSubmitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
+                        <Text style={styles.applyBtnText}>Apply</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                );
+              })()}
+              {(!selectedProduct || selectedMarkets.length === 0) && (
+                <Text style={styles.applyHint}>Select a product and at least one market to continue.</Text>
+              )}
             </View>
           </View>
         )}
@@ -465,6 +486,9 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   headerSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2, textAlign: 'center', fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
   content: { paddingVertical: 16, ...centeredContent },
+  applyBtn: { height: 56, borderRadius: BorderRadius.base, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, overflow: 'hidden' },
+  applyBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
+  applyHint: { fontSize: 12, color: colors.textTertiary, textAlign: 'center', marginTop: 10 },
   sectionLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16, marginHorizontal: 20 },
   
   infoBox: { marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.2)' },
