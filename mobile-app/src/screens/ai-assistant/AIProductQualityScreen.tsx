@@ -33,7 +33,7 @@ import Animated, {
   FadeInDown,
 } from 'react-native-reanimated';
 import { useTheme, Typography, Spacing, BorderRadius, Shadows } from '../../theme';
-import { centeredContent } from '../../utils/layout';
+import { centeredContent, gridColumns, gridItemWidth } from '../../utils/layout';
 import productAnalysisService, { ProductAnalysis, Finding } from '../../services/productAnalysisService';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
@@ -341,10 +341,10 @@ const AIProductQualityScreen = () => {
 
                 {/* WHAT IT CHECKS */}
                 <Text style={styles.sectionTitle}>What DICE AI checks</Text>
-                <View style={styles.card}>
-                  {CAPABILITIES.map((cap, i) => (
-                    <Animated.View key={cap.title} entering={FadeInDown.delay(i * 70)}>
-                      <View style={[styles.capRow, i < CAPABILITIES.length - 1 && styles.capRowDivider]}>
+                {gridColumns(2) > 1 ? (
+                  <View style={styles.capGrid}>
+                    {CAPABILITIES.map((cap) => (
+                      <View key={cap.title} style={[styles.capCard, { width: gridItemWidth(gridColumns(2), 12, Spacing.xl) }]}>
                         <View style={styles.capIcon}>
                           <Ionicons name={cap.icon as any} size={20} color={colors.primary} />
                         </View>
@@ -353,9 +353,25 @@ const AIProductQualityScreen = () => {
                           <Text style={styles.capDesc}>{cap.desc}</Text>
                         </View>
                       </View>
-                    </Animated.View>
-                  ))}
-                </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.card}>
+                    {CAPABILITIES.map((cap, i) => (
+                      <Animated.View key={cap.title} entering={FadeInDown.delay(i * 70)}>
+                        <View style={[styles.capRow, i < CAPABILITIES.length - 1 && styles.capRowDivider]}>
+                          <View style={styles.capIcon}>
+                            <Ionicons name={cap.icon as any} size={20} color={colors.primary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.capTitle}>{cap.title}</Text>
+                            <Text style={styles.capDesc}>{cap.desc}</Text>
+                          </View>
+                        </View>
+                      </Animated.View>
+                    ))}
+                  </View>
+                )}
 
                 {/* TRUST */}
                 <View style={styles.trustRow}>
@@ -574,6 +590,8 @@ const makeStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
 
   // Capabilities
   sectionTitle: { ...Typography.h5, color: colors.textPrimary, marginTop: Spacing['2xl'], marginBottom: Spacing.sm, paddingHorizontal: 2 },
+  capGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  capCard: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, padding: Spacing.base, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bgCard, ...Shadows.sm },
   capRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, paddingVertical: Spacing.md },
   capRowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   capIcon: { width: 42, height: 42, borderRadius: BorderRadius.md, backgroundColor: `${colors.primary}14`, alignItems: 'center', justifyContent: 'center' },

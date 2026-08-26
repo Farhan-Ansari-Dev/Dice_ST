@@ -5,7 +5,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { SERVICE_GROUPS } from '../../data/services';
-import { centeredContent } from '../../utils/layout';
+import { centeredContent, gridColumns, gridItemWidth } from '../../utils/layout';
 
 const groupColor = (key: string, colors: ReturnType<typeof useTheme>['colors']) => {
   switch (key) {
@@ -52,6 +52,8 @@ const ServicesScreen: React.FC = () => {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 40, ...centeredContent }}>
         {groups.map((group) => {
           const accent = groupColor(group.key, colors);
+          const cols = gridColumns(2);
+          const itemW = gridItemWidth(cols, 12, 20);
           return (
             <View key={group.key} style={styles.group}>
               {!single && (
@@ -62,20 +64,37 @@ const ServicesScreen: React.FC = () => {
                   <Text style={styles.groupTitle}>{group.title}</Text>
                 </View>
               )}
-              <View style={styles.card}>
-                {group.items.map((item, i) => (
-                  <TouchableOpacity
-                    key={item}
-                    style={[styles.row, i < group.items.length - 1 && styles.rowDivider]}
-                    onPress={() => openService(item, group.title, group.key)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.dot, { backgroundColor: accent }]} />
-                    <Text style={styles.rowText}>{item}</Text>
-                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {cols > 1 ? (
+                <View style={styles.grid}>
+                  {group.items.map((item) => (
+                    <TouchableOpacity
+                      key={item}
+                      style={[styles.gridItem, { width: itemW }]}
+                      onPress={() => openService(item, group.title, group.key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.dot, { backgroundColor: accent }]} />
+                      <Text style={styles.rowText} numberOfLines={2}>{item}</Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.card}>
+                  {group.items.map((item, i) => (
+                    <TouchableOpacity
+                      key={item}
+                      style={[styles.row, i < group.items.length - 1 && styles.rowDivider]}
+                      onPress={() => openService(item, group.title, group.key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.dot, { backgroundColor: accent }]} />
+                      <Text style={styles.rowText}>{item}</Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           );
         })}
@@ -96,6 +115,8 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     groupIcon: { width: 34, height: 34, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center' },
     groupTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, flex: 1 },
     card: { backgroundColor: colors.bgCard, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: colors.border, ...Shadows.sm },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    gridItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 16, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bgCard, ...Shadows.sm },
     row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
     rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     dot: { width: 6, height: 6, borderRadius: 3 },

@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
-import { centeredContent } from '../../utils/layout';
+import { centeredContent, gridColumns, gridItemWidth } from '../../utils/layout';
 import AIWidget from '../../components/common/AIWidget';
 import Badge from '../../components/common/Badge';
 import SearchBar from '../../components/common/SearchBar';
@@ -85,12 +85,11 @@ const InsightsScreen: React.FC = () => {
     return matchSearch && matchCategory;
   });
 
-  // Prepend AI widget as first scrollable item so it scrolls with content
-  type ListItem = { type: 'ai_widget'; id: string } | (typeof INSIGHTS[0] & { type: 'insight' });
-  const listData: ListItem[] = [
-    { type: 'ai_widget', id: '__ai_widget__' },
-    ...filteredInsights.map((i: typeof INSIGHTS[0]) => ({ ...i, type: 'insight' as const })),
-  ];
+  // Insight cards only; the AI widget is a full-width list header so the cards
+  // can flow into a multi-column grid on iPad.
+  type ListItem = typeof INSIGHTS[0] & { type: 'insight' };
+  const listData: ListItem[] = filteredInsights.map((i: typeof INSIGHTS[0]) => ({ ...i, type: 'insight' as const }));
+  const cols = gridColumns(2);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -152,15 +151,27 @@ const InsightsScreen: React.FC = () => {
 
       <FlatList
         ref={flatListRef}
-        key={activeCategory}
+        key={`${activeCategory}-${cols}`}
         data={listData}
         keyExtractor={(item) => item.id}
         style={styles.flatList}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
+        numColumns={cols}
+        columnWrapperStyle={cols > 1 ? styles.columnWrap : undefined}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+        }
+        ListHeaderComponent={
+          <View style={{ marginBottom: 14 }}>
+            <AIWidget
+              title="AI Summary: Latest compliance updates"
+              insight="Get AI-powered insights on regulatory changes, compliance alerts, and industry trends relevant to your business."
+              confidence={96}
+              onPress={() => navigation.navigate('Identifier')}
+            />
+          </View>
         }
         ListEmptyComponent={
           <EmptyState
@@ -170,25 +181,12 @@ const InsightsScreen: React.FC = () => {
           />
         }
         renderItem={({ item }) => {
-          // AI Widget — scrolls naturally as first list item
-          if (item.type === 'ai_widget') {
-            return (
-              <View style={{ marginBottom: 14 }}>
-                <AIWidget
-                  title="AI Summary: Latest compliance updates"
-                  insight="Get AI-powered insights on regulatory changes, compliance alerts, and industry trends relevant to your business."
-                  confidence={96}
-                  onPress={() => navigation.navigate('Identifier')}
-                />
-              </View>
-            );
-          }
 
           // Insight card
           const catColor = CATEGORIES.find((c) => c.id === item.category)?.color ?? colors.primary;
           return (
             <TouchableOpacity
-              style={[styles.insightCard, Shadows.sm]}
+              style={[styles.insightCard, Shadows.sm, cols > 1 && { width: gridItemWidth(cols, 14, 20) }]}
               onPress={() => navigation.navigate('InsightDetail', { id: item.id })}
               activeOpacity={0.85}
             >
@@ -271,6 +269,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     categoryText: { fontSize: 12, color: colors.textTertiary, fontWeight: '500' },
     flatList: { flex: 1 },
     listContent: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 100, flexGrow: 1, ...centeredContent },
+    columnWrap: { gap: 14 },
     insightCard: {
       marginBottom: 14,
       borderRadius: BorderRadius.lg,
