@@ -25,6 +25,7 @@ import AISearchBar from '../../components/home/AISearchBar';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useAuthStore } from '../../store/authStore';
 import { SERVICE_GROUPS } from '../../data/services';
+import { contentWidth, centeredContent } from '../../utils/layout';
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../services/api';
@@ -306,7 +307,7 @@ const HomeScreen: React.FC = () => {
             <Text style={styles.aiBadgeText}>AI Powered</Text>
           </View>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exploreScroll} decelerationRate="fast" snapToInterval={Dimensions.get('window').width * 0.85 + 16}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exploreScroll} decelerationRate="fast" snapToInterval={contentWidth() * 0.85 + 16}>
           {[
             { id: '1', badge: 'NEW', badgeColor: '#00C853', title: 'AI Product Quality\nIdentifier', desc: 'Scan any product or label to get instant quality, safety & composition insights', icon: 'scan', gradient: ['#311B92', '#00B0FF'], route: 'Identifier' },
             { id: '2', badge: 'POPULAR', badgeColor: '#FF8F00', title: 'Find Your\nCertification Body', desc: 'Compare 50+ CBs on pricing, TAT, scope & reviews — and apply directly', icon: 'git-compare-outline', gradient: ['#004D40', '#00E676'], route: 'Certifications' },
@@ -440,7 +441,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     clientRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingBottom: 8, flexWrap: 'wrap' },
     clientLabel: { fontSize: 12, color: colors.textTertiary },
     clientHint: { fontSize: 12, color: colors.textSecondary },
-    scrollContent: { paddingTop: Platform.OS === 'ios' ? 4 : 8 },
+    scrollContent: { paddingTop: Platform.OS === 'ios' ? 4 : 8, ...centeredContent },
     searchSection: { paddingHorizontal: 20, marginBottom: Platform.OS === 'ios' ? 12 : 16 },
 
     // Shared
@@ -479,7 +480,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
 
     // Quick Actions
     quickActionsScroll: { paddingHorizontal: 20, gap: 4, paddingTop: Platform.OS === 'ios' ? 12 : 16, paddingBottom: Platform.OS === 'ios' ? 4 : 8 },
-    quickActionItem: { width: Platform.OS === 'ios' ? (Dimensions.get('window').width - 56) / 5 : 75, alignItems: 'center' },
+    quickActionItem: { width: Platform.OS === 'ios' ? (contentWidth() - 56) / 5 : 75, alignItems: 'center' },
     quickActionIconWrap: { width: Platform.OS === 'ios' ? 40 : 44, height: Platform.OS === 'ios' ? 40 : 44, borderRadius: Platform.OS === 'ios' ? 20 : 22, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
     quickActionLabel: { fontSize: 11, fontWeight: '600', color: colors.textPrimary, textAlign: 'center' },
 
@@ -498,7 +499,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
 
     // Business Impact
     impactGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
-    impactCard: { width: (Dimensions.get('window').width - 52) / 2, padding: 16, borderRadius: 16, ...Shadows.sm, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.05)' : colors.border },
+    impactCard: { width: (contentWidth() - 52) / 2, padding: 16, borderRadius: 16, ...Shadows.sm, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.05)' : colors.border },
     impactCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
     impactIconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
     impactTrend: { fontSize: 12, fontWeight: '700' },
@@ -519,7 +520,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     aiBadgeWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(94, 53, 177, 0.2)' : '#E8EAF6', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
     aiBadgeText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
     exploreScroll: { paddingHorizontal: 20, gap: 16, paddingBottom: 16 },
-    richExploreCard: { width: Dimensions.get('window').width * 0.85, height: Platform.OS === 'ios' ? 225 : 260, borderRadius: 28, overflow: 'hidden' },
+    richExploreCard: { width: contentWidth() * 0.85, height: Platform.OS === 'ios' ? 225 : 260, borderRadius: 28, overflow: 'hidden' },
     richExploreGradient: { flex: 1, padding: Platform.OS === 'ios' ? 20 : 24, justifyContent: 'space-between' },
     richExploreTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
     richExploreBadge: { paddingHorizontal: Platform.OS === 'ios' ? 10 : 12, paddingVertical: Platform.OS === 'ios' ? 4 : 6, borderRadius: Platform.OS === 'ios' ? 10 : 12 },

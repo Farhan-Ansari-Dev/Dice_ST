@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Shadows } from '../../theme';
+import { centeredContent } from '../../utils/layout';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import ProductCategorySelector from '../../components/certifications/ProductCategorySelector';
@@ -463,7 +464,7 @@ const makeStyles = (colors: any, isDark: boolean) => StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? colors.bgCardLight : '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: isDark ? 0 : 1, borderColor: 'rgba(0,0,0,0.05)', ...Shadows.sm },
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   headerSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2, textAlign: 'center', fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
-  content: { paddingVertical: 16 },
+  content: { paddingVertical: 16, ...centeredContent },
   sectionLabel: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16, marginHorizontal: 20 },
   
   infoBox: { marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : '#EEF2FF', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.2)' },

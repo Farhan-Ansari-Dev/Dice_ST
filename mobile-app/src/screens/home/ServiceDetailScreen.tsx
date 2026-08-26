@@ -7,6 +7,7 @@ import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
 import { useToast } from '../../components/common/ToastProvider';
 import leadsService from '../../services/leadsService';
+import { centeredContent } from '../../utils/layout';
 
 const STEPS = [
   { icon: 'person-outline', text: 'Your request goes to a Sanyog certification manager.' },
@@ -65,7 +66,7 @@ const ServiceDetailScreen: React.FC = () => {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140, ...centeredContent }}>
         <View style={styles.card}>
           <Text style={styles.brief}>
             Apply to start your {name} process with Sanyog. Our certification team confirms the exact

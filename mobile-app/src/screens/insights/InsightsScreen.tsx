@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
+import { centeredContent } from '../../utils/layout';
 import AIWidget from '../../components/common/AIWidget';
 import Badge from '../../components/common/Badge';
 import SearchBar from '../../components/common/SearchBar';
@@ -269,7 +270,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     },
     categoryText: { fontSize: 12, color: colors.textTertiary, fontWeight: '500' },
     flatList: { flex: 1 },
-    listContent: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 100, flexGrow: 1 },
+    listContent: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 100, flexGrow: 1, ...centeredContent },
     insightCard: {
       marginBottom: 14,
       borderRadius: BorderRadius.lg,

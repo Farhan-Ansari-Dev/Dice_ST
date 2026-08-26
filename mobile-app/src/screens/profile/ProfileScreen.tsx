@@ -21,6 +21,7 @@ import { useTheme, BorderRadius, Shadows } from '../../theme';
 import Avatar from '../../components/common/Avatar';
 import Badge from '../../components/common/Badge';
 import { useAuthStore } from '../../store/authStore';
+import { centeredContent } from '../../utils/layout';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -360,7 +361,7 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     },
     headerTitle: { flex: 1, fontSize: 24, fontWeight: '800', color: colors.textPrimary },
     settingsBtn: { padding: 8 },
-    content: { paddingHorizontal: 20, paddingTop: 8 },
+    content: { paddingHorizontal: 20, paddingTop: 8, ...centeredContent },
     profileHero: {
       borderRadius: BorderRadius.base,
       marginBottom: 16,

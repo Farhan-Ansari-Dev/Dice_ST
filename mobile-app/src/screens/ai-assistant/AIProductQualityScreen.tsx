@@ -33,6 +33,7 @@ import Animated, {
   FadeInDown,
 } from 'react-native-reanimated';
 import { useTheme, Typography, Spacing, BorderRadius, Shadows } from '../../theme';
+import { centeredContent } from '../../utils/layout';
 import productAnalysisService, { ProductAnalysis, Finding } from '../../services/productAnalysisService';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
@@ -243,7 +244,7 @@ const AIProductQualityScreen = () => {
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40, ...centeredContent }} keyboardShouldPersistTaps="handled">
 
           {/* PHASE 1: PICK */}
           {phase === 'pick' && (

@@ -5,6 +5,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import { SERVICE_GROUPS } from '../../data/services';
+import { centeredContent } from '../../utils/layout';
 
 const groupColor = (key: string, colors: ReturnType<typeof useTheme>['colors']) => {
   switch (key) {
@@ -48,7 +49,7 @@ const ServicesScreen: React.FC = () => {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 40 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 40, ...centeredContent }}>
         {groups.map((group) => {
           const accent = groupColor(group.key, colors);
           return (
