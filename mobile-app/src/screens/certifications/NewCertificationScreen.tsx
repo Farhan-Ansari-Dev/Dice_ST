@@ -258,14 +258,14 @@ const NewCertificationScreen: React.FC = () => {
         companyName: user.companyName,
         productDescription: selectedProduct ?? undefined,
         targetMarkets: selectedMarkets,
-        notes: `Manual application — no verified certification mapping for "${selectedProduct}" in ${selectedMarkets.join(', ')}. Pending product validation.`,
+        notes: `Certification request — product: "${selectedProduct}", target markets: ${selectedMarkets.join(', ')}. Pending product validation and certification mapping by the team.`,
         manualReview: true,
       });
 
       queryClient.invalidateQueries({ queryKey: ['mywork'] });
       showToast(
-        'Application created',
-        'Your application is pending validation. Our team will identify the certifications — continue from My Work.',
+        'Request submitted',
+        'Your product and markets are with our team. They’ll confirm the required certifications — track it in My Work.',
         'success',
       );
       navigation.navigate('MainTabs', { screen: 'Home', params: { screen: 'MyWork' } });
@@ -329,7 +329,7 @@ const NewCertificationScreen: React.FC = () => {
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>New Certification</Text>
-          <Text style={styles.headerSub}>{step === 1 ? 'Step 1 of 2 — Analyze' : 'Step 2 of 2 — Review & Apply'}</Text>
+          <Text style={styles.headerSub}>Product & target markets</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
@@ -343,7 +343,7 @@ const NewCertificationScreen: React.FC = () => {
                 <Ionicons name="sparkles" size={20} color={colors.primary} />
               </View>
               <Text style={styles.infoText}>
-                Select your product and target markets. We'll match them against our verified compliance database to show the certifications you need. If we don't have a verified mapping yet, our certification team reviews it.
+                Select your product and target markets, then tap Apply. Our certification team confirms the exact certifications you need and guides you through the process — track it in My Work.
               </Text>
             </View>
 
@@ -364,13 +364,13 @@ const NewCertificationScreen: React.FC = () => {
             />
             
             <View style={{ paddingHorizontal: 20 }}>
-              <Button 
-                title={isAnalyzing ? "Analyzing with AI..." : "Analyze Requirements"} 
-                onPress={handleAnalyze} 
-                size="lg" 
-                style={{ marginTop: 40 }} 
-                icon={!isAnalyzing && <Ionicons name="analytics-outline" size={20} color="#FFFFFF" />} 
-                disabled={isAnalyzing}
+              <Button
+                title={isSubmitting ? "Submitting..." : "Apply"}
+                onPress={handleManualApply}
+                size="lg"
+                style={{ marginTop: 40 }}
+                icon={!isSubmitting && <Ionicons name="paper-plane-outline" size={20} color="#FFFFFF" />}
+                disabled={isSubmitting || !selectedProduct || selectedMarkets.length === 0}
               />
             </View>
           </View>
