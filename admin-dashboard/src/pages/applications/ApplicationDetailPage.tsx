@@ -104,6 +104,24 @@ export default function ApplicationDetailPage() {
     enabled: isManual,
   })
 
+  // Applicant identity comes from the customer (Application.customer_id → Organization),
+  // not created_by. The org carries the name/company, but may not embed a contact email
+  // (owner_user_id / contact can be empty), so resolve the actual client user by the
+  // customer's name via the supported /users?search endpoint (there is no GET /users/:id).
+  // Nothing is hardcoded; created_by stays a last-resort fallback only.
+  const customer = app && app.customer_id && typeof app.customer_id === 'object' ? app.customer_id : null
+  const customerOwner = customer?.owner_user_id && typeof customer.owner_user_id === 'object' ? customer.owner_user_id : null
+  const customerDirectEmail = customer?.contact?.email || customerOwner?.email || null
+  const { data: clientUser } = useQuery({
+    queryKey: ['client_user_by_name', customer?.name],
+    queryFn: async () => {
+      const users = (await apiClient.get('/users', { params: { search: customer!.name, limit: 20 } })).data.data || []
+      const norm = (s: string) => (s || '').trim().toLowerCase()
+      return users.find((u: any) => norm(u.name) === norm(customer!.name)) || users[0] || null
+    },
+    enabled: !!customer?.name && !customerDirectEmail,
+  })
+
   // Related records (only Documents / Certifications / Payments are linked to an
   // application in the backend; the others show an honest "not linked" state).
   const { data: documents } = useQuery({
@@ -234,10 +252,20 @@ export default function ApplicationDetailPage() {
         <Field label="Certification">{app.cert_type}</Field>
         <Field label="Priority"><span style={{ textTransform: 'capitalize' }}>{app.priority || 'medium'}</span></Field>
         <Field label="Created">{formatDate(app.created_at)}</Field>
-        <Field label="Applicant">{app.created_by?.name || app.created_by?.email || '—'}</Field>
-        <Field label="Email">{app.created_by?.email || '—'}</Field>
-        <Field label="Phone">{app.created_by?.phone || '—'}</Field>
-        <Field label="Company">{app.created_by?.company_name || '—'}</Field>
+        {(() => {
+          const applicant = customer?.name || app.created_by?.name || app.created_by?.email || '—'
+          const company = customer?.name || customer?.legal_name || app.created_by?.company_name || '—'
+          const email = customerDirectEmail || clientUser?.email || app.created_by?.email || '—'
+          const phone = customer?.contact?.phone || customerOwner?.phone || clientUser?.phone || app.created_by?.phone || '—'
+          return (
+            <>
+              <Field label="Applicant">{applicant}</Field>
+              <Field label="Email">{email}</Field>
+              <Field label="Phone">{phone}</Field>
+              <Field label="Company">{company}</Field>
+            </>
+          )
+        })()}
         <Field label="Assigned To">{app.primary_assignee?.name || 'Unassigned'}</Field>
       </div>
 
