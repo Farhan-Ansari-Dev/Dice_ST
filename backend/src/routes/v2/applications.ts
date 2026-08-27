@@ -106,6 +106,14 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     .populate('assignees', 'name email avatar_url role')
     .populate('primary_assignee', 'name email avatar_url')
     .populate('created_by', 'name email phone company_name')
+    .populate({
+  path: 'customer_id',
+  select: 'name legal_name contact owner_user_id',
+  populate: {
+    path: 'owner_user_id',
+    select: 'name email phone company_name'
+  }
+})
     .populate('documents.document_id')
     .populate('required_documents.document_id');
 
