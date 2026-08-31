@@ -21,6 +21,14 @@ import RenewalCenterScreen from '../../screens/certifications/RenewalCenterScree
 import CBComparisonScreen from '../../screens/certifications/CBComparisonScreen';
 import CostEstimatorScreen from '../../screens/certifications/CostEstimatorScreen';
 import RenewalCalendarScreen from '../../screens/certifications/RenewalCalendarScreen';
+// Find Your CB (customer flow)
+import FindCBResultsScreen from '../../screens/find-cb/FindCBResultsScreen';
+import CBProfileScreen from '../../screens/find-cb/CBProfileScreen';
+import CBCompareScreen from '../../screens/find-cb/CBCompareScreen';
+import RequestQuoteScreen from '../../screens/find-cb/RequestQuoteScreen';
+import CBRequestSuccessScreen from '../../screens/find-cb/CBRequestSuccessScreen';
+import CBRequestDetailScreen from '../../screens/find-cb/CBRequestDetailScreen';
+import CBRequestsListScreen from '../../screens/find-cb/CBRequestsListScreen';
 
 const Stack = createNativeStackNavigator();
 const CertificationsStackNavigator: React.FC = () => (
@@ -32,6 +40,14 @@ const CertificationsStackNavigator: React.FC = () => (
     <Stack.Screen name="NewCertification" component={NewCertificationScreen} />
     <Stack.Screen name="UploadDocuments" component={UploadDocumentsScreen} />
     <Stack.Screen name="ChoosePartner" component={ChoosePartnerScreen} />
+    {/* Find Your CB */}
+    <Stack.Screen name="FindCBResults" component={FindCBResultsScreen} />
+    <Stack.Screen name="CBProfile" component={CBProfileScreen} />
+    <Stack.Screen name="CBCompare" component={CBCompareScreen} />
+    <Stack.Screen name="RequestQuote" component={RequestQuoteScreen} />
+    <Stack.Screen name="CBRequestSuccess" component={CBRequestSuccessScreen} />
+    <Stack.Screen name="CBRequestDetail" component={CBRequestDetailScreen} />
+    <Stack.Screen name="CBRequestsList" component={CBRequestsListScreen} />
     <Stack.Screen name="TermsAndConditions" component={TermsAndConditionsScreen} options={{ presentation: 'modal' }} />
     <Stack.Screen name="DomesticCertifications" component={DomesticCertificationsScreen} />
     <Stack.Screen name="InternationalCertifications" component={InternationalCertificationsScreen} />

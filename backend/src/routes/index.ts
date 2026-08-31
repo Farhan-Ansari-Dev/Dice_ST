@@ -35,6 +35,8 @@ import savedRoutes from './v2/saved';
 import tradeRoutes from './v2/trade';
 import partnersRoutes from './v2/partners';
 import certificationBodiesRoutes from './v2/certificationBodies';
+import cbRequestsRoutes from './v2/cbRequests';
+import accreditationsRoutes from './v2/accreditations';
 
 // Stubs removed
 
@@ -57,6 +59,8 @@ router.use('/saved', savedRoutes);
 router.use('/trade', tradeRoutes);
 router.use('/partners', partnersRoutes);
 router.use('/certification-bodies', certificationBodiesRoutes);
+router.use('/cb-requests', cbRequestsRoutes);
+router.use('/accreditations', accreditationsRoutes);
 router.use('/documents', uploadLimiter, documentsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/workflows', workflowsRoutes);

@@ -4,6 +4,9 @@
  */
 export { User, IUser } from './User';
 export { Organization, IOrganization } from './Organization';
+export { Accreditation, IAccreditation, AccreditationStatus } from './Accreditation';
+export { CertificationBodyScope, ICertificationBodyScope, CBScopeStatus } from './CertificationBodyScope';
+export { CBRequest, ICBRequest, CBRequestStatus, CB_REQUEST_STATUSES, CB_REQUEST_TERMINAL } from './CBRequest';
 export { Product, IProduct } from './Product';
 export { Application, IApplication, ApplicationStatus } from './Application';
 export { Certification, ICertification, CertificationStatus } from './Certification';

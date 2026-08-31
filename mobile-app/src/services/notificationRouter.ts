@@ -24,6 +24,7 @@ const SCREEN_ROUTES: Record<string, string> = {
   inspection: 'InspectionDetails',
   shipment: 'ShipmentDetails',
   testing: 'TestDetail',
+  cb_request: 'CBRequestDetail',
   notification: 'Notifications',
 };
 
@@ -43,6 +44,8 @@ function resolveRoute(data: Record<string, any>): { route: string; params?: Reco
 
   const params: Record<string, any> = { ...data };
   if (data.entityId !== undefined && params.id === undefined) params.id = data.entityId;
+  // CB-request pushes carry request_id; the tracking screen expects `id`.
+  if (data.request_id !== undefined && params.id === undefined) params.id = data.request_id;
 
   return { route, params };
 }

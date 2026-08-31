@@ -62,6 +62,20 @@ export interface IOrganization extends Document {
     product_categories: string[];
   };
 
+  // CB verification lifecycle (only meaningful when type='cb'). Additive &
+  // optional — existing CBs have none. A CB is only ever surfaced publicly as
+  // "verified" when status='verified'. Sanyog verifies the CB's own claims; it is
+  // NOT itself an accreditation authority — customer-facing wording must reflect
+  // that ("Verified by Sanyog", "Accreditation information verified on <date>").
+  cb_verification?: {
+    status: 'draft' | 'pending_review' | 'verified' | 'suspended' | 'archived';
+    checks?: { organization?: boolean; accreditation?: boolean; scope?: boolean; contact?: boolean };
+    notes?: string;
+    verified_by?: Types.ObjectId;
+    verified_at?: Date;
+    reverify_at?: Date;                 // when re-verification is due
+  };
+
   // Sprint 3 (Ownership Backfill) — marks an auto-provisioned "Personal
   // Organization" that wraps a single-user customer so every Application can
   // point customer_id at an Organization (the locked ownership decision).
@@ -128,6 +142,21 @@ const OrganizationSchema = new Schema<IOrganization>(
       product_categories: { type: [String], default: [] },
     },
 
+    // CB verification lifecycle — additive; absent for non-CBs and legacy CBs.
+    cb_verification: {
+      status:      { type: String, enum: ['draft', 'pending_review', 'verified', 'suspended', 'archived'] },
+      checks: {
+        organization:  { type: Boolean, default: false },
+        accreditation: { type: Boolean, default: false },
+        scope:         { type: Boolean, default: false },
+        contact:       { type: Boolean, default: false },
+      },
+      notes:       { type: String, trim: true },
+      verified_by: { type: Schema.Types.ObjectId, ref: 'User' },
+      verified_at: { type: Date },
+      reverify_at: { type: Date },
+    },
+
     // Sprint 3 — personal-organization marker (see interface note). Additive.
     is_personal: { type: Boolean, default: false },
 
@@ -145,6 +174,8 @@ OrganizationSchema.index(
 );
 OrganizationSchema.index({ 'address.country_code': 1, 'subscription.tier': 1 });
 OrganizationSchema.index({ name: 'text', legal_name: 'text' });
+// CB directory + "CBs requiring verification" admin queries.
+OrganizationSchema.index({ type: 1, 'cb_verification.status': 1 });
 
 OrganizationSchema.pre(/^find/, function (this: any) {
   if (!this.getOptions().includeDeleted) this.where({ deleted_at: null });

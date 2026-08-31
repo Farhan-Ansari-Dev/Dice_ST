@@ -5,6 +5,7 @@ import {
   CreditCard, Truck, FlaskConical, Briefcase, Bot, BarChart3, Settings,
   ChevronLeft, ChevronRight, LogOut, Shield, Sliders,
   Globe2, Building2, CalendarClock, Package, BookOpen, MessageSquare, GitBranch, Send,
+  BadgeCheck, Inbox,
 } from 'lucide-react'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
@@ -27,6 +28,8 @@ const NAV = [
   { to: '/leads',                        icon: Send,            label: 'Enquiries' },
   { to: '/consultants/requests',         icon: CalendarClock,   label: 'Meeting Requests' },
   { to: '/partners/applications',        icon: Building2,       label: 'Partner Applications' },
+  { to: '/certification-bodies',         icon: BadgeCheck,      label: 'Certification Bodies' },
+  { to: '/cb-requests',                  icon: Inbox,           label: 'CB Requests' },
   { to: '/support-tickets',              icon: MessageSquare,   label: 'Support Tickets' },
   { to: '/workflows',                    icon: GitBranch,       label: 'Workflows' },
   { to: '/consultants/verification',     icon: Shield,          label: 'Verification' },

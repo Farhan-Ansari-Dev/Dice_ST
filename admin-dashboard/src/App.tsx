@@ -36,6 +36,10 @@ const PartnerApplicationsPage = lazy(() => import('./pages/partners/PartnerAppli
 const WorkflowsPage = lazy(() => import('./pages/workflows/WorkflowsPage'))
 const CountriesPage = lazy(() => import('./pages/market-access/CountriesPage'))
 const OpportunitiesPage = lazy(() => import('./pages/market-access/OpportunitiesPage'))
+const CertificationBodiesPage = lazy(() => import('./pages/certification-bodies/CertificationBodiesPage'))
+const CertificationBodyDetailPage = lazy(() => import('./pages/certification-bodies/CertificationBodyDetailPage'))
+const CBRequestsPage = lazy(() => import('./pages/cb-requests/CBRequestsPage'))
+const CBRequestDetailPage = lazy(() => import('./pages/cb-requests/CBRequestDetailPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,6 +100,10 @@ function ThemedApp() {
             <Route path="leads" element={<LeadsPage />} />
             <Route path="consultants/requests" element={<MeetingRequestsPage />} />
             <Route path="partners/applications" element={<PartnerApplicationsPage />} />
+            <Route path="certification-bodies" element={<CertificationBodiesPage />} />
+            <Route path="certification-bodies/:id" element={<CertificationBodyDetailPage />} />
+            <Route path="cb-requests" element={<CBRequestsPage />} />
+            <Route path="cb-requests/:id" element={<CBRequestDetailPage />} />
             <Route path="workflows" element={<WorkflowsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

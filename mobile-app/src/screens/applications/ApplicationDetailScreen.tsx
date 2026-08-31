@@ -348,6 +348,14 @@ const ApplicationDetailScreen: React.FC = () => {
                       ? `Your CB: ${app.certification_body.name}`
                       : 'Sanyog will manage this certification.'}
                   </Text>
+                  {/* Find Your CB — matching + quote flow (distinct from "Choose", which sets the CB on the application). */}
+                  <TouchableOpacity
+                    style={styles.findCbBtn}
+                    onPress={() => navigation.navigate('FindCBResults', { applicationId: appId, product_id: product?._id, product_name: product?.name })}
+                  >
+                    <Ionicons name="search" size={15} color="#FFFFFF" />
+                    <Text style={styles.findCbBtnText}>Find & compare certification bodies</Text>
+                  </TouchableOpacity>
                 </LinearGradient>
               </View>
           </>
@@ -581,6 +589,8 @@ const makeStyles = (colors: ReturnType<typeof useTheme>['colors'], isDark: boole
     paymentDivider: { width: 1, height: 40, backgroundColor: colors.border, alignSelf: 'center' },
     payNowBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, borderRadius: BorderRadius.md, paddingVertical: 12, marginTop: 14 },
     payNowText: { fontSize: 14, color: '#FFFFFF', fontWeight: '700' },
+    findCbBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, borderRadius: BorderRadius.md, paddingVertical: 12, marginTop: 12 },
+    findCbBtnText: { fontSize: 14, color: '#FFFFFF', fontWeight: '700' },
     uploadBtn: {
       flexDirection: 'row',
       alignItems: 'center',
