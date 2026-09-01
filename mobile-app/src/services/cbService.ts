@@ -11,6 +11,13 @@ import { api } from './api'
 
 export interface CBMatchReason { key: string; label: string; satisfied: boolean }
 
+export interface MarketCoverage {
+  requested: string[]
+  covered: string[]
+  missing: string[]
+  percent: number
+}
+
 export interface CBMatch {
   id: string
   name: string
@@ -28,12 +35,14 @@ export interface CBMatch {
   service_types: string[]
   accreditations: string[]
   scope_backed: boolean
+  market_coverage?: MarketCoverage   // present when markets were requested (backend-computed)
 }
 
 export interface CBRequirement {
   cert_type: string
   product_category?: string
-  market?: string
+  market?: string                    // deprecated single market
+  markets?: string[]                 // ISO alpha-2 destination markets (authoritative)
   industries?: string[]
   service_type?: string
   require_accreditation?: boolean
@@ -52,7 +61,8 @@ export interface CBRequest {
   request_number: string
   status: string
   cert_type?: string
-  market?: string
+  markets?: string[]
+  market?: string                    // deprecated mirror
   product_category?: string
   message?: string
   created_at: string

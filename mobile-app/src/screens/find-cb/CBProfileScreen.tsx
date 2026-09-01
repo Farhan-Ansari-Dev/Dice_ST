@@ -29,9 +29,10 @@ export default function CBProfileScreen() {
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark])
   const p = route.params || {}
 
+  const marketsCsv = Array.isArray(p.markets) ? p.markets.join(',') : (p.markets ?? p.market)
   const { data: cb, isLoading, error, refetch } = useQuery({
-    queryKey: ['cb-profile', p.id, p.cert_type, p.market],
-    queryFn: () => cbService.getCB(p.id, { cert_type: p.cert_type, market: p.market, product_category: p.product_category }),
+    queryKey: ['cb-profile', p.id, p.cert_type, marketsCsv],
+    queryFn: () => cbService.getCB(p.id, { cert_type: p.cert_type, markets: marketsCsv, product_category: p.product_category }),
     enabled: !!p.id,
   })
 
@@ -85,6 +86,19 @@ export default function CBProfileScreen() {
                   </Section>
                 ) : null}
 
+                {/* Target market coverage (backend-computed) */}
+                {cb.market_coverage ? (
+                  <Section title="Target market coverage" icon="globe-outline" colors={colors}>
+                    <Text style={[styles.body, { fontWeight: '700', color: cb.market_coverage.percent === 100 ? colors.success : colors.warning }]}>
+                      {cb.market_coverage.covered.length} / {cb.market_coverage.requested.length} requested markets ({cb.market_coverage.percent}%)
+                    </Text>
+                    {cb.market_coverage.covered.length > 0 && (
+                      <View style={[styles.chipWrap, { marginTop: 6 }]}>{cb.market_coverage.covered.map((m: string) => <View key={m} style={styles.chip}><Text style={styles.chipText}>{m}</Text></View>)}</View>
+                    )}
+                    {cb.market_coverage.missing.length > 0 && <Text style={[styles.muted, { marginTop: 6 }]}>Missing: {cb.market_coverage.missing.join(', ')}</Text>}
+                  </Section>
+                ) : null}
+
                 <Section title="Accreditations" icon="ribbon-outline" colors={colors}>{chips(cb.accreditations)}</Section>
                 <Section title="Certification scope" icon="layers-outline" colors={colors}>
                   {(cb.scopes || []).length ? (cb.scopes || []).map((s: any) => (
@@ -106,7 +120,7 @@ export default function CBProfileScreen() {
           </ScrollView>
 
           <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-            <TouchableOpacity style={styles.quoteBtn} onPress={() => navigation.navigate('RequestQuote', { cbId: cb.id, cbName: cb.name, cert_type: p.cert_type, market: p.market, product_category: p.product_category, applicationId: p.applicationId, product_id: p.product_id, product_name: p.product_name, match_snapshot: cb.match_score != null ? { score: cb.match_score, reasons: (cb.match_reasons || []).filter((r: any) => r.satisfied).map((r: any) => r.label) } : undefined })}>
+            <TouchableOpacity style={styles.quoteBtn} onPress={() => navigation.navigate('RequestQuote', { cbId: cb.id, cbName: cb.name, cert_type: p.cert_type, markets: p.markets, product_category: p.product_category, applicationId: p.applicationId, product_id: p.product_id, product_name: p.product_name, match_snapshot: cb.match_score != null ? { score: cb.match_score, reasons: (cb.match_reasons || []).filter((r: any) => r.satisfied).map((r: any) => r.label) } : undefined })}>
               <Text style={styles.quoteBtnText}>Request Quote</Text>
             </TouchableOpacity>
           </View>

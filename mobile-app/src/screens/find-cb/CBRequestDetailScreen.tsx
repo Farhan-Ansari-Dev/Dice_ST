@@ -62,7 +62,7 @@ export default function CBRequestDetailScreen() {
               <View style={{ marginTop: 10, gap: 6 }}>
                 {r.product_id?.name || r.product_category ? <Row label="Product" value={r.product_id?.name || r.product_category} c={colors} /> : null}
                 {r.cert_type ? <Row label="Certification" value={r.cert_type} c={colors} /> : null}
-                {r.market ? <Row label="Market" value={r.market} c={colors} /> : null}
+                {(r.markets?.length || r.market) ? <Row label="Target Markets" value={r.markets?.length ? r.markets.join(', ') : (r.market as string)} c={colors} /> : null}
                 {r.application_id?.application_number ? <Row label="Application" value={r.application_id.application_number} c={colors} /> : null}
                 <Row label="Created" value={formatDate(r.created_at)} c={colors} />
                 <Row label="Updated" value={formatDate(r.updated_at)} c={colors} />

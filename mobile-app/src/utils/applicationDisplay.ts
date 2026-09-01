@@ -1,4 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import type { Application } from '../services/applicationsService';
+
+/** Valid Ionicons glyph name — cards render these via <Ionicons name={…} />. */
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 /**
  * Single source of truth for how an application status is presented (label,
@@ -10,7 +14,7 @@ export interface StatusMeta {
   label: string;
   color: string;    // hex — cards render item.color directly
   progress: number; // 0-100
-  icon: string;     // Ionicons name
+  icon: IoniconName; // Ionicons name
   action: string;   // the customer's next action for this status
 }
 
@@ -52,7 +56,7 @@ export interface ApplicationCard {
   stage: string;
   color: string;
   progress: number;
-  icon: string;
+  icon: IoniconName;
   action: string;
   dueDate: string;
   updated: string;

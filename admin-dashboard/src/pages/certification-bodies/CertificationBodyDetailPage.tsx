@@ -266,7 +266,7 @@ export default function CertificationBodyDetailPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {(requests?.data || []).map((r: any) => (
                 <div key={r._id} onClick={() => navigate(`/cb-requests/${r._id}`)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--bg-body)', borderRadius: 'var(--radius)', cursor: 'pointer' }}>
-                  <div><span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{r.request_number}</span> <span style={muted}>{r.cert_type || ''} {r.market ? '· ' + r.market : ''}</span></div>
+                  <div><span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{r.request_number}</span> <span style={muted}>{r.cert_type || ''} {(r.markets?.length ? r.markets.join(', ') : r.market) ? '· ' + (r.markets?.length ? r.markets.join(', ') : r.market) : ''}</span></div>
                   <Badge status={r.status} size="sm" />
                 </div>
               ))}

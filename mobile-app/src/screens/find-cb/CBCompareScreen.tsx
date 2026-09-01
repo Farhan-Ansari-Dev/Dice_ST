@@ -37,6 +37,14 @@ export default function CBCompareScreen() {
               <Row label="Certifications" value={(cb.cert_types || []).slice(0, 4).join(', ')} />
               <Row label="Products" value={(cb.product_categories || []).slice(0, 4).join(', ')} />
               <Row label="Markets" value={(cb.markets || []).slice(0, 6).join(', ')} />
+              {cb.market_coverage && (
+                <Row label="Coverage" value={
+                  <View>
+                    <Text style={[styles.rowValue, { color: cb.market_coverage.percent === 100 ? colors.success : colors.warning, fontWeight: '700' }]}>{cb.market_coverage.covered.length}/{cb.market_coverage.requested.length} · {cb.market_coverage.percent}%</Text>
+                    {cb.market_coverage.missing.length > 0 && <Text style={styles.rowValue}>Missing: {cb.market_coverage.missing.join(', ')}</Text>}
+                  </View>
+                } />
+              )}
               <Row label="Accreditation" value={(cb.accreditations || []).slice(0, 3).join(', ')} />
               <Row label="Service" value={(cb.service_types || []).join(', ')} />
               <View style={styles.divider} />

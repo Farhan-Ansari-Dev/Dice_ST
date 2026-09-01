@@ -48,7 +48,7 @@ export default function CBRequestsPage() {
   })
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['cb-requests', page, q, status, certType, market, assignedTo],
-    queryFn: () => cbService.listRequests({ page, limit, q: q || undefined, status: status || undefined, cert_type: certType || undefined, market: market || undefined, assigned_to: assignedTo || undefined }),
+    queryFn: () => cbService.listRequests({ page, limit, q: q || undefined, status: status || undefined, cert_type: certType || undefined, markets: market || undefined, assigned_to: assignedTo || undefined }),
   })
 
   const items: any[] = data?.data || []
@@ -103,7 +103,7 @@ export default function CBRequestsPage() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead><tr>
-                <th style={th}>Request ID</th><th style={th}>Customer</th><th style={th}>Product</th><th style={th}>Certification</th><th style={th}>Market</th>
+                <th style={th}>Request ID</th><th style={th}>Customer</th><th style={th}>Product</th><th style={th}>Certification</th><th style={th}>Target Markets</th>
                 <th style={th}>Certification Body</th><th style={th}>Status</th><th style={th}>Assigned</th><th style={th}>Created</th><th style={th}>Updated</th><th style={th}>Actions</th>
               </tr></thead>
               <tbody>
@@ -113,7 +113,7 @@ export default function CBRequestsPage() {
                     <td style={td}>{r.customer_id?.name || r.user_id?.name || r.user_id?.email || <span style={muted}>—</span>}</td>
                     <td style={td}>{r.product_id?.name || <span style={muted}>—</span>}</td>
                     <td style={td}>{r.cert_type || <span style={muted}>—</span>}</td>
-                    <td style={td}>{r.market || <span style={muted}>—</span>}</td>
+                    <td style={td}>{(r.markets?.length ? r.markets.join(', ') : r.market) || <span style={muted}>—</span>}</td>
                     <td style={td}>{r.certification_body_id?.name || <span style={muted}>—</span>}</td>
                     <td style={td}><Badge status={r.status} size="sm" /></td>
                     <td style={td}>{r.assigned_to?.name || <span style={muted}>Unassigned</span>}</td>

@@ -15,7 +15,7 @@ import { Organization } from '../../models/Organization';
 import { CertificationBodyScope } from '../../models/CertificationBodyScope';
 import { audit, AuditLog } from '../../models/AuditLog';
 import { MarketAccessService } from '../../services/marketAccessService';
-import { matchCertificationBodies, CBRequirement } from '../../services/cbMatchingService';
+import { matchCertificationBodies, normalizeMarkets, CBRequirement } from '../../services/cbMatchingService';
 
 const router = Router();
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next);
@@ -29,11 +29,11 @@ async function requirementFromApplication(req: AuthRequest, appId: string): Prom
   if (!isStaff(req)) filter.created_by = req.user!._id;   // ownership
   const app: any = await Application.findOne(filter).populate('product_id', 'category sub_category').lean();
   if (!app) return null;
-  const markets: string[] = app.manual_review?.requested_markets || [];
+  // Use the application's COMPLETE requested-market set (never truncate to [0]).
   return {
     cert_type: app.cert_type,
     product_category: app.product_id?.category,
-    market: markets[0],
+    markets: app.manual_review?.requested_markets || [],
     require_accreditation: false,
   };
 }
@@ -235,10 +235,13 @@ router.get('/match', authenticate, wrap(async (req: AuthRequest, res: Response) 
   // Explicit params override derived context.
   const certType = s(req.query.cert_type) ?? requirement.cert_type;
   if (!certType) return res.status(400).json({ success: false, message: 'cert_type (or application_id) is required.' });
+  // Markets: `markets` (csv) is authoritative; a legacy `market` is accepted too.
+  // Explicit query params override any application-derived context.
+  const explicitMarkets = normalizeMarkets(s(req.query.markets) ?? s(req.query.market));
   requirement = {
     cert_type: certType,
     product_category: s(req.query.product_category) ?? requirement.product_category,
-    market: s(req.query.market) ?? requirement.market,
+    markets: explicitMarkets.length ? explicitMarkets : normalizeMarkets(requirement.markets),
     industries: s(req.query.industry) ? String(req.query.industry).split(',').map((x) => x.trim()).filter(Boolean) : requirement.industries,
     service_type: s(req.query.service_type) ?? requirement.service_type,
     require_accreditation: s(req.query.require_accreditation) === 'true' || requirement.require_accreditation,
@@ -509,10 +512,10 @@ router.get('/:id', authenticate, wrap(async (req: AuthRequest, res: Response) =>
   const certType = s(req.query.cert_type);
   if (certType) {
     const [m] = await matchCertificationBodies(
-      { cert_type: certType, product_category: s(req.query.product_category), market: s(req.query.market) },
+      { cert_type: certType, product_category: s(req.query.product_category), markets: normalizeMarkets(s(req.query.markets) ?? s(req.query.market)) },
       { limit: 500 },
     ).then((all) => all.filter((x) => x.id === String(cb._id)));
-    if (m) { profile.match_score = m.match_score; profile.match_reasons = m.match_reasons; }
+    if (m) { profile.match_score = m.match_score; profile.match_reasons = m.match_reasons; profile.market_coverage = m.market_coverage; }
   }
 
   return res.json({ success: true, data: profile });

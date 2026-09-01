@@ -85,7 +85,7 @@ export default function CBRequestDetailPage() {
             <Field label="Certification Body">{r.certification_body_id?.name || '—'}</Field>
             <Field label="Product">{r.product_id?.name || r.product_category || '—'}</Field>
             <Field label="Certification">{r.cert_type || '—'}</Field>
-            <Field label="Market">{r.market || '—'}</Field>
+            <Field label="Target Markets">{(r.markets?.length ? r.markets.join(', ') : r.market) || '—'}</Field>
             <Field label="Application">
               {r.application_id ? <button onClick={() => navigate(`/applications/${r.application_id._id || r.application_id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--accent-purple)', cursor: 'pointer', fontSize: 13, padding: 0, fontWeight: 600 }}>{r.application_id.application_number || 'View'} <ExternalLink size={12} /></button> : <span style={muted}>—</span>}
             </Field>

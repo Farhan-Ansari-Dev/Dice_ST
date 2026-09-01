@@ -22,9 +22,18 @@ export interface CBRequirement {
   cert_type: string;                 // required — the certification/scheme
   product_category?: string;
   industries?: string[];
-  market?: string;                   // ISO alpha-2 destination market
+  market?: string;                   // DEPRECATED single market — kept for back-compat
+  markets?: string[];                // ISO alpha-2 destination markets (authoritative)
   service_type?: string;
   require_accreditation?: boolean;   // when the market/cert makes accreditation mandatory
+}
+
+/** Backend-computed, per-CB coverage of the customer's requested markets. */
+export interface MarketCoverage {
+  requested: string[];               // normalized requested ISO codes
+  covered: string[];                 // requested codes this CB serves
+  missing: string[];                 // requested codes this CB does not serve
+  percent: number;                   // 0–100, round(covered/requested * 100)
 }
 
 export interface CBMatchReason {
@@ -51,6 +60,7 @@ export interface CBMatch {
   service_types: string[];
   accreditations: string[];          // accreditation codes/names (public catalog data)
   scope_backed: boolean;             // true when matched on structured scope, not profile
+  market_coverage?: MarketCoverage;  // present only when markets were requested
 }
 
 // Transparent weights. A criterion contributes to the denominator only when it is
@@ -67,6 +77,23 @@ const WEIGHTS = {
 
 const norm = (v?: string) => (v || '').trim().toLowerCase();
 const up = (v?: string) => (v || '').trim().toUpperCase();
+
+/**
+ * Normalize a market input (string | csv string | string[]) into unique, upper-
+ * cased ISO alpha-2 codes. Validates the ISO alpha-2 shape (2 letters, e.g. IN,
+ * US, DE, and the EU special region) — arbitrary/garbage tokens are dropped, not
+ * silently accepted. Deterministic order (first occurrence preserved).
+ */
+export function normalizeMarkets(input?: string | string[] | null): string[] {
+  const raw = Array.isArray(input) ? input : typeof input === 'string' ? input.split(',') : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    const code = String(r ?? '').trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(code) && !seen.has(code)) { seen.add(code); out.push(code); }
+  }
+  return out;
+}
 
 /** Union coverage for a CB, derived from its active (non-expired) structured scopes. */
 interface Coverage {
@@ -99,7 +126,8 @@ export async function matchCertificationBodies(
   const certType = (req.cert_type || '').trim();
   if (!certType) return [];
 
-  const market = up(req.market);
+  // Multi-market: `markets` is authoritative; a legacy single `market` is folded in.
+  const requestedMarkets = normalizeMarkets(req.markets && req.markets.length ? req.markets : req.market);
   const category = norm(req.product_category);
   const wantIndustries = (req.industries || []).map(norm).filter(Boolean);
   const service = norm(req.service_type);
@@ -173,8 +201,10 @@ export async function matchCertificationBodies(
       : (profile.accreditations || []);
 
     // ---- HARD FILTERS (exclude, do not down-rank) ----
-    // Market: exclude only when the CB HAS explicit market data that omits it.
-    if (market && markets.length > 0 && !markets.includes(market)) continue;
+    // Market: exclude only when the CB has explicit market data AND covers NONE of
+    // the requested markets. A CB covering *some* requested markets stays eligible
+    // (it is a partial match, scored by coverage below).
+    if (requestedMarkets.length > 0 && markets.length > 0 && !requestedMarkets.some((m) => markets.includes(m))) continue;
     // Accreditation mandatory: exclude when the CB has none.
     if (req.require_accreditation && accreditationNames.length === 0) continue;
 
@@ -196,12 +226,26 @@ export async function matchCertificationBodies(
       if (ok) awarded += WEIGHTS.product_scope;
       reasons.push({ key: 'product_scope', label: ok ? 'Product category covered' : 'Product category not listed', satisfied: ok });
     }
-    // Market
-    if (market) {
+    // Market — fractional coverage across the full requested set.
+    // An all-markets CB (no explicit markets) covers everything → fraction 1.
+    let market_coverage: MarketCoverage | undefined;
+    if (requestedMarkets.length > 0) {
       applicable += WEIGHTS.market;
-      const ok = markets.includes(market);
-      if (ok) awarded += WEIGHTS.market;
-      reasons.push({ key: 'market', label: ok ? `${market} market supported` : `${market} market not listed`, satisfied: ok });
+      const servesAll = markets.length === 0;
+      const covered = servesAll ? [...requestedMarkets] : requestedMarkets.filter((m) => markets.includes(m));
+      const missing = servesAll ? [] : requestedMarkets.filter((m) => !markets.includes(m));
+      const fraction = covered.length / requestedMarkets.length;
+      awarded += WEIGHTS.market * fraction;
+      const percent = Math.round(fraction * 100);
+      const full = missing.length === 0;
+      reasons.push({
+        key: 'market',
+        label: full
+          ? `Covers all ${requestedMarkets.length} target market${requestedMarkets.length > 1 ? 's' : ''} (${covered.join(', ')})`
+          : `Covers ${covered.length} of ${requestedMarkets.length} target markets${covered.length ? ` (${covered.join(', ')})` : ''}`,
+        satisfied: full,
+      });
+      market_coverage = { requested: [...requestedMarkets], covered, missing, percent };
     }
     // Accreditation (applicable when required OR the CB advertises any)
     if (req.require_accreditation || accreditationNames.length > 0) {
@@ -244,6 +288,7 @@ export async function matchCertificationBodies(
       service_types: [...cov.service_types],
       accreditations: accreditationNames,
       scope_backed: cov.hasScope,
+      market_coverage,
     });
   }
 

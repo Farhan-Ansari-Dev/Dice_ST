@@ -310,7 +310,7 @@ const HomeScreen: React.FC = () => {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exploreScroll} decelerationRate="fast" snapToInterval={contentWidth() * 0.85 + 16}>
           {[
             { id: '1', badge: 'NEW', badgeColor: '#00C853', title: 'AI Product Quality\nIdentifier', desc: 'Scan any product or label to get instant quality, safety & composition insights', icon: 'scan', gradient: ['#311B92', '#00B0FF'], route: 'Identifier' },
-            { id: '2', badge: 'POPULAR', badgeColor: '#FF8F00', title: 'Find Your\nCertification Body', desc: 'Compare 50+ CBs on pricing, TAT, scope & reviews — and apply directly', icon: 'git-compare-outline', gradient: ['#004D40', '#00E676'], route: 'Certifications' },
+            { id: '2', badge: 'POPULAR', badgeColor: '#FF8F00', title: 'Find Your\nCertification Body', desc: 'Compare 50+ CBs on pricing, TAT, scope & reviews — and apply directly', icon: 'git-compare-outline', gradient: ['#004D40', '#00E676'], route: 'Certifications', screen: 'FindCBRequirements' },
             { id: '3', badge: 'OFFER', badgeColor: '#FF5252', title: 'Saudi PCoC & SCoC\nCertifications', desc: 'Get your SABER Product and Shipment Certificates approved in just 1-2 days', icon: 'flash', gradient: ['#1A0033', '#8E24AA'], route: 'Certifications', screen: 'CertificationOverview', params: { serviceId: 'pcoc_scoc' } },
             { id: '4', badge: 'LIVE', badgeColor: '#00B0FF', title: 'Live Regulatory\nUpdates', desc: 'AI-curated feed of BIS, FSSAI, WPC, EPR policy changes — delivered daily', icon: 'newspaper', gradient: ['#3E2723', '#FF8F00'], route: 'Insights' },
           ].map((feature) => (

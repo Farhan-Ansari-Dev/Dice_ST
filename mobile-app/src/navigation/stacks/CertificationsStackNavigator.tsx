@@ -22,6 +22,7 @@ import CBComparisonScreen from '../../screens/certifications/CBComparisonScreen'
 import CostEstimatorScreen from '../../screens/certifications/CostEstimatorScreen';
 import RenewalCalendarScreen from '../../screens/certifications/RenewalCalendarScreen';
 // Find Your CB (customer flow)
+import FindCBRequirementsScreen from '../../screens/find-cb/FindCBRequirementsScreen';
 import FindCBResultsScreen from '../../screens/find-cb/FindCBResultsScreen';
 import CBProfileScreen from '../../screens/find-cb/CBProfileScreen';
 import CBCompareScreen from '../../screens/find-cb/CBCompareScreen';
@@ -41,6 +42,7 @@ const CertificationsStackNavigator: React.FC = () => (
     <Stack.Screen name="UploadDocuments" component={UploadDocumentsScreen} />
     <Stack.Screen name="ChoosePartner" component={ChoosePartnerScreen} />
     {/* Find Your CB */}
+    <Stack.Screen name="FindCBRequirements" component={FindCBRequirementsScreen} />
     <Stack.Screen name="FindCBResults" component={FindCBResultsScreen} />
     <Stack.Screen name="CBProfile" component={CBProfileScreen} />
     <Stack.Screen name="CBCompare" component={CBCompareScreen} />

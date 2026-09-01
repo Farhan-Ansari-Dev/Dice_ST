@@ -46,7 +46,8 @@ export interface ICBRequest extends Document {
   application_id?: Types.ObjectId;        // preserved when raised from an Application
   product_id?: Types.ObjectId;
   cert_type?: string;                     // certification/scheme
-  market?: string;                        // ISO alpha-2 destination market
+  markets: string[];                      // ISO alpha-2 destination markets (authoritative)
+  market?: string;                        // DEPRECATED mirror = markets[0] (back-compat)
   product_category?: string;
 
   // Customer-supplied
@@ -98,7 +99,8 @@ const CBRequestSchema = new Schema<ICBRequest>(
     application_id:        { type: Schema.Types.ObjectId, ref: 'Application', index: true },
     product_id:            { type: Schema.Types.ObjectId, ref: 'Product' },
     cert_type:             { type: String, trim: true },
-    market:                { type: String, trim: true, uppercase: true },
+    markets:               { type: [String], default: [] },   // normalized ISO alpha-2 (setter below)
+    market:                { type: String, trim: true, uppercase: true },  // deprecated mirror
     product_category:      { type: String, trim: true },
 
     message:      { type: String, trim: true },
@@ -127,11 +129,25 @@ const CBRequestSchema = new Schema<ICBRequest>(
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } },
 );
 
+// Normalise market codes to unique ISO alpha-2 upper-case (same rule as matching).
+CBRequestSchema.path('markets').set((v: string[]) => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of Array.isArray(v) ? v : []) {
+    const code = String(r ?? '').trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(code) && !seen.has(code)) { seen.add(code); out.push(code); }
+  }
+  return out;
+});
+
 // Dashboards + ownership scoping + duplicate detection.
 CBRequestSchema.index({ customer_id: 1, status: 1, created_at: -1 });
 CBRequestSchema.index({ certification_body_id: 1, status: 1 });
 CBRequestSchema.index({ assigned_to: 1, status: 1 });
-// Fast duplicate lookup for an active request on the same combination.
-CBRequestSchema.index({ user_id: 1, certification_body_id: 1, cert_type: 1, market: 1, status: 1 });
+// Duplicate protection is now market-agnostic: one active request per
+// (user, certification body, certification type), regardless of market set.
+CBRequestSchema.index({ user_id: 1, certification_body_id: 1, cert_type: 1, status: 1 });
+// Multikey index to filter requests by any requested market.
+CBRequestSchema.index({ markets: 1, status: 1 });
 
 export const CBRequest = model<ICBRequest>('CBRequest', CBRequestSchema);

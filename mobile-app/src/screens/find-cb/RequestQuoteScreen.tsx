@@ -43,7 +43,7 @@ export default function RequestQuoteScreen() {
         application_id: p.applicationId,
         product_id: p.product_id,
         cert_type: p.cert_type,
-        market: p.market,
+        markets: p.markets,
         product_category: p.product_category,
         message: message.trim() || undefined,
         document_ids: docs.map((d) => d._id),
@@ -88,7 +88,7 @@ export default function RequestQuoteScreen() {
             <Summary label="Certification Body" value={p.cbName} />
             <Summary label="Product" value={p.product_name || p.product_category} />
             <Summary label="Certification" value={p.cert_type} />
-            <Summary label="Market" value={p.market} />
+            <Summary label="Target Markets" value={(p.markets && p.markets.length ? p.markets.join(', ') : p.market) || undefined} />
             <Summary label="Documents" value={docs.length ? `${docs.length} attached` : 'None'} />
           </LinearGradient>
         </View>

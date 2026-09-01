@@ -12,6 +12,7 @@ import { Organization } from '../../models/Organization';
 import { Application } from '../../models/Application';
 import { audit, AuditLog } from '../../models/AuditLog';
 import { notificationService } from '../../services/notificationService';
+import { normalizeMarkets } from '../../services/cbMatchingService';
 
 const router = Router();
 router.use(authenticate);
@@ -54,7 +55,8 @@ router.post('/', wrap(async (req: AuthRequest, res: Response) => {
 
   // Derive context from an application when provided (ownership-checked).
   let cert_type = s(req.body?.cert_type);
-  let market = s(req.body?.market)?.toUpperCase();
+  // `markets` (array/csv) is authoritative; a legacy single `market` is accepted too.
+  let markets = normalizeMarkets(req.body?.markets ?? req.body?.market);
   let product_id = isObjId(req.body?.product_id) ? req.body.product_id : undefined;
   let product_category = s(req.body?.product_category);
   let application_id: any;
@@ -67,24 +69,26 @@ router.post('/', wrap(async (req: AuthRequest, res: Response) => {
     if (!app) return res.status(404).json({ success: false, message: 'Application not found.' });
     application_id = app._id;
     cert_type = cert_type || app.cert_type;
-    market = market || (app.manual_review?.requested_markets || [])[0]?.toUpperCase();
+    // Use the application's COMPLETE requested-market set (never just the first).
+    if (markets.length === 0) markets = normalizeMarkets(app.manual_review?.requested_markets);
     product_id = product_id || app.product_id?._id;
     product_category = product_category || app.product_id?.category;
   }
+  const market = markets[0];   // deprecated mirror kept in sync
 
-  // Duplicate protection: one active request per (user, CB, cert, market).
+  // Duplicate protection is market-agnostic: one active request per
+  // (user, certification body, certification type), regardless of market set.
   const dup = await CBRequest.findOne({
     user_id: req.user!._id,
     certification_body_id: cbId,
     cert_type: cert_type || null,
-    market: market || null,
     status: { $nin: CB_REQUEST_TERMINAL },
   }).lean();
   if (dup) {
     return res.status(409).json({
       success: false,
       code: 'duplicate_request',
-      message: 'You already have an active request with this certification body for this certification and market.',
+      message: 'You already have an active request with this certification body for this certification.',
       data: { request_id: String(dup._id), request_number: dup.request_number },
     });
   }
@@ -98,6 +102,7 @@ router.post('/', wrap(async (req: AuthRequest, res: Response) => {
     application_id,
     product_id,
     cert_type,
+    markets,
     market,
     product_category,
     message: s(req.body?.message),
@@ -127,7 +132,9 @@ router.get('/', wrap(async (req: AuthRequest, res: Response) => {
   if (isStaff(req) && isObjId(req.query.assigned_to)) filter.assigned_to = req.query.assigned_to;
   if (isObjId(req.query.certification_body_id)) filter.certification_body_id = req.query.certification_body_id;
   if (s(req.query.cert_type)) filter.cert_type = s(req.query.cert_type);
-  if (s(req.query.market)) filter.market = s(req.query.market)!.toUpperCase();
+  // Filter by any requested market — supports ?markets=IN,US and legacy ?market=IN.
+  const mkFilter = normalizeMarkets(s(req.query.markets) ?? s(req.query.market));
+  if (mkFilter.length) filter.markets = { $in: mkFilter };
   if (s(req.query.q)) filter.request_number = new RegExp(s(req.query.q)!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
   const [items, total] = await Promise.all([

@@ -58,7 +58,7 @@ export default function CBRequestsListScreen() {
                   <Badge label={pretty(item.status)} variant={getStatusVariant(item.status)} />
                 </View>
                 <Text style={styles.reqNo}>{item.request_number}</Text>
-                <Text style={styles.meta}>{[item.product_id?.name || item.product_category, item.cert_type, item.market].filter(Boolean).join(' · ')}</Text>
+                <Text style={styles.meta}>{[item.product_id?.name || item.product_category, item.cert_type, (item.markets?.length ? item.markets.join(', ') : item.market)].filter(Boolean).join(' · ')}</Text>
                 <Text style={styles.muted}>Updated {formatDate(item.updated_at)}</Text>
               </LinearGradient>
             </TouchableOpacity>

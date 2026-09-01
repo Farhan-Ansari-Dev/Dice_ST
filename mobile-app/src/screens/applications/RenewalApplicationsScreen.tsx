@@ -15,7 +15,7 @@ interface RenewalCard {
   expiryDate: string;
   daysLeft: number | string;
   color: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
 }
 
 const RENEWABLE = new Set(['active', 'expiring_soon', 'expired']);

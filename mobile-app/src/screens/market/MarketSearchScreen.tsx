@@ -136,7 +136,14 @@ export default function MarketSearchScreen() {
   );
 }
 
-function Group({ title, icon, items, render, styles, colors }: any) {
+function Group<T>({ title, icon, items, render, styles, colors }: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  items: T[];
+  render: (item: T) => React.ReactNode;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ReturnType<typeof useTheme>['colors'];
+}) {
   if (!items || items.length === 0) return null;
   return (
     <View style={styles.group}>

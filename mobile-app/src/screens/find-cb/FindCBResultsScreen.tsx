@@ -9,6 +9,11 @@ import { useTheme, Shadows, BorderRadius } from '../../theme'
 import Badge from '../../components/common/Badge'
 import EmptyState from '../../components/common/EmptyState'
 import cbService, { CBMatch, matchTier } from '../../services/cbService'
+import { WORLD_MARKETS } from '../../constants/worldMarkets'
+
+// Reuse the canonical market dataset for human labels (never a new list).
+const MARKET_NAME: Record<string, string> = Object.fromEntries(WORLD_MARKETS.map((m) => [m.code, m.name]))
+const marketLabel = (code: string) => MARKET_NAME[code] || code
 
 export default function FindCBResultsScreen() {
   const navigation = useNavigation<any>()
@@ -18,16 +23,19 @@ export default function FindCBResultsScreen() {
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark])
 
   const p = route.params || {}
+  // Multi-market: pass `markets` (csv) when provided; from an application the
+  // backend derives the complete market set. A legacy single `market` still works.
   const params: Record<string, any> = {
     application_id: p.applicationId,
     cert_type: p.cert_type,
     product_category: p.product_category,
-    market: p.market,
+    markets: Array.isArray(p.markets) ? p.markets.join(',') : (p.markets ?? p.market),
   }
   Object.keys(params).forEach((k) => params[k] == null && delete params[k])
 
   const [selected, setSelected] = useState<Record<string, CBMatch>>({})
   const [verifiedOnly, setVerifiedOnly] = useState(false)
+  const [fullCoverageOnly, setFullCoverageOnly] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
@@ -44,11 +52,14 @@ export default function FindCBResultsScreen() {
     return next
   })
 
-  const list: CBMatch[] = (data?.certificationBodies || []).filter((c) => !verifiedOnly || c.verified)
   const req = data?.requirement
+  const requestedMarkets: string[] = req?.markets || []
+  const list: CBMatch[] = (data?.certificationBodies || [])
+    .filter((c) => !verifiedOnly || c.verified)
+    .filter((c) => !fullCoverageOnly || !requestedMarkets.length || c.market_coverage?.percent === 100)
 
   const requestQuote = (cb: CBMatch) => navigation.navigate('RequestQuote', {
-    cbId: cb.id, cbName: cb.name, cert_type: req?.cert_type, market: req?.market, product_category: req?.product_category,
+    cbId: cb.id, cbName: cb.name, cert_type: req?.cert_type, markets: req?.markets, product_category: req?.product_category,
     applicationId: p.applicationId, product_id: p.product_id, product_name: p.product_name,
     match_snapshot: { score: cb.match_score, reasons: (cb.match_reasons || []).filter((r) => r.satisfied).map((r) => r.label) },
   })
@@ -61,7 +72,7 @@ export default function FindCBResultsScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}><Ionicons name="arrow-back" size={22} color={colors.textPrimary} /></TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Find Your Certification Body</Text>
-          {req && <Text style={styles.headerSub}>{[req.product_category, req.cert_type, req.market].filter(Boolean).join(' · ')}</Text>}
+          {req && <Text style={styles.headerSub}>{[req.product_category, req.cert_type, requestedMarkets.join(', ')].filter(Boolean).join(' · ')}</Text>}
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('CBRequestsList')} style={styles.backBtn}><Ionicons name="albums-outline" size={20} color={colors.textPrimary} /></TouchableOpacity>
       </View>
@@ -85,12 +96,28 @@ export default function FindCBResultsScreen() {
         </View>
       ) : (
         <>
+          {requestedMarkets.length > 0 && (
+            <View style={styles.reqMarketsRow}>
+              <Text style={styles.reqMarketsLabel}>Target Markets</Text>
+              <View style={styles.reqMarketsChips}>
+                {requestedMarkets.map((m) => <View key={m} style={styles.reqChip}><Text style={styles.reqChipText}>{marketLabel(m)}</Text></View>)}
+              </View>
+            </View>
+          )}
           <View style={styles.toolbar}>
             <Text style={styles.count}>{list.length} certification {list.length === 1 ? 'body' : 'bodies'} found</Text>
-            <TouchableOpacity style={[styles.chip, verifiedOnly && styles.chipActive]} onPress={() => setVerifiedOnly((v) => !v)}>
-              <Ionicons name="shield-checkmark" size={13} color={verifiedOnly ? '#fff' : colors.textSecondary} />
-              <Text style={[styles.chipText, verifiedOnly && styles.chipTextActive]}>Verified only</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {requestedMarkets.length > 0 && (
+                <TouchableOpacity style={[styles.chip, fullCoverageOnly && styles.chipActive]} onPress={() => setFullCoverageOnly((v) => !v)}>
+                  <Ionicons name="globe-outline" size={13} color={fullCoverageOnly ? '#fff' : colors.textSecondary} />
+                  <Text style={[styles.chipText, fullCoverageOnly && styles.chipTextActive]}>Full coverage</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={[styles.chip, verifiedOnly && styles.chipActive]} onPress={() => setVerifiedOnly((v) => !v)}>
+                <Ionicons name="shield-checkmark" size={13} color={verifiedOnly ? '#fff' : colors.textSecondary} />
+                <Text style={[styles.chipText, verifiedOnly && styles.chipTextActive]}>Verified only</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: selectedList.length ? 100 : 32 }} refreshControl={undefined}>
@@ -133,11 +160,24 @@ export default function FindCBResultsScreen() {
                       )}
                     </View>
 
+                    {cb.market_coverage && (
+                      <View style={styles.coverageBox}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Ionicons name="globe-outline" size={13} color={cb.market_coverage.percent === 100 ? colors.success : colors.warning} />
+                          <Text style={[styles.coverageTitle, { color: cb.market_coverage.percent === 100 ? colors.success : colors.warning }]}>
+                            {cb.market_coverage.percent === 100
+                              ? `Full coverage · ${cb.market_coverage.covered.length}/${cb.market_coverage.requested.length} markets`
+                              : `${cb.market_coverage.covered.length}/${cb.market_coverage.requested.length} markets (${cb.market_coverage.percent}%)`}
+                          </Text>
+                        </View>
+                        {cb.market_coverage.missing.length > 0 && <Text style={styles.coverageMissing}>Missing: {cb.market_coverage.missing.map(marketLabel).join(', ')}</Text>}
+                      </View>
+                    )}
                     {!!cb.accreditations?.length && <Text style={styles.metaLine}>Accreditation: {cb.accreditations.slice(0, 3).join(', ')}</Text>}
-                    {!!cb.markets?.length && <Text style={styles.metaLine}>Markets: {cb.markets.slice(0, 5).join(', ')}</Text>}
+                    {!cb.market_coverage && !!cb.markets?.length && <Text style={styles.metaLine}>Markets: {cb.markets.slice(0, 5).join(', ')}</Text>}
 
                     <View style={styles.cardActions}>
-                      <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.navigate('CBProfile', { id: cb.id, cert_type: req?.cert_type, market: req?.market, product_category: req?.product_category, applicationId: p.applicationId, product_id: p.product_id, product_name: p.product_name })}>
+                      <TouchableOpacity style={styles.ghostBtn} onPress={() => navigation.navigate('CBProfile', { id: cb.id, cert_type: req?.cert_type, markets: req?.markets, product_category: req?.product_category, applicationId: p.applicationId, product_id: p.product_id, product_name: p.product_name })}>
                         <Text style={styles.ghostBtnText}>View details</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.compareBtn, isSel && styles.compareBtnActive]} onPress={() => toggleSelect(cb)}>
@@ -203,6 +243,14 @@ const makeStyles = (c: any, dark: boolean) => StyleSheet.create({
   reasonText: { color: c.textPrimary, fontSize: 13, flex: 1 },
   whyLink: { color: c.primary, fontSize: 12, fontWeight: '700', marginTop: 2 },
   metaLine: { color: c.textSecondary, fontSize: 12, marginTop: 8 },
+  reqMarketsRow: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 2 },
+  reqMarketsLabel: { color: c.textTertiary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },
+  reqMarketsChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  reqChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: dark ? c.bgCardLight : '#EEF0F7' },
+  reqChipText: { color: c.textSecondary, fontSize: 12, fontWeight: '600' },
+  coverageBox: { marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: dark ? c.bgCardLight : '#F4F6FB' },
+  coverageTitle: { fontSize: 12, fontWeight: '700' },
+  coverageMissing: { color: c.textSecondary, fontSize: 12, marginTop: 3 },
   cardActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
   ghostBtn: { flex: 1, paddingVertical: 10, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: c.border, alignItems: 'center' },
   ghostBtnText: { color: c.textPrimary, fontSize: 13, fontWeight: '700' },

@@ -197,3 +197,102 @@ describe('CB requests — ownership, duplicate protection, internal notes', () =
     expect(res.body.data.status).toBe('cancelled');
   });
 });
+
+describe('Matching engine — multi-market coverage', () => {
+  let appOwnerTok: string, appId: string;
+  let cbA: string, cbB: string;
+
+  beforeAll(async () => {
+    const { User, Organization, CertificationBodyScope, Product, Application } = await import('../models');
+    const owner = await User.create({ email: 'mmowner@fcb.test', name: 'MMOwner', role: 'cb', otp_attempts: 0 });
+    const appOwner = await User.create({ email: 'mmapp@fcb.test', name: 'AppOwner', role: 'client', otp_attempts: 0 });
+    appOwnerTok = tokenFor(String(appOwner._id), 'client');
+
+    const mkCb = async (name: string, markets: string[]) => {
+      const cb = await Organization.create({ name, type: 'cb', owner_user_id: owner._id, settings: { allowed_cert_types: ['ISO_17065'] } });
+      await CertificationBodyScope.create({ certification_body_id: cb._id, cert_type: 'ISO_17065', status: 'active', markets, product_categories: ['Electronics'] });
+      return String(cb._id);
+    };
+    cbA = await mkCb('MM Full', ['IN', 'US', 'DE']);   // 100%
+    cbB = await mkCb('MM Two', ['IN', 'US']);          // 67%
+    await mkCb('MM One', ['IN']);                      // 33%
+    await mkCb('MM None', ['FR']);                     // zero overlap → excluded
+    await mkCb('MM AllMarkets', []);                   // empty = serves all → 100%
+
+    const prod = await Product.create({ name: 'Camera', category: 'Electronics' });
+    const appDoc = await Application.create({
+      application_number: `APP-MM-${Date.now()}`, cert_type: 'ISO_17065', created_by: appOwner._id,
+      product_id: prod._id, manual_review: { requested_markets: ['IN', 'US', 'DE'] },
+    });
+    appId = String(appDoc._id);
+  });
+
+  const matchMulti = (qs: string, tok: string) =>
+    request(app).get(`/api/v2/certification-bodies/match?cert_type=ISO_17065&${qs}`).set('Authorization', `Bearer ${tok}`);
+
+  it('full / partial / zero coverage + all-markets CB, ranked by coverage', async () => {
+    const res = await matchMulti('markets=IN,US,DE&product_category=Electronics', clientToken);
+    expect(res.status).toBe(200);
+    const byName: Record<string, any> = Object.fromEntries(res.body.data.certificationBodies.map((c: any) => [c.name, c]));
+    expect(byName['MM Full'].market_coverage).toEqual({ requested: ['IN', 'US', 'DE'], covered: ['IN', 'US', 'DE'], missing: [], percent: 100 });
+    expect(byName['MM Full'].match_reasons.find((r: any) => r.key === 'market').satisfied).toBe(true);
+    expect(byName['MM Two'].market_coverage.percent).toBe(67);
+    expect(byName['MM Two'].market_coverage.missing).toEqual(['DE']);
+    expect(byName['MM Two'].match_reasons.find((r: any) => r.key === 'market').satisfied).toBe(false);
+    expect(byName['MM One'].market_coverage.percent).toBe(33);
+    expect(byName['MM One'].market_coverage.covered).toEqual(['IN']);
+    expect(byName['MM None']).toBeUndefined();                        // excluded (zero overlap)
+    expect(byName['MM AllMarkets'].market_coverage.percent).toBe(100); // serves all
+    expect(byName['MM Full'].match_score).toBeGreaterThan(byName['MM Two'].match_score);
+    expect(byName['MM Two'].match_score).toBeGreaterThan(byName['MM One'].match_score);
+  });
+
+  it('single-market back-compat (?market=IN) still works', async () => {
+    const res = await matchMulti('market=IN', clientToken);
+    const full = res.body.data.certificationBodies.find((c: any) => c.name === 'MM Full');
+    expect(full.market_coverage).toEqual({ requested: ['IN'], covered: ['IN'], missing: [], percent: 100 });
+  });
+
+  it('deduplicates + normalizes requested markets', async () => {
+    const res = await matchMulti('markets=in,IN,us', clientToken);
+    expect(res.body.data.requirement.markets).toEqual(['IN', 'US']);
+    const two = res.body.data.certificationBodies.find((c: any) => c.name === 'MM Two');
+    expect(two.market_coverage.percent).toBe(100);
+  });
+
+  it('application context uses ALL requested markets (never truncates to [0])', async () => {
+    const res = await request(app).get(`/api/v2/certification-bodies/match?application_id=${appId}`).set('Authorization', `Bearer ${appOwnerTok}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.requirement.markets).toEqual(['IN', 'US', 'DE']);
+    expect(res.body.data.certificationBodies.find((c: any) => c.name === 'MM Full').market_coverage.percent).toBe(100);
+  });
+
+  it('POST stores all markets (+ deprecated mirror)', async () => {
+    const res = await request(app).post('/api/v2/cb-requests').set('Authorization', `Bearer ${clientToken}`)
+      .send({ certification_body_id: cbA, cert_type: 'ISO_17065', markets: ['IN', 'US', 'DE'] });
+    expect(res.status).toBe(201);
+    expect(res.body.data.markets).toEqual(['IN', 'US', 'DE']);
+    expect(res.body.data.market).toBe('IN');
+  });
+
+  it('duplicate protection ignores the market set (same user/CB/cert)', async () => {
+    const res = await request(app).post('/api/v2/cb-requests').set('Authorization', `Bearer ${clientToken}`)
+      .send({ certification_body_id: cbA, cert_type: 'ISO_17065', markets: ['DE'] });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('duplicate_request');
+  });
+
+  it('legacy market-only POST still works', async () => {
+    const res = await request(app).post('/api/v2/cb-requests').set('Authorization', `Bearer ${clientToken}`)
+      .send({ certification_body_id: cbB, cert_type: 'ISO_17065', market: 'IN' });
+    expect(res.status).toBe(201);
+    expect(res.body.data.markets).toEqual(['IN']);
+  });
+
+  it('POST from an application uses the application markets', async () => {
+    const res = await request(app).post('/api/v2/cb-requests').set('Authorization', `Bearer ${appOwnerTok}`)
+      .send({ certification_body_id: cbA, application_id: appId });
+    expect(res.status).toBe(201);
+    expect(res.body.data.markets).toEqual(['IN', 'US', 'DE']);
+  });
+});
