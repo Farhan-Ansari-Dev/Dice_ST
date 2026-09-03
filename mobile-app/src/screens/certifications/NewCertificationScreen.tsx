@@ -15,6 +15,7 @@ import { useToast } from '../../components/common/ToastProvider';
 import { useQueryClient } from '@tanstack/react-query';
 import leadsService from '../../services/leadsService';
 import api from '../../services/api';
+import { useAiConsent } from '../../components/ai/AiConsentProvider';
 
 
 const ALL_PRODUCTS = [
@@ -65,6 +66,7 @@ const NewCertificationScreen: React.FC = () => {
   const { colors, isDark } = useTheme();
   const { user } = useAuthStore();
   const { showToast } = useToast();
+  const { run } = useAiConsent();
   const queryClient = useQueryClient();
   const styles = useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
 
@@ -123,10 +125,17 @@ const NewCertificationScreen: React.FC = () => {
 
     setIsAnalyzing(true);
     try {
-      const response = await api.post<{ success: boolean; data: any }>('/ai/analyze-certifications', {
-        productName: selectedProduct,
-        markets: isoMarkets
-      });
+      const gated = await run(() =>
+        api.post<{ success: boolean; data: any }>('/ai/analyze-certifications', {
+          productName: selectedProduct,
+          markets: isoMarkets,
+        }),
+      );
+      if (gated.status === 'declined') {
+        setIsAnalyzing(false);
+        return; // user declined the AI disclosure — nothing sent
+      }
+      const response = gated.value;
 
       if (!response.data?.isValid) {
         Alert.alert('Invalid Product Category', response.data?.message || 'This product is not supported.');

@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { authenticate } from '../../middleware/authMongo';
 import { validate } from '../../middleware/validate';
 import { sendSuccess } from '../../utils/response';
+import { requireAiConsent, requireAiConsentIf, bodyHasProductText } from '../../services/ai/aiConsent';
 import { validateHsCode, suggestHsCodes } from '../../services/hsValidationService';
 import { analyzeProductHs } from '../../services/productHsService';
 
@@ -60,15 +61,16 @@ const analyzeSchema = {
     ),
 };
 
-// POST /hs/validate
-router.post('/validate', authenticate, validate(validateSchema), wrap(async (req: Request, res: Response) => {
+// POST /hs/validate — AI runs only when a productDescription is supplied; a
+// code-only request is a pure dataset lookup and needs no AI consent.
+router.post('/validate', authenticate, validate(validateSchema), requireAiConsentIf(bodyHasProductText), wrap(async (req: Request, res: Response) => {
   const { code, productDescription } = req.body as { code?: string; productDescription?: string };
   const result = await validateHsCode({ code, productDescription });
   return sendSuccess(res, result);
 }));
 
-// POST /hs/suggest
-router.post('/suggest', authenticate, validate(suggestSchema), wrap(async (req: Request, res: Response) => {
+// POST /hs/suggest — always classifies a product description via AI.
+router.post('/suggest', authenticate, validate(suggestSchema), requireAiConsent, wrap(async (req: Request, res: Response) => {
   const { productDescription } = req.body as { productDescription: string };
   const result = await suggestHsCodes(productDescription);
   return sendSuccess(res, result);
@@ -76,7 +78,7 @@ router.post('/suggest', authenticate, validate(suggestSchema), wrap(async (req: 
 
 // POST /hs/analyze — Product Analyzer: classify a product and/or validate a
 // user-supplied HS code against it (wrong-HS detection + recommendations).
-router.post('/analyze', authenticate, validate(analyzeSchema), wrap(async (req: Request, res: Response) => {
+router.post('/analyze', authenticate, validate(analyzeSchema), requireAiConsentIf(bodyHasProductText), wrap(async (req: Request, res: Response) => {
   const result = await analyzeProductHs(req.body);
   return sendSuccess(res, result);
 }));

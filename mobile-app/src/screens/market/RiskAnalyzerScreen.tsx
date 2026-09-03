@@ -6,11 +6,13 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme, Typography, Shadows, BorderRadius, Spacing } from '../../theme';
 import Button from '../../components/common/Button';
 import api from '../../services/api';
+import { useAiConsent } from '../../components/ai/AiConsentProvider';
 
 export default function RiskAnalyzerScreen() {
   const { colors, isDark } = useTheme();
   const styles = makeStyles(colors, isDark);
   const navigation = useNavigation();
+  const { run } = useAiConsent();
   const [context, setContext] = useState('');
   const [loading, setLoading] = useState(false);
   const [risks, setRisks] = useState<any[]>([]);
@@ -20,7 +22,9 @@ export default function RiskAnalyzerScreen() {
     setLoading(true);
     setRisks([]);
     try {
-      const res = await api.post<any>('/ai/analyze-risks', { context: context.trim() });
+      const result = await run(() => api.post<any>('/ai/analyze-risks', { context: context.trim() }));
+      if (result.status === 'declined') return; // user declined — nothing sent
+      const res = result.value;
       if (res?.success && res.data) {
         setRisks(res.data);
       } else {

@@ -46,6 +46,12 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     return res.status(503).json({ success: false, error: 'ai_unavailable', message: err.message })
   }
 
+  // User has not given (current) consent to third-party AI processing. Machine-
+  // readable so the client can present the consent prompt (App Store 5.1.1(i)).
+  if (err?.name === 'AiConsentRequiredError') {
+    return res.status(403).json({ success: false, error: 'ai_consent_required', message: err.message })
+  }
+
   // Provider reachable but the payload was unreadable — retryable, and a
   // different operator action from "no key configured".
   if (err?.name === 'AIResponseError') {

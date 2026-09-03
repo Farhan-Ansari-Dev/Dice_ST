@@ -8,6 +8,7 @@ import Button from '../../components/common/Button';
 import hsService, { ProductAnalysis, AnalysisStatus } from '../../services/hsService';
 import leadsService from '../../services/leadsService';
 import { useAuthStore } from '../../store/authStore';
+import { useAiConsent } from '../../components/ai/AiConsentProvider';
 
 const STATUS_META: Record<AnalysisStatus, { label: string; tone: 'success' | 'warning' | 'error' | 'info'; icon: any }> = {
   RESOLVED:            { label: 'Classified', tone: 'success', icon: 'checkmark-circle' },
@@ -23,6 +24,7 @@ export default function ProductAnalyzerScreen() {
   const styles = makeStyles(colors, isDark);
   const navigation = useNavigation<any>();
   const { user } = useAuthStore();
+  const { run } = useAiConsent();
 
   const [productName, setProductName] = useState('');
   const [description, setDescription] = useState('');
@@ -43,11 +45,23 @@ export default function ProductAnalyzerScreen() {
     setShowAlternatives(false);
     setAdoptedCode(null);
     try {
-      const res = await hsService.analyze({
+      const payload = {
         productName: productName.trim() || undefined,
         productDescription: description.trim() || undefined,
         code: hsCode.trim() || undefined,
-      });
+      };
+      // The backend only calls the AI when product text is present; a code-only
+      // lookup is a pure dataset match that shares nothing with the AI provider,
+      // so we gate on consent only in the AI case (mirrors the server rule).
+      const usesAi = !!(payload.productName || payload.productDescription);
+      let res: ProductAnalysis;
+      if (usesAi) {
+        const gated = await run(() => hsService.analyze(payload));
+        if (gated.status === 'declined') return; // declined — nothing sent
+        res = gated.value;
+      } else {
+        res = await hsService.analyze(payload);
+      }
       setResult(res);
     } catch (e: any) {
       Alert.alert('Analysis failed', e?.response?.data?.message || 'Could not reach the classification service.');

@@ -44,7 +44,9 @@ export const ENV = {
   GOOGLE_IOS_CLIENT_ID,
 
   RAZORPAY_KEY_ID: Constants.expoConfig?.extra?.razorpayKeyId ?? 'rzp_test_placeholder',
-  OPENAI_API_KEY:  Constants.expoConfig?.extra?.openaiKey ?? '',
+  // NOTE: No OpenAI key is (or should be) shipped in the mobile app. AI calls go
+  // through the DICE backend, which holds the OpenAI credential server-side. A
+  // client-bundled key would be extractable from the app binary.
 
   IS_DEV: isDev,
 };

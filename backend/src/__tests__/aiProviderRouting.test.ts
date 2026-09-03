@@ -52,8 +52,15 @@ const tokenFor = (id: string, role = 'client') =>
 
 async function clientToken() {
   const { User } = await import('../models/User');
+  const { recordAiConsent } = await import('../services/ai/aiConsent');
   const u = await User.create({ email: `ai-${Date.now()}-${Math.random()}@t.com`, name: 'AI', role: 'client', otp_attempts: 0 });
-  return tokenFor((u._id as any).toString());
+  const id = (u._id as any).toString();
+  // These tests exercise PROVIDER ROUTING and data-driven AI endpoints, so the
+  // user must have current AI consent to pass the server-side consent gate.
+  // (The 403 ai_consent_required behavior for users WITHOUT consent is enforced
+  // in production and covered by aiConsent.test.ts — it must not be weakened.)
+  await recordAiConsent(id, true);
+  return tokenFor(id);
 }
 
 async function setProvider(provider: string, extra: Record<string, unknown> = {}) {

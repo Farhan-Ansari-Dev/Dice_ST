@@ -6,7 +6,6 @@ import { Application } from '../../models/Application'
 import { Certification } from '../../models/Certification'
 import { Document } from '../../models/Document'
 import { Payment } from '../../models/Payment'
-import { Device } from '../../models/Device'
 import { AuditLog } from '../../models/AuditLog'
 import { sendSuccess, sendError } from '../../utils/response'
 import crypto from 'crypto'
@@ -14,6 +13,8 @@ import { sendSMS } from '../../services/notifications/sms'
 import { logger } from '../../utils/logger'
 import { serializeUser } from '../../utils/serializeUser'
 import { computeCustomerHealth } from '../../services/customerHealthService'
+import { getAiConsentStatus, recordAiConsent } from '../../services/ai/aiConsent'
+import { deleteAccountData } from '../../services/accountDeletionService'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
@@ -31,6 +32,34 @@ const isAdmin = (role?: string) => role === 'admin' || role === 'super_admin'
 
 router.get('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   res.json({ success: true, data: await serializeUser(req.user) });
+}))
+
+// ═══════════════════════════════════════════════════════════════
+// AI consent (App Store 5.1.1(i)/5.1.2(i)) — a user's own third-party
+// AI-processing consent. Always scoped to the authenticated session
+// (req.user), so a caller can only ever read/change their OWN consent.
+//
+//   GET  /users/me/ai-consent  → current status + the current version
+//   POST /users/me/ai-consent  { accepted: boolean } → records the decision
+//
+// The record stores only decision/version/timestamps — never AI payloads.
+// Existing users have no record ⇒ not consented; nothing is auto-migrated.
+// ═══════════════════════════════════════════════════════════════
+router.get('/me/ai-consent', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const status = await getAiConsentStatus(req.user!._id.toString())
+  return sendSuccess(res, status)
+}))
+
+router.post('/me/ai-consent', authenticate, wrap(async (req: AuthRequest, res: Response) => {
+  const accepted = req.body?.accepted
+  if (typeof accepted !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'invalid_request', message: 'Body must include a boolean "accepted".' })
+  }
+  const status = await recordAiConsent(req.user!._id.toString(), accepted, {
+    ip: req.ip,
+    user_agent: req.get('user-agent') || undefined,
+  })
+  return sendSuccess(res, status)
 }))
 
 import { audit } from '../../models/AuditLog'
@@ -290,31 +319,15 @@ router.post('/me/phone/verify', authenticate, wrap(async (req: AuthRequest, res:
 router.delete('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   const userId = req.user!._id
 
-  // Exclusively user-owned push registrations. Best-effort: partial/missing
-  // records are a harmless no-op.
-  await Device.deleteMany({ user_id: userId }).catch(() => {})
-
-  const anonEmail = `deleted+${userId}@deleted.invalid`
-  await User.updateOne(
-    { _id: userId },
-    {
-      $set: {
-        deleted_at: new Date(),
-        updated_at: new Date(),
-        name: 'Deleted User',
-        email: anonEmail,
-        totp_enabled: false,
-        expo_push_tokens: [],
-        webpush_subscriptions: [],
-      },
-      $unset: {
-        phone: 1, avatar_url: 1, password_hash: 1,
-        otp_hash: 1, otp_expires_at: 1, otp_attempts: 1,
-        pending_phone: 1, phone_otp_hash: 1, phone_otp_expires_at: 1, phone_otp_attempts: 1,
-        totp_secret: 1,
-      },
-    }
-  )
+  // Privacy-first erasure/anonymization across every collection the user owns,
+  // ending by anonymizing the User itself. Only the user's OWN data is touched;
+  // shared organizational and compliance records (Organization, Applications,
+  // Certifications, Payments, compliance Documents on legal hold) are preserved
+  // with the personal association scrubbed via the anonymized User. See
+  // services/accountDeletionService for the full, per-collection behavior.
+  // Best-effort + idempotent, so a repeated call (rejected at auth once deleted)
+  // and missing related records/S3 objects are harmless.
+  await deleteAccountData(userId)
 
   await audit({
     actor: userId as any,

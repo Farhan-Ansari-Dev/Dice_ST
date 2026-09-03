@@ -10,6 +10,7 @@ import SecuritySettingsScreen from '../../screens/profile/SecuritySettingsScreen
 import LanguageSettingsScreen from '../../screens/profile/LanguageSettingsScreen';
 import ThemeSettingsScreen from '../../screens/profile/ThemeSettingsScreen';
 import PrivacyPolicyScreen from '../../screens/profile/PrivacyPolicyScreen';
+import AiPrivacyScreen from '../../screens/profile/AiPrivacyScreen';
 import TermsConditionsScreen from '../../screens/profile/TermsConditionsScreen';
 import DeleteAccountScreen from '../../screens/profile/DeleteAccountScreen';
 import AboutScreen from '../../screens/profile/AboutScreen';
@@ -46,6 +47,7 @@ const ProfileStackNavigator: React.FC = () => {
     <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
     <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+    <Stack.Screen name="AiPrivacy" component={AiPrivacyScreen} />
     <Stack.Screen name="TermsConditions" component={TermsConditionsScreen} />
     <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
     <Stack.Screen name="About" component={AboutScreen} />

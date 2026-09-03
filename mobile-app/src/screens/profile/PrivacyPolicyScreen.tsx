@@ -10,27 +10,43 @@ const SECTIONS = [
   {
     title: 'Data Collection',
     icon: 'cloud-upload-outline' as const,
-    content: 'We collect information you provide when you create an account, including your name, email address, phone number, and company details. We also collect usage data to improve our services, such as features you interact with and how you navigate the app.',
+    content: 'We collect information you provide, including your name, email address, and phone number; your business profile (company name, business role, company size, industries, target markets, certifications of interest, and country); and the content you add — products, certification applications, and any documents or product photos you upload. To operate the app we also register your device’s push-notification token and record basic in-app activity needed to provide the service. Where you make a payment, we process the related order and payment records.',
   },
   {
     title: 'How We Use Your Data',
     icon: 'analytics-outline' as const,
-    content: 'Your data is used to provide compliance services, process certification applications, generate reports, and send important notifications. We use anonymized data for improving AI models and app performance. We never sell your personal data to third parties.',
+    content: 'Your data is used to provide compliance services, process certification applications, generate reports, and send important notifications. We never sell your personal data to third parties. See the "AI-Powered Features" section below for how information is used when you use AI features.',
   },
   {
     title: 'Data Sharing',
     icon: 'share-social-outline' as const,
-    content: 'We share data with government bodies (BIS, FSSAI, WPC) only as required for certification processing. We work with NABL-accredited labs that require product and company information for testing. All third-party partners are bound by strict confidentiality agreements.',
+    content: 'We share data with government bodies (BIS, FSSAI, WPC) only as required for certification processing. We work with NABL-accredited labs that require product and company information for testing. When you use AI-powered features, information is also shared with a third-party AI provider — see the "AI-Powered Features" section below.',
+  },
+  {
+    title: 'AI-Powered Features',
+    icon: 'sparkles-outline' as const,
+    content:
+      'Some features in this app are powered by AI. When you use an AI-powered feature, the information needed to process your request is sent to OpenAI, a third-party AI service provider, to generate a result. This may include your business profile (company name, business role, company size, industries, target export markets, certifications of interest, and country), the questions and product details you enter (such as product names, descriptions, HS codes, and markets), and any product photo or document text you choose to submit for analysis. ' +
+      'This information is used only to produce your result. AI-powered features require your consent before any data is shared: you can allow or decline when first prompted, and you can review or withdraw your consent at any time in Settings → AI Features & Privacy. Declining turns off only the AI-powered features — the rest of the app continues to work. OpenAI processes this information as a separate company under our agreement with it; we do not make additional representations here about how it retains or uses that information.',
   },
   {
     title: 'Security',
     icon: 'shield-checkmark-outline' as const,
-    content: 'We implement industry-standard security measures including end-to-end encryption, secure HTTPS connections, and regular security audits. Your data is stored in ISO 27001 certified data centers located within India, complying with data localization requirements.',
+    content: 'We protect your information in transit using encrypted HTTPS/TLS connections. Uploaded files are stored in encrypted cloud storage, and sensitive credentials are encrypted at rest. Access to production systems is restricted to authorized personnel. No method of transmission or storage is completely secure, so while we work to protect your information we cannot guarantee absolute security.',
   },
   {
     title: 'Your Rights',
     icon: 'person-outline' as const,
     content: 'You have the right to access, correct, or delete your personal data at any time. You can request a copy of your data or withdraw consent for marketing communications. To exercise these rights, contact our Data Protection Officer.',
+  },
+  {
+    title: 'Data Retention & Deletion',
+    icon: 'trash-outline' as const,
+    content:
+      'We keep your account and profile information for as long as your account is active. You can delete your account at any time from Profile → Delete Account. ' +
+      'When you delete your account, we anonymize your profile so it no longer identifies you and remove your authentication credentials. We permanently delete personal content you own — your AI conversation history, notifications, saved items, push-notification registrations, scheduled meetings, standalone contact enquiries, and private files you uploaded that are not part of a certification or compliance record (the underlying files are deleted from storage). ' +
+      'For records we keep for legitimate business, financial, accreditation, or compliance reasons — such as certification and application records, invoices and payment records, support history, and documents that form part of a certification record or that are under a legal hold — we retain the record and either remove or anonymize the personal information within it (for example your name, contact details, free-text messages, and personal attachments) or associate it only with your anonymized profile. ' +
+      'Shared organization data is never deleted when you delete your account, because it may belong to other members. We do not keep personal data longer than needed for the purposes described in this policy. For questions about retention, or to make a specific request, contact our Data Protection Officer.',
   },
   {
     title: 'Contact Us',
@@ -63,7 +79,7 @@ const PrivacyPolicyScreen: React.FC = () => {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={[styles.updateCard, { backgroundColor: `${colors.primary}15`, borderColor: `${colors.primary}30` }]}>
           <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-          <Text style={[styles.updateText, { color: colors.primary }]}>Last updated: December 1, 2024</Text>
+          <Text style={[styles.updateText, { color: colors.primary }]}>Last updated: September 3, 2026</Text>
         </View>
 
         <Text style={styles.intro}>

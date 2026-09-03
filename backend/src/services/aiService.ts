@@ -5,6 +5,7 @@ import redis from '../config/redis'
 import { logger } from '../utils/logger'
 
 import { RemoteConfig } from '../models/RemoteConfig'
+import { assertAiConsent, hasCurrentAiConsent } from './ai/aiConsent'
 import { getProviderKey } from './ai/credentialService'
 import type { ProviderName } from '../models/AIProviderCredential'
 import { PROVIDERS, isKnownProvider, isProviderAllowedHere } from './ai/providerRegistry'
@@ -213,6 +214,7 @@ export async function buildCustomerContext(userId: string): Promise<string> {
 
 export const aiService = {
   async chat(userId: string, message: string, conversationId?: string): Promise<{ response: string; conversationId: string }> {
+    await assertAiConsent(userId)  // server-enforced third-party AI consent
     const { openai, model } = await getAIClientAndModel()
     const cacheKey = `ai_conv:${conversationId ?? userId}`
 
@@ -319,6 +321,7 @@ export const aiService = {
   },
 
   async analyzeDocument(text: string, userId?: string): Promise<{ issues: string[]; recommendations: string[]; complianceScore: number }> {
+    await assertAiConsent(userId)  // server-enforced third-party AI consent
     const { openai, model } = await getAIClientAndModel()
     if (!openai) throw new AIUnavailableError()
 
@@ -344,6 +347,7 @@ export const aiService = {
   },
 
   async analyzeHsCode(hsCode: string, userId?: string): Promise<{ demand: string; profitMargin: string; topMarkets: string }> {
+    await assertAiConsent(userId)  // server-enforced third-party AI consent
     const { openai, model } = await getAIClientAndModel()
     // Cache is scoped per-user because the answer now reflects the customer's profile.
     const cacheKey = `hs_code_analysis:${hsCode}:${userId ?? 'anon'}`;
@@ -378,6 +382,7 @@ export const aiService = {
   },
 
   async analyzeRisks(context: string, userId?: string): Promise<Array<{ title: string; level: string; desc: string }>> {
+    await assertAiConsent(userId)  // server-enforced third-party AI consent
     const { openai, model } = await getAIClientAndModel()
     const cacheKey = `risk_analysis:${context}:${userId ?? 'anon'}`;
     const cached = await redis.get(cacheKey);
@@ -437,7 +442,12 @@ export const aiService = {
     // we ask the AI for non-authoritative SUGGESTIONS — clearly flagged as such,
     // never presented as verified. If no AI key is configured (or the call
     // fails) we fall back to the honest "specialist will review" result.
-    if (!hasVerified) {
+    //
+    // This method is also reached indirectly (e.g. draft creation) where no route
+    // middleware runs, so the AI suggestion is gated on consent here too. Without
+    // current consent the AI path is silently skipped — the verified DB result and
+    // the honest "specialist will review" fallback still work with no AI involved.
+    if (!hasVerified && (await hasCurrentAiConsent(userId))) {
       const suggested = await this.suggestCertificationsAI(productName, effectiveMarkets).catch(() => []);
       if (suggested.length > 0) {
         return {
@@ -515,6 +525,7 @@ export const aiService = {
   },
 
   async getComplianceRecommendations(userId: string): Promise<string[]> {
+    await assertAiConsent(userId)  // server-enforced third-party AI consent
     const { openai, model } = await getAIClientAndModel()
     const cacheKey = `recommendations:${userId}`
     const cached = await redis.get(cacheKey)

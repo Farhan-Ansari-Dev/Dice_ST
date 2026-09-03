@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, BorderRadius, Shadows } from '../../theme';
 import aiAssistantService from '../../services/aiAssistantService';
+import { useAiConsent } from '../../components/ai/AiConsentProvider';
 
 interface ChatMessage {
   id: string;
@@ -34,6 +35,7 @@ const AISearchScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const flatListRef = useRef<FlatList>(null);
+  const { run } = useAiConsent();
 
   const initialQuery = route.params?.query || '';
 
@@ -70,7 +72,15 @@ const AISearchScreen: React.FC = () => {
     setMessages([...newMessages, { id: typingId, role: 'ai', isTyping: true }]);
 
     try {
-      const answer = await aiAssistantService.ask(textToSend.trim(), conversationId);
+      // Gate on AI consent BEFORE sending anything to the AI service. If the
+      // user declines the disclosure, quietly remove the typing bubble and stop
+      // — no request is sent and no error is shown.
+      const result = await run(() => aiAssistantService.ask(textToSend.trim(), conversationId));
+      if (result.status === 'declined') {
+        setMessages((prev) => prev.filter((m) => m.id !== typingId));
+        return;
+      }
+      const answer = result.value;
       setConversationId(answer.conversationId);
 
       setMessages((prev) => [

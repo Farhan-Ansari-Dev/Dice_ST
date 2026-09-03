@@ -79,15 +79,26 @@ describe('POST /leads — draft application auto-creation', () => {
     expect(res.body.data.some((a: any) => a.status === 'draft' && a.cert_type === 'BIS')).toBe(true);
   });
 
-  it('captures a Lead only (no application, no throw) when there is not enough to start one', async () => {
+  it('creates a Draft Application even for a minimal enquiry — serviceId identifies the certification', async () => {
+    // serviceId is a REQUIRED field on every enquiry (createSchema) and the route
+    // derives the certification type from it when no explicit cert_type/product_id
+    // is given. By deliberate design (commit 0c5eb4c "mobile customer journey
+    // stability" + "always create a Draft Application"), the customer therefore
+    // ALWAYS gets a draft; with no resolvable product it is pending_validation.
+    // (This replaced the older "Lead only" expectation, which the required
+    // serviceId + fallback made unreachable.)
     const res = await request(app)
       .post('/api/v2/leads')
       .set('Authorization', `Bearer ${clientToken}`)
-      .send(enquiry({})); // no product_id / cert_type
+      .send(enquiry({})); // serviceId 'bis' only; no product_id / cert_type
 
     expect(res.status).toBe(201);
-    expect(res.body.data._id).toBeTruthy();
-    expect(res.body.application ?? null).toBeNull();
+    expect(res.body.data._id).toBeTruthy();                       // the Lead
+    expect(res.body.application).toBeTruthy();                    // draft is always created
+    expect(res.body.application.status).toBe('draft');
+    expect(res.body.application.product_status).toBe('pending_validation');
+    expect(res.body.application.cert_type).toBe('bis');           // derived from serviceId
+    expect(String(res.body.data.converted_application_id)).toBe(String(res.body.application._id));
   });
 
   it('still creates a Draft Application (pending_validation) when the product cannot be resolved', async () => {

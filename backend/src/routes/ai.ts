@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import multer from 'multer'
 import { randomUUID } from 'crypto'
 import { authenticate, AuthRequest } from '../middleware/authMongo'
+import { requireAiConsent } from '../services/ai/aiConsent'
 import { aiService, buildCustomerContext } from '../services/aiService'
 import { sendSuccess } from '../utils/response'
 import { AIConversation } from '../models/AIConversation'
@@ -34,7 +35,7 @@ const imageUpload = multer({
 
 router.use(authenticate)
 
-router.post('/chat', wrap(async (req: AuthRequest, res: Response) => {
+router.post('/chat', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const { message, conversationId } = req.body
   const result = await aiService.chat(req.user!._id.toString(), message, conversationId)
   sendSuccess(res, result)
@@ -50,36 +51,36 @@ router.get('/conversations/:id', wrap(async (req: AuthRequest, res: Response) =>
   sendSuccess(res, result ?? null)
 }))
 
-router.post('/analyze-document', wrap(async (req: AuthRequest, res: Response) => {
+router.post('/analyze-document', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const { text } = req.body
   const analysis = await aiService.analyzeDocument(text, req.user!._id.toString())
   sendSuccess(res, analysis)
 }))
 
-router.get('/recommendations', wrap(async (req: AuthRequest, res: Response) => {
+router.get('/recommendations', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const recs = await aiService.getComplianceRecommendations(req.user!._id.toString())
   sendSuccess(res, recs)
 }))
 
-router.post('/ask', wrap(async (req: AuthRequest, res: Response) => {
+router.post('/ask', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const { message, question, conversationId } = req.body
   const result = await aiService.chat(req.user!._id.toString(), message || question, conversationId)
   sendSuccess(res, result)
 }))
 
-router.post('/analyze-hs-code', wrap(async (req: AuthRequest, res: Response) => {
+router.post('/analyze-hs-code', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const { hsCode, hs_code } = req.body
   const result = await aiService.analyzeHsCode(hsCode || hs_code, req.user!._id.toString())
   sendSuccess(res, result)
 }))
 
-router.post('/analyze-risks', wrap(async (req: AuthRequest, res: Response) => {
+router.post('/analyze-risks', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const { context, product, market } = req.body
   const result = await aiService.analyzeRisks(context || `${product} in ${market}`, req.user!._id.toString())
   sendSuccess(res, result)
 }))
 
-router.post('/analyze-certifications', wrap(async (req: AuthRequest, res: Response) => {
+router.post('/analyze-certifications', requireAiConsent, wrap(async (req: AuthRequest, res: Response) => {
   const { productName, product_name, markets } = req.body
   const result = await aiService.analyzeCertifications(productName || product_name, markets || [], req.user!._id.toString())
   sendSuccess(res, result)
@@ -96,6 +97,7 @@ router.post('/analyze-certifications', wrap(async (req: AuthRequest, res: Respon
 // ═══════════════════════════════════════════════════════════════
 router.post(
   '/analyze-product-image',
+  requireAiConsent,
   imageUpload.single('image'),
   wrap(async (req: AuthRequest, res: Response) => {
     if (!req.file) {

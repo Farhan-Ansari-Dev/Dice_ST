@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { authenticate } from '../../middleware/authMongo';
 import { validate } from '../../middleware/validate';
 import { sendSuccess } from '../../utils/response';
+import { requireAiConsentIf, bodyHasProductText } from '../../services/ai/aiConsent';
 import { getTradeTraffic } from '../../services/tradeDataService';
 
 const router = Router();
@@ -30,7 +31,9 @@ const trafficSchema = {
     }),
 };
 
-router.post('/traffic', authenticate, validate(trafficSchema), wrap(async (req: Request, res: Response) => {
+// Trade traffic classifies the product↔HS pairing via AI when product text is
+// supplied; a code-only request needs no AI consent.
+router.post('/traffic', authenticate, validate(trafficSchema), requireAiConsentIf(bodyHasProductText), wrap(async (req: Request, res: Response) => {
   const result = await getTradeTraffic(req.body);
   return sendSuccess(res, result);
 }));

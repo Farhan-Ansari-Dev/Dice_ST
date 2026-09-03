@@ -18,6 +18,7 @@ import { ThemeProvider, loadPersistedTheme, useTheme } from './src/theme';
 import OfflineBanner from './src/components/common/OfflineBanner';
 import { ToastProvider } from './src/components/common/ToastProvider';
 import ErrorBoundary from './src/components/common/ErrorBoundary';
+import { AiConsentProvider } from './src/components/ai/AiConsentProvider';
 
 function ThemedStatusBar() {
   const { isDark } = useTheme();
@@ -236,7 +237,9 @@ export default function App() {
               <ThemedStatusBar />
               <OfflineBanner />
               <ErrorBoundary>
-                <RootNavigator />
+                <AiConsentProvider>
+                  <RootNavigator />
+                </AiConsentProvider>
               </ErrorBoundary>
             </ToastProvider>
           </ThemeProvider>

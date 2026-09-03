@@ -84,6 +84,14 @@ export interface IUser extends Document {
     privacy_policy: { version: string; accepted_at: Date };
     marketing: boolean;
     analytics: boolean;
+    // Explicit consent to third-party AI processing. Absent ⇒ NOT consented
+    // (existing users are never silently migrated to consented). See services/ai/aiConsent.
+    ai?: {
+      consented: boolean;
+      version: string;
+      consented_at?: Date;
+      declined_at?: Date;
+    };
   };
 
   // Lifecycle
@@ -182,6 +190,13 @@ const UserSchema = new Schema<IUser>(
       },
       marketing:  { type: Boolean, default: false },
       analytics:  { type: Boolean, default: true },
+      // Third-party AI consent — no default record; absence means not consented.
+      ai: {
+        consented:    { type: Boolean, default: false },
+        version:      { type: String },
+        consented_at: { type: Date },
+        declined_at:  { type: Date },
+      },
     },
 
     email_verified_at: Date,

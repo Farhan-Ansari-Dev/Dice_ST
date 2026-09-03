@@ -35,6 +35,7 @@ import Animated, {
 import { useTheme, Typography, Spacing, BorderRadius, Shadows } from '../../theme';
 import { centeredContent, gridColumns, gridItemWidth } from '../../utils/layout';
 import productAnalysisService, { ProductAnalysis, Finding } from '../../services/productAnalysisService';
+import { useAiConsent } from '../../components/ai/AiConsentProvider';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
@@ -132,6 +133,7 @@ const ScoreRing = ({ value, label, color, colors, size = 108 }: { value: number;
 
 const AIProductQualityScreen = () => {
   const navigation = useNavigation<any>();
+  const { run } = useAiConsent();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const styles = React.useMemo(() => makeStyles(colors, isDark), [colors, isDark]);
@@ -183,8 +185,15 @@ const AIProductQualityScreen = () => {
     }, 1400);
 
     try {
-      const result = await productAnalysisService.analyzeImage(imageUri, manualInput);
-      setAnalysis(result);
+      // Gate on AI consent before the photo leaves the device. Decline reverts
+      // to the picker with nothing uploaded.
+      const gated = await run(() => productAnalysisService.analyzeImage(imageUri, manualInput));
+      if (gated.status === 'declined') {
+        setPhase('pick');
+        clearInterval(interval);
+        return;
+      }
+      setAnalysis(gated.value);
       setPhase('result');
     } catch (err: any) {
       const message =

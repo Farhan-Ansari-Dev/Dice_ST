@@ -113,6 +113,7 @@ const ProfileScreen: React.FC = () => {
             }
           }
         },
+        { icon: 'sparkles-outline' as const, label: 'AI Features & Privacy', onPress: () => navigation.navigate('AiPrivacy') },
         { icon: 'information-circle-outline' as const, label: 'About', onPress: () => navigation.navigate('About') },
       ],
     },
@@ -336,7 +337,6 @@ const ProfileScreen: React.FC = () => {
         </TouchableOpacity>
 
         <Text style={styles.versionText}>Sanyog Conformity Solutions v1.0.0</Text>
-        <Text style={styles.versionText}>ISO27001 Certified</Text>
         <View style={{ height: 100 }} />
       </ScrollView>
     </View>

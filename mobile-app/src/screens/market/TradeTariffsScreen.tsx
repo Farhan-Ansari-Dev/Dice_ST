@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme, Typography, Shadows, BorderRadius, Spacing } from '../../theme';
 import Button from '../../components/common/Button';
 import tradeService, { TradeTrafficResult } from '../../services/tradeService';
+import { useAiConsent } from '../../components/ai/AiConsentProvider';
 
 /**
  * Trade Traffic — import/export activity for a product/HS code and market.
@@ -16,6 +17,7 @@ export default function TradeTariffsScreen() {
   const { colors, isDark } = useTheme();
   const styles = makeStyles(colors, isDark);
   const navigation = useNavigation<any>();
+  const { run } = useAiConsent();
   const [productName, setProductName] = useState('');
   const [hsCode, setHsCode] = useState('');
   const [market, setMarket] = useState('');
@@ -27,11 +29,22 @@ export default function TradeTariffsScreen() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await tradeService.traffic({
+      const payload = {
         productName: productName.trim() || undefined,
         code: hsCode.trim() || undefined,
         market: market.trim() || undefined,
-      });
+      };
+      // AI (product↔HS classification) only runs when product text is supplied;
+      // a code-only lookup shares nothing with the AI provider, so gate only then.
+      const usesAi = !!payload.productName;
+      let res: TradeTrafficResult;
+      if (usesAi) {
+        const gated = await run(() => tradeService.traffic(payload));
+        if (gated.status === 'declined') return; // declined — nothing sent
+        res = gated.value;
+      } else {
+        res = await tradeService.traffic(payload);
+      }
       setResult(res);
     } catch (e: any) {
       Alert.alert('Trade lookup failed', e?.response?.data?.message || 'Could not reach the trade service.');
