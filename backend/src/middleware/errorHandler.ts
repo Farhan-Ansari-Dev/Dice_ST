@@ -52,6 +52,12 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     return res.status(403).json({ success: false, error: 'ai_consent_required', message: err.message })
   }
 
+  // Internal staff has not acknowledged the Admin AI disclosure. Distinct from
+  // the consumer consent error so the admin UI can show the disclosure prompt.
+  if (err?.name === 'StaffAiDisclosureRequiredError') {
+    return res.status(403).json({ success: false, error: 'staff_ai_disclosure_required', message: err.message })
+  }
+
   // Provider reachable but the payload was unreadable — retryable, and a
   // different operator action from "no key configured".
   if (err?.name === 'AIResponseError') {

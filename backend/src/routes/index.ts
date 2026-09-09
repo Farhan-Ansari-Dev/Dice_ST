@@ -45,6 +45,7 @@ import { User } from '../models';
 
 import { aiLimiter, uploadLimiter } from '../middleware/rateLimiters';
 import realAiRouter from './ai';
+import adminAiRouter from './v2/adminAi';
 import realInsightsRouter from './insights';
 
 const router = Router();
@@ -82,6 +83,9 @@ router.use('/consultants', consultantsRoutes);
 
 // ── Migrated to Mongoose ──────────────────────────────────────────────────
 router.use('/ai', aiLimiter, realAiRouter);
+// Internal, staff-only Admin AI Assistant (tool-grounded). Separate from the
+// consumer /ai router; never affects mobile or the consumer consent gate.
+router.use('/admin-ai', aiLimiter, adminAiRouter);
 router.use('/insights', realInsightsRouter);
 
 export default router;

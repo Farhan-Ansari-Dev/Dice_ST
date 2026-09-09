@@ -7,9 +7,25 @@ import { User } from '../../models/User'
 import { AuditLog } from '../../models/AuditLog'
 import { Document } from '../../models/Document'
 import { sendSuccess } from '../../utils/response'
+import { Types } from 'mongoose'
 
 const router = Router()
 const wrap = (fn: any) => (req: Request, res: Response, next: NextFunction) => fn(req, res, next).catch(next)
+
+/**
+ * Authorization scope for analytics. Only admin/super_admin see platform-wide
+ * data. Clients keep their existing own/org behavior (the mobile app depends on
+ * these endpoints — unchanged here). Every OTHER role (employee, consultant, cb,
+ * lab, ib) is organisation-scoped and, crucially, an org-LESS such user gets a
+ * guaranteed no-match instead of `{ org_id: undefined }` — which previously
+ * matched every org-less record and leaked platform-wide data to non-admins.
+ */
+function applyNonAdminOrgScope(user: any, query: any): void {
+  const role = user.role
+  if (role === 'admin' || role === 'super_admin') return // platform-wide
+  if (role === 'client') { query.org_id = user.org_id; return } // unchanged (mobile)
+  query.org_id = user.org_id ?? new Types.ObjectId() // staff/partner: org-scoped or no-match
+}
 
 router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   // Per-model ownership scope. A client is frequently org-less, so scoping them by
@@ -29,10 +45,13 @@ router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Respons
     certScope = { application_id: { $in: appIds } }
     payScope = { user_id: req.user!._id }
   } else if (!isStaff) {
-    // employee/consultant — legitimately organisation-scoped
-    appScope = { org_id: req.user!.org_id }
-    certScope = { org_id: req.user!.org_id }
-    payScope = { org_id: req.user!.org_id }
+    // employee/consultant/cb/lab/ib — organisation-scoped. An org-LESS user must
+    // NOT fall back to { org_id: undefined } (which matches every org-less record
+    // platform-wide); force a guaranteed no-match instead.
+    const orgScope: any = req.user!.org_id ? { org_id: req.user!.org_id } : { _id: { $in: [] } }
+    appScope = { ...orgScope }
+    certScope = { ...orgScope }
+    payScope = { ...orgScope }
   }
   // admin / super_admin: platform-wide (all scopes empty)
 
@@ -116,7 +135,7 @@ router.get('/overview', authenticate, wrap(async (req: AuthRequest, res: Respons
 router.get('/dashboard', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}
   if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
+    applyNonAdminOrgScope(req.user!, query)
   }
 
   const [total_applications, active_certifications, pending_payments_agg, expiring_certs, recent_audit] = await Promise.all([
@@ -172,7 +191,7 @@ router.get('/dashboard', authenticate, wrap(async (req: AuthRequest, res: Respon
 router.get('/compliance-score', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}
   if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
+    applyNonAdminOrgScope(req.user!, query)
   }
 
   const [totalCerts, activeCerts, totalDocs] = await Promise.all([
@@ -201,8 +220,10 @@ router.get('/compliance-score', authenticate, wrap(async (req: AuthRequest, res:
 router.get('/activity', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   const limit = Math.min(parseInt(req.query.limit as string || '20', 10), 100)
   const auditQuery: any = {}
-  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    auditQuery['meta.org_id'] = req.user!.org_id
+  const aRole = req.user!.role
+  if (aRole !== 'admin' && aRole !== 'super_admin') {
+    // Clients keep existing behavior (mobile); non-client org-less staff get a no-match.
+    auditQuery['meta.org_id'] = aRole === 'client' ? req.user!.org_id : (req.user!.org_id ?? new Types.ObjectId())
   }
 
   const logs = await AuditLog.find(auditQuery).sort({ ts: -1 }).limit(limit).lean()
@@ -219,7 +240,7 @@ router.get('/activity', authenticate, wrap(async (req: AuthRequest, res: Respons
 router.get('/action-required', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   const query: any = {}
   if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
+    applyNonAdminOrgScope(req.user!, query)
   }
 
   const [pendingApps, expiringCerts, pendingPayments] = await Promise.all([
@@ -242,7 +263,7 @@ router.get('/action-required/items', authenticate, wrap(async (req: AuthRequest,
   const category = req.query.category as string
   const query: any = {}
   if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
+    applyNonAdminOrgScope(req.user!, query)
   }
 
   let items: any[] = []

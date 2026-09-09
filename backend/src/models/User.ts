@@ -92,6 +92,15 @@ export interface IUser extends Document {
       consented_at?: Date;
       declined_at?: Date;
     };
+    // Internal staff acknowledgement of the Admin AI Assistant disclosure.
+    // Separate from `ai` (the consumer 5.1.1/5.1.2 consent): staff AI processes
+    // operational business data the staff member is authorized to see, not the
+    // staff member's own personal data. Absent ⇒ not yet acknowledged.
+    staff_ai?: {
+      acknowledged: boolean;
+      version: string;
+      acknowledged_at?: Date;
+    };
   };
 
   // Lifecycle
@@ -196,6 +205,13 @@ const UserSchema = new Schema<IUser>(
         version:      { type: String },
         consented_at: { type: Date },
         declined_at:  { type: Date },
+      },
+      // Internal Admin-AI disclosure acknowledgement (staff only). No default
+      // record; absence means not yet acknowledged.
+      staff_ai: {
+        acknowledged:    { type: Boolean, default: false },
+        version:         { type: String },
+        acknowledged_at: { type: Date },
       },
     },
 

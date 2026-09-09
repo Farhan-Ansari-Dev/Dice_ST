@@ -150,3 +150,87 @@ export function bodyHasProductText(req: AuthRequest): boolean {
     (v) => typeof v === 'string' && v.trim() !== '',
   )
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// Staff / Admin AI disclosure — DISTINCT from the consumer AI consent above.
+//
+// The Admin Assistant is internal business tooling that processes operational
+// data the staff member is already authorized to access — NOT the staff
+// member's own personal data being shared for the app's service. Apple's
+// consumer 5.1.1/5.1.2 consent model does not apply; instead staff acknowledge
+// a one-time internal disclosure (that the assistant sends the minimized
+// operational data they request to the configured AI provider). Reusing the
+// consumer `requireAiConsent` here would be both incorrect and would 403 admins
+// with no way to proceed.
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Version of the internal staff-AI disclosure. Bump on material change. */
+export const STAFF_AI_DISCLOSURE_VERSION = '1.0'
+
+export interface StaffAiDisclosureStatus {
+  acknowledged: boolean
+  version: string | null
+  acknowledged_at: Date | null
+  current_version: string
+  /** true only when acknowledged AND at the current disclosure version */
+  is_current: boolean
+}
+
+/** Thrown by the service layer when a staff user has not acknowledged the current disclosure → 403. */
+export class StaffAiDisclosureRequiredError extends Error {
+  readonly statusCode = 403
+  readonly code = 'staff_ai_disclosure_required'
+  constructor(message = 'Please review and acknowledge the Admin AI disclosure before continuing.') {
+    super(message)
+    this.name = 'StaffAiDisclosureRequiredError'
+  }
+}
+
+export async function getStaffAiDisclosure(userId: string): Promise<StaffAiDisclosureStatus> {
+  const u: any = await User.findById(userId).select('consents.staff_ai').lean()
+  const s = u?.consents?.staff_ai
+  const acknowledged = s?.acknowledged === true
+  const version: string | null = s?.version ?? null
+  return {
+    acknowledged,
+    version,
+    acknowledged_at: s?.acknowledged_at ?? null,
+    current_version: STAFF_AI_DISCLOSURE_VERSION,
+    is_current: acknowledged && version === STAFF_AI_DISCLOSURE_VERSION,
+  }
+}
+
+export async function hasCurrentStaffAiDisclosure(userId?: string | null): Promise<boolean> {
+  if (!userId) return false
+  return (await getStaffAiDisclosure(String(userId))).is_current
+}
+
+/** Record a staff user's acknowledgement of the current disclosure version. */
+export async function recordStaffAiDisclosure(userId: string): Promise<StaffAiDisclosureStatus> {
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        'consents.staff_ai.acknowledged': true,
+        'consents.staff_ai.version': STAFF_AI_DISCLOSURE_VERSION,
+        'consents.staff_ai.acknowledged_at': new Date(),
+      },
+    },
+  )
+  return getStaffAiDisclosure(userId)
+}
+
+/** Express middleware — 403 { error: 'staff_ai_disclosure_required' } unless acknowledged. */
+export async function requireStaffAiDisclosure(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (await hasCurrentStaffAiDisclosure(req.user?._id?.toString())) return next()
+    res.status(403).json({
+      success: false,
+      error: 'staff_ai_disclosure_required',
+      message: 'Please review and acknowledge the Admin AI disclosure before continuing.',
+      current_version: STAFF_AI_DISCLOSURE_VERSION,
+    })
+  } catch (e) {
+    next(e)
+  }
+}
