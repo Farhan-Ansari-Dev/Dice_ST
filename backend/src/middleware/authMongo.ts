@@ -33,6 +33,7 @@ interface JwtPayload {
   iat: number;
   exp: number;
   jti: string;          // unique token id (for revocation)
+  scope?: string;       // e.g. 'mfa_enroll' — a limited token that is NOT a full session
 }
 
 export async function authenticate(
@@ -49,6 +50,14 @@ export async function authenticate(
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: [JWT_ALGORITHM] }) as JwtPayload;
+
+    // A limited MFA-enrollment token is NOT a full session — it may only be used
+    // on the MFA enrollment endpoints (which accept it explicitly). Reject it
+    // everywhere else so it can never bypass MFA to reach protected routes.
+    if (payload.scope) {
+      res.status(401).json({ error: 'insufficient_scope', message: 'This token cannot access protected routes.' });
+      return;
+    }
 
     // Session revocation: a logged-out / rotated jti is rejected immediately.
     if (await isJtiDenylisted(payload.jti)) {
@@ -118,4 +127,25 @@ export function issueTokens(user: IUser): { accessToken: string; refreshToken: s
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET!, { expiresIn: '30m', algorithm: JWT_ALGORITHM });
   const refreshToken = jwt.sign({ sub: payload.sub, jti }, process.env.JWT_REFRESH_SECRET!, { expiresIn: '30d', algorithm: JWT_ALGORITHM });
   return { accessToken, refreshToken };
+}
+
+/**
+ * Issue a short-lived, limited-scope token that ONLY the MFA enrollment endpoints
+ * accept. Lets a privileged user who is required to have MFA but hasn't enrolled
+ * complete enrollment — without granting a full session and without bypassing MFA
+ * (authenticate() rejects any scoped token above).
+ */
+export function issueEnrollToken(user: IUser): string {
+  return jwt.sign(
+    { sub: (user._id as any).toString(), role: user.role, scope: 'mfa_enroll', jti: crypto.randomUUID() },
+    process.env.JWT_SECRET!,
+    { expiresIn: '15m', algorithm: JWT_ALGORITHM },
+  );
+}
+
+/** Verify a token that is specifically the MFA-enrollment scope. */
+export function verifyEnrollToken(token: string): { sub: string; role: string } {
+  const payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: [JWT_ALGORITHM] }) as JwtPayload;
+  if (payload.scope !== 'mfa_enroll') throw new Error('not_an_enroll_token');
+  return { sub: payload.sub, role: payload.role };
 }

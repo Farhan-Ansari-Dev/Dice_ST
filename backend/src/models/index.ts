@@ -12,6 +12,7 @@ export { Application, IApplication, ApplicationStatus } from './Application';
 export { Certification, ICertification, CertificationStatus } from './Certification';
 export { Document, IDocument } from './Document';
 export { DocumentVersion, IDocumentVersion } from './DocumentVersion';
+export { UploadTicket, IUploadTicket } from './UploadTicket';
 export { AuditLog, IAuditLog, AuditAction, audit } from './AuditLog';
 export { Workflow, IWorkflow } from './Workflow';
 export { Notification, INotification } from './Notification';

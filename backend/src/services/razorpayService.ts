@@ -1,5 +1,6 @@
 import Razorpay from 'razorpay'
 import crypto from 'crypto'
+import { Types } from 'mongoose'
 import { Payment } from '../models/Payment'
 import { Application } from '../models/Application'
 import { User } from '../models/User'
@@ -23,7 +24,40 @@ function razorpayClient(): Razorpay {
   return _razorpay
 }
 
+export class PaymentAmountError extends Error {}
+
 export const razorpayService = {
+  /**
+   * M5: create a Razorpay checkout order for an EXISTING, server-priced Payment
+   * (a staff quotation) owned by the requesting user. The amount is taken from
+   * the stored Payment.total_paise — the client NEVER supplies it. Resolves by
+   * paymentId or the latest pending payment for an application, both scoped to
+   * `userId`, and links the created order back to the Payment so capture
+   * reconciles. Prevents a customer from self-pricing an order.
+   */
+  async createCheckoutOrderForUser(input: { userId: string; paymentId?: string; applicationId?: string }): Promise<{ order: any; payment: any }> {
+    const base: any = { user_id: new Types.ObjectId(input.userId) }
+    let payment: any = null
+    if (input.paymentId && Types.ObjectId.isValid(input.paymentId)) {
+      payment = await Payment.findOne({ ...base, _id: new Types.ObjectId(input.paymentId) })
+    } else if (input.applicationId && Types.ObjectId.isValid(input.applicationId)) {
+      payment = await Payment.findOne({ ...base, application_id: new Types.ObjectId(input.applicationId), status: 'pending' }).sort({ created_at: -1 })
+    }
+    if (!payment) throw new PaymentAmountError('No payable quotation found for this request. A quotation must be raised before payment.')
+    if (payment.status !== 'pending') throw new PaymentAmountError('This payment is not awaiting payment.')
+    const amountPaise = Number(payment.total_paise)
+    if (!Number.isInteger(amountPaise) || amountPaise < 100) throw new PaymentAmountError('This quotation has no valid amount to charge.')
+
+    const order = await razorpayClient().orders.create({
+      amount: amountPaise,                                     // server-authoritative
+      currency: payment.currency || 'INR',
+      notes: { userId: input.userId, payment_id: String(payment._id), application_id: payment.application_id ? String(payment.application_id) : '' },
+    })
+    payment.razorpay_order_id = order.id
+    await payment.save()
+    return { order, payment }
+  },
+
   async createOrder(
     userId: string,
     applicationId: string | null,

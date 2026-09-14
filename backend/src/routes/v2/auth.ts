@@ -18,7 +18,8 @@ import { OAuth2Client } from 'google-auth-library';
 import { validate } from '../../middleware/validate';
 import { User, audit } from '../../models';
 import { serializeUser } from '../../utils/serializeUser';
-import { issueTokens } from '../../middleware/authMongo';
+import { issueTokens, issueEnrollToken } from '../../middleware/authMongo';
+import { isMfaMandatoryForUser, verifyLoginTotp } from '../../services/mfaService';
 import { denylistJti, isJtiDenylisted, remainingTtl } from '../../utils/tokenDenylist';
 import { sendEmail } from '../../services/notifications/email';
 import { logger } from '../../utils/logger';
@@ -71,6 +72,32 @@ function hashOTP(otp: string): string {
 // User payload shape lives in utils/serializeUser so /auth/* and /users/me
 // cannot drift apart. Local alias keeps existing call sites unchanged.
 const buildUserResponse = (user: any) => serializeUser(user);
+
+/**
+ * Second-factor gate applied AFTER the primary factor (email OTP / Google /
+ * Apple) authenticates the user, on EVERY login endpoint so no route bypasses MFA.
+ *   { ok:true }                         → issue full tokens
+ *   401 mfa_required / invalid_mfa      → user has MFA enabled; no/invalid code
+ *   403 mfa_enrollment_required (+token)→ MFA mandatory for this admin, not enrolled
+ * Ordinary users without MFA are unaffected (returns ok).
+ */
+async function mfaGate(user: any, totpCode?: string): Promise<{ ok: true } | { ok: false; status: number; body: any }> {
+  if (user.totp_enabled) {
+    const code = String(totpCode ?? '').trim();
+    if (!code) return { ok: false, status: 401, body: { error: 'mfa_required', message: 'Enter your authenticator code.' } };
+    if (!(await verifyLoginTotp(String(user._id), code))) {
+      return { ok: false, status: 401, body: { error: 'invalid_mfa', message: 'That authenticator code is not valid.' } };
+    }
+    return { ok: true };
+  }
+  if (await isMfaMandatoryForUser(user)) {
+    return {
+      ok: false, status: 403,
+      body: { error: 'mfa_enrollment_required', message: 'Multi-factor authentication must be set up before you can sign in.', enrollToken: issueEnrollToken(user) },
+    };
+  }
+  return { ok: true };
+}
 
 // ─── Sign in with Apple — identity-token verification ────────────
 // Native "Sign in with Apple" returns a signed JWT (identityToken). We verify it
@@ -134,10 +161,27 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
   const query = { email: email.toLowerCase() };
   let user = await User.findOne(query).select('+otp_hash +otp_expires_at +otp_attempts');
 
-  if (!user) {
-    if (req.body.is_admin_portal) {
-      return res.status(404).json({ error: 'not_found', message: 'No account found. Please contact an administrator.' });
+  // ── M3: anti-enumeration for the admin portal ───────────────────────────────
+  // Previously this returned 404 (unknown) vs 403 (exists, not staff) vs 200
+  // (staff) — a reliable oracle for which emails exist and which are privileged.
+  // Now the admin portal returns an IDENTICAL generic response in all cases; a
+  // code is actually issued only to an eligible staff account.
+  const ADMIN_PORTAL_ROLES = ['admin', 'super_admin', 'cb', 'employee', 'consultant', 'lab', 'ib'];
+  const adminGenericResponse = () =>
+    res.json({
+      success: true,
+      delivered_via: 'email',
+      delivery_confirmed: true,
+      message: 'If an eligible account exists for this email, a verification code has been sent.',
+    });
+
+  if (req.body.is_admin_portal) {
+    // Not an eligible staff account → do NOT create a user, do NOT send a code,
+    // but return the same response as the eligible path (no existence/role leak).
+    if (!user || !ADMIN_PORTAL_ROLES.includes(user.role)) {
+      return adminGenericResponse();
     }
+  } else if (!user) {
     user = await User.create({
       email: email?.toLowerCase(),
       phone,
@@ -145,14 +189,6 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
       role: 'client',
       otp_attempts: 0,
     });
-  } else {
-    // If user exists and it's from admin portal, they must be admin, super_admin, cb, or employee
-    if (req.body.is_admin_portal) {
-      const allowedRoles = ['admin', 'super_admin', 'cb', 'employee', 'consultant', 'lab', 'ib'];
-      if (!allowedRoles.includes(user.role)) {
-        return res.status(403).json({ error: 'forbidden', message: 'Unauthorized access. Only authorized staff can login here.' });
-      }
-    }
   }
 
   // Generate OTP
@@ -179,12 +215,17 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
   // Strictly gated: any other NODE_ENV (including an unset one) still 502s.
   const isDevelopment = process.env.NODE_ENV === 'development';
 
-  if (!delivered && !isDevelopment) {
+  // The admin portal must return a uniform response (M3) — never a 502 that would
+  // reveal an eligible account. Delivery failures are logged for ops instead.
+  if (!delivered && !isDevelopment && !req.body.is_admin_portal) {
     logger.error(`[auth/send-otp] delivery failed for ${email}`);
     return res.status(502).json({
       error: 'otp_delivery_failed',
       message: 'Unable to deliver OTP email right now. Please try again shortly.',
     });
+  }
+  if (!delivered && req.body.is_admin_portal) {
+    logger.error(`[auth/send-otp] admin OTP delivery failed for ${email}`);
   }
 
   if (isDevelopment) {
@@ -199,6 +240,12 @@ router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Reques
     notes: `OTP→email:${email}`,
     ip: req.ip,
   });
+
+  // Admin portal: always the identical generic body (M3) — an eligible vs
+  // ineligible email cannot be distinguished by the response.
+  if (req.body.is_admin_portal) {
+    return adminGenericResponse();
+  }
 
   return res.json({
     success: true,
@@ -250,6 +297,9 @@ router.post('/google', validate(googleSchema), async (req: Request, res: Respons
         }
         if (changed) await user.save();
       }
+
+      const gate = await mfaGate(user, req.body?.totp_code);
+      if (!gate.ok) return res.status(gate.status).json({ success: false, ...gate.body });
 
       const { accessToken, refreshToken } = issueTokens(user);
       await audit({ actor: user._id as any, resource_type: 'user', resource_id: user._id as any, action: 'logged_in', ip: req.ip, notes: 'google_oauth' });
@@ -348,6 +398,9 @@ router.post('/apple', validate(appleSchema), async (req: Request, res: Response)
       if (changed) await user.save();
     }
 
+    const gate = await mfaGate(user, req.body?.totp_code);
+    if (!gate.ok) return res.status(gate.status).json({ success: false, ...gate.body });
+
     const { accessToken, refreshToken } = issueTokens(user);
     await audit({ actor: user._id as any, resource_type: 'user', resource_id: user._id as any, action: 'logged_in', ip: req.ip, notes: 'apple_oauth' });
 
@@ -370,7 +423,10 @@ router.post('/verify-otp', verifyLimiter, validate(verifyOtpSchema), async (req:
   const query = { email: email.toLowerCase() };
   const user = await User.findOne(query).select('+otp_hash +otp_expires_at +otp_attempts');
 
-  if (!user) return res.status(401).json({ error: 'invalid_credentials' });
+  // M3: an unknown email returns the SAME response as a known account with no
+  // active/valid code (`otp_expired`), so verify-otp cannot be used to test
+  // whether an email is registered.
+  if (!user) return res.status(401).json({ error: 'otp_expired' });
 
   // ── App Review demo bypass ──────────────────────────────────────────────
   // Lets ONE allowlisted email sign in with a fixed OTP from env, so Apple's
@@ -404,7 +460,13 @@ router.post('/verify-otp', verifyLimiter, validate(verifyOtpSchema), async (req:
     return res.status(401).json({ error: 'invalid_otp' });
   }
 
-  // ✅ OTP valid — issue tokens and clear OTP state
+  // ✅ Primary factor valid — enforce the second factor BEFORE consuming the OTP,
+  // so a missing/invalid authenticator code lets the user retry (email OTP stays
+  // valid for its window) instead of burning it.
+  const gate = await mfaGate(user, req.body?.totp_code);
+  if (!gate.ok) return res.status(gate.status).json({ success: false, ...gate.body });
+
+  // ✅ Both factors satisfied — issue tokens and clear OTP state
   user.otp_hash = undefined;
   user.otp_expires_at = undefined;
   user.otp_attempts = 0;

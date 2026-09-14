@@ -30,6 +30,24 @@ const pick = (body: any, fields: string[]) => {
 }
 const isAdmin = (role?: string) => role === 'admin' || role === 'super_admin'
 
+/**
+ * M4 — tenant scope for employee-accessible, user-ID-based endpoints.
+ * Employees are ORG-CONFINED (own org only); admin/super_admin stay platform-wide.
+ * A user acting on their OWN record is always in scope. Returns a Mongo filter
+ * fragment enforced at the data layer:
+ *   • admin / super_admin       → {}                                  (no restriction)
+ *   • employee WITH org_id       → self OR same-org users
+ *   • employee WITHOUT org_id    → self only (fail closed — never `{org_id:undefined}`,
+ *     which Mongoose drops → matches every tenant)
+ *   • any other role reaching here → self only (fail closed)
+ */
+function userTenantScope(actor: { role?: string; org_id?: any; _id?: any }): Record<string, any> {
+  if (isAdmin(actor.role)) return {}
+  const or: any[] = [{ _id: actor._id }]
+  if (actor.role === 'employee' && actor.org_id) or.push({ org_id: actor.org_id })
+  return { $or: or }
+}
+
 router.get('/me', authenticate, wrap(async (req: AuthRequest, res: Response) => {
   res.json({ success: true, data: await serializeUser(req.user) });
 }))
@@ -342,12 +360,11 @@ router.delete('/me', authenticate, wrap(async (req: AuthRequest, res: Response) 
 }))
 
 router.get('/', authenticate, authorize(['admin','employee','super_admin']), wrap(async (req: AuthRequest, res: Response) => {
-  const query: any = {}
-  
-  if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-    query.org_id = req.user!.org_id
-  }
-  
+  // M4: employees see only their own org (fail closed for org-less employees —
+  // userTenantScope yields a never-widening filter instead of `{org_id:undefined}`
+  // which Mongoose drops → leaks every tenant). admin/super_admin → all.
+  const query: any = { ...userTenantScope(req.user!) }
+
   if (req.query.role) {
     query.role = req.query.role
   }
@@ -443,8 +460,11 @@ router.put('/:id', authenticate, authorize(['admin','employee','super_admin'], {
     updateData.role = req.body.role
   }
 
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
+  // M4: scope the mutation to the actor's tenant at the data boundary — an
+  // employee can only update a user in their own org (or themselves); a
+  // cross-tenant id matches nothing → 404 (no existence leak).
+  const user = await User.findOneAndUpdate(
+    { _id: req.params.id, ...userTenantScope(req.user!) },
     { ...updateData, updated_at: new Date() },
     { returnDocument: 'after', runValidators: true }
   ).select('-password_hash -otp_hash -totp_secret')
@@ -493,7 +513,8 @@ router.post('/:id/restore', authenticate, wrap(async (req: AuthRequest, res: Res
 // ═══════════════════════════════════════════════════════════════
 router.get('/:id/overview', authenticate, authorize(['admin', 'employee', 'super_admin']), wrap(async (req: AuthRequest, res: Response) => {
   const id = req.params.id
-  const user = await User.findById(id).lean()
+  // M4: an employee may only view a user in their own org (or themselves).
+  const user = await User.findOne({ _id: id, ...userTenantScope(req.user!) }).lean()
   if (!user) return sendError(res, 'Customer not found', 404)
 
   const appIds = await Application.find({ created_by: id }).distinct('_id')

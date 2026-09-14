@@ -9,6 +9,7 @@ import { Router, Response } from 'express';
 
 // Core v2 routes (fully MongoDB-backed)
 import authRoutes from './v2/auth';
+import mfaRoutes from './v2/mfa';
 import applicationsRoutes from './v2/applications';
 import documentsRoutes from './v2/documents';
 import notificationsRoutes from './v2/notifications';
@@ -52,6 +53,7 @@ const router = Router();
 
 // ── Core v2 routes (full Mongoose models) ─────────────────────────────────
 router.use('/auth', authRoutes);
+router.use('/mfa', mfaRoutes);
 router.use('/applications', applicationsRoutes);
 router.use('/products', productsRoutes);
 router.use('/leads', leadsRoutes);

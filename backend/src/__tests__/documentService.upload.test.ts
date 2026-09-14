@@ -46,8 +46,20 @@ describe('documentService.finalizeUpload', () => {
   const userId = new Types.ObjectId();
   let createdDocId: Types.ObjectId;
 
+  // H1: finalize now requires a server-issued upload transaction. Seed one that
+  // matches the key/user (and document, for versions) each test finalizes.
+  async function seedTicket(s3_key: string, opts: { document_id?: Types.ObjectId } = {}) {
+    const { UploadTicket } = await import('../models');
+    await UploadTicket.create({
+      s3_key, user_id: userId, org_id: orgId, document_id: opts.document_id,
+      doc_type: 'test_report', mime_type: 'application/pdf', size_bytes: 1, sha256: 'a'.repeat(64),
+      status: 'pending', expires_at: new Date(Date.now() + 15 * 60 * 1000),
+    });
+  }
+
   it('creates a new document + v1 without hitting the immutability guard', async () => {
     const { documentService } = await import('../services/documentService');
+    await seedTicket('orgs/x/docs/new/v1-report.pdf');
     const { document, version } = await documentService.finalizeUpload({
       org_id: orgId,
       user_id: userId,
@@ -81,6 +93,7 @@ describe('documentService.finalizeUpload', () => {
 
   it('records v2 for the same document (version history)', async () => {
     const { documentService } = await import('../services/documentService');
+    await seedTicket('orgs/x/docs/id/v2-report.pdf', { document_id: createdDocId });
     const { version } = await documentService.finalizeUpload({
       org_id: orgId,
       user_id: userId,
@@ -125,6 +138,7 @@ describe('documentService.finalizeUpload', () => {
     const { documentService } = await import('../services/documentService');
     const { GetObjectCommand } = await import('@aws-sdk/client-s3');
     const evil = 'evil".pdf\r\nX-Injected: 1';
+    await seedTicket('orgs/x/evil.pdf');
     const { document } = await documentService.finalizeUpload({
       org_id: orgId, user_id: userId, s3_key: 'orgs/x/evil.pdf',
       name: evil, doc_type: 'test_report', mime_type: 'application/pdf',

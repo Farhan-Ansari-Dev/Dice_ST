@@ -3,7 +3,7 @@ import { authenticate, AuthRequest } from '../../middleware/authMongo'
 import { authorize } from '../../middleware/authorize'
 import { Payment } from '../../models/Payment'
 import { User } from '../../models/User'
-import { razorpayService } from '../../services/razorpayService'
+import { razorpayService, PaymentAmountError } from '../../services/razorpayService'
 import { sendSuccess } from '../../utils/response'
 import { calculateQuotation } from '../../services/paymentService'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
@@ -63,28 +63,28 @@ router.post('/quotations', authenticate, authorize(['admin','super_admin','emplo
 }));
 
 router.post('/create-order', authenticate, wrap(async (req: AuthRequest, res: Response) => {
-  const { amount, currency, receipt } = req.body
-  
-  if (!amount || amount < 100) {
-    return res.status(400).json({ success: false, message: 'Minimum amount is 100 paise' })
-  }
+  // M5: the amount is NEVER taken from the client. It is derived server-side from
+  // an existing, server-priced quotation Payment owned by the caller (resolved by
+  // payment_id or application_id). Any client-supplied `amount` is ignored.
+  const { payment_id, application_id } = req.body
 
   try {
-    const result = await razorpayService.createOrder(
-      req.user!._id.toString(),
-      null, // applicationId not strictly needed for generic checkout
-      amount, // amount is already in paise
-      receipt || 'Standard Checkout'
-    )
-    
-    // The user's prompt expects { order_id, amount, currency }
+    const result = await razorpayService.createCheckoutOrderForUser({
+      userId: req.user!._id.toString(),
+      paymentId: payment_id,
+      applicationId: application_id,
+    })
     return res.json({
       success: true,
       order_id: result.order.id,
-      amount: result.order.amount,
-      currency: result.order.currency
+      amount: result.order.amount,       // authoritative amount from the quotation
+      currency: result.order.currency,
+      payment_id: String(result.payment._id),
     })
   } catch (error) {
+    if (error instanceof PaymentAmountError) {
+      return res.status(400).json({ success: false, error: 'no_payable_quotation', message: error.message })
+    }
     return res.status(500).json({ success: false, message: 'Failed to create order' })
   }
 }))

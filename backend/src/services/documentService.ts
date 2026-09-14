@@ -17,8 +17,41 @@ import crypto from 'crypto';
 import { Types } from 'mongoose';
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Document, DocumentVersion, audit } from '../models';
+import { Document, DocumentVersion, UploadTicket, audit } from '../models';
 import { logger } from '../utils/logger';
+
+/**
+ * Thrown when a finalize/version request references an S3 object or document the
+ * authenticated user was not allocated (H1 / M4-document). The route maps this to
+ * HTTP 403 — it is an authorization failure, not a bad request.
+ */
+export class UploadAuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UploadAuthorizationError';
+  }
+}
+
+// Upload-transaction lifetime; slightly longer than the presign URL TTL so a slow
+// legitimate upload can still be finalized. Expiry is enforced in code (not just
+// via the Mongo TTL index).
+const UPLOAD_TICKET_TTL_MS = (parseInt(process.env.AWS_S3_PRESIGNED_URL_EXPIRES ?? '900', 10) + 300) * 1000;
+
+/**
+ * Ownership-aware filter for a Document the caller may act on (M4-document).
+ * Mirrors the baseline `orgScope`: staff → any; org users → their org; org-less
+ * users → documents they uploaded. NEVER constructs `{ org_id: undefined }`
+ * (which Mongoose silently drops → matches every tenant).
+ */
+function documentScopeFilter(
+  documentId: Types.ObjectId,
+  opts: { is_staff?: boolean; user_id: Types.ObjectId; org_id?: Types.ObjectId },
+): Record<string, any> {
+  if (opts.is_staff) return { _id: documentId };
+  const ownership: any[] = [{ uploaded_by: opts.user_id }];
+  if (opts.org_id) ownership.push({ org_id: opts.org_id });
+  return { _id: documentId, $or: ownership };
+}
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION ?? 'ap-south-1',
@@ -40,6 +73,7 @@ function contentDisposition(disposition: 'inline' | 'attachment', filename: stri
 export interface PresignUploadInput {
   org_id: Types.ObjectId;
   user_id: Types.ObjectId;
+  is_staff?: boolean;            // staff operate platform-wide (mirrors orgScope)
   filename: string;
   mime_type: string;
   size_bytes: number;
@@ -56,13 +90,25 @@ export const documentService = {
     if (input.size_bytes > 100 * 1024 * 1024) {
       throw new Error('File too large (max 100 MB). Use multipart for larger files.');
     }
+    // M4-document: a new version may only be uploaded for a document the caller
+    // is authorized on — verify BEFORE issuing a URL/ticket (fail closed).
+    if (input.document_id) {
+      const authorized = await Document.exists(
+        documentScopeFilter(input.document_id, { is_staff: input.is_staff, user_id: input.user_id, org_id: input.org_id }),
+      );
+      if (!authorized) throw new UploadAuthorizationError('You are not authorized to add a version to this document.');
+    }
+
     const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
     const versionNum = input.document_id
       ? (await DocumentVersion.countDocuments({ document_id: input.document_id })) + 1
       : 1;
     // Admin/staff users have no Organization — store their uploads under 'platform'
     const orgSegment = input.org_id ? input.org_id.toString() : 'platform';
-    const s3_key = `orgs/${orgSegment}/docs/${input.document_id ?? 'new-' + crypto.randomUUID()}/v${versionNum}-${safeName}`;
+    // Random object token → the key is unguessable (defense-in-depth on top of the
+    // authoritative upload-ticket check at finalize; the key is never authorization).
+    const objectToken = crypto.randomBytes(9).toString('hex');
+    const s3_key = `orgs/${orgSegment}/docs/${input.document_id ?? 'new-' + crypto.randomUUID()}/v${versionNum}-${objectToken}-${safeName}`;
 
     // Phase 1: drop ContentLength + ServerSideEncryption only. Both become signed
     // request headers that a plain browser fetch(PUT) omits → SignatureDoesNotMatch
@@ -79,7 +125,23 @@ export const documentService = {
     });
     const url = await getSignedUrl(s3, cmd, { expiresIn: PRESIGN_TTL });
 
-    return { url, s3_key, expires_in: PRESIGN_TTL, version_number: versionNum };
+    // H1: record the upload transaction so finalize can prove this exact key was
+    // allocated to THIS user (and, for a version, THIS document). `_id` is the
+    // opaque upload_id the client may echo back at finalize.
+    const ticket = await UploadTicket.create({
+      s3_key,
+      user_id: input.user_id,
+      org_id: input.org_id,
+      document_id: input.document_id,
+      doc_type: input.doc_type,
+      mime_type: input.mime_type,
+      size_bytes: input.size_bytes,
+      sha256: input.sha256,
+      status: 'pending',
+      expires_at: new Date(Date.now() + UPLOAD_TICKET_TTL_MS),
+    });
+
+    return { url, s3_key, upload_id: String(ticket._id), expires_in: PRESIGN_TTL, version_number: versionNum };
   },
 
   /**
@@ -88,7 +150,9 @@ export const documentService = {
   async finalizeUpload(input: {
     org_id: Types.ObjectId;
     user_id: Types.ObjectId;
+    is_staff?: boolean;               // staff operate platform-wide (mirrors orgScope)
     s3_key: string;
+    upload_id?: string;               // opaque upload-transaction id from presign
     document_id?: Types.ObjectId;     // omit → create new logical document
     name: string;
     doc_type: string;
@@ -102,18 +166,53 @@ export const documentService = {
     ip?: string;
     user_agent?: string;
   }) {
+    // ── H1: authorize the S3 object against a server-side upload transaction ────
+    // The client is NEVER authoritative for the object's identity. finalize only
+    // succeeds if the presented key corresponds to an upload transaction the
+    // server allocated to THIS user (and, for a version, THIS document), consumed
+    // atomically to prevent replay. Fails CLOSED.
+    const ticketFilter: Record<string, any> = input.upload_id
+      ? { _id: Types.ObjectId.isValid(input.upload_id) ? new Types.ObjectId(input.upload_id) : null }
+      : { s3_key: input.s3_key, user_id: input.user_id, status: 'pending' };
+
+    const ticket = await UploadTicket.findOne(ticketFilter);
+    if (!ticket) throw new UploadAuthorizationError('No matching upload transaction for this object.');
+    if (!ticket.user_id || !ticket.user_id.equals(input.user_id)) {
+      throw new UploadAuthorizationError('This upload does not belong to you.');
+    }
+    if (ticket.s3_key !== input.s3_key) throw new UploadAuthorizationError('Upload key mismatch.');
+    if (ticket.status !== 'pending') throw new UploadAuthorizationError('This upload has already been finalized.');
+    if (ticket.expires_at && ticket.expires_at.getTime() < Date.now()) {
+      throw new UploadAuthorizationError('This upload has expired. Please upload again.');
+    }
+    const ticketDocId = ticket.document_id ? String(ticket.document_id) : undefined;
+    const reqDocId = input.document_id ? String(input.document_id) : undefined;
+    if (ticketDocId !== reqDocId) throw new UploadAuthorizationError('This upload was not allocated for that document.');
+
+    // Atomically consume — a replay/race finds no pending ticket.
+    const consumed = await UploadTicket.findOneAndUpdate(
+      { _id: ticket._id, status: 'pending' },
+      { $set: { status: 'consumed', consumed_at: new Date() } },
+      { new: true },
+    );
+    if (!consumed) throw new UploadAuthorizationError('This upload has already been finalized.');
+
+    // Server-recorded key is authoritative from here on (equal to input.s3_key,
+    // verified above) so nothing downstream trusts the client value.
+    const s3Key = ticket.s3_key;
+
     // Verify the file exists in S3 AND read its authoritative metadata. Never
     // trust the client's size/mime — take ContentLength/ContentType/ETag from S3.
     // Surface the underlying AWS error (AccessDenied / NoSuchKey / region mismatch)
     // instead of swallowing it behind a generic "not found" message.
     let head;
     try {
-      head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: input.s3_key }));
+      head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: s3Key }));
     } catch (e: any) {
       logger.error(
         `[documents.finalize] HeadObject failed ` +
         `name=${e?.name} code=${e?.Code ?? e?.code} httpStatusCode=${e?.$metadata?.httpStatusCode} ` +
-        `bucket=${BUCKET} key=${input.s3_key} region=${process.env.AWS_REGION ?? 'ap-south-1'} ` +
+        `bucket=${BUCKET} key=${s3Key} region=${process.env.AWS_REGION ?? 'ap-south-1'} ` +
         `message=${e?.message}`
       );
       throw new Error('S3 object not found — did client complete the upload?');
@@ -137,8 +236,12 @@ export const documentService = {
     let versionNumber = 1;
 
     if (!isNewDocument) {
-      const existing = await Document.findOne({ _id: documentId, org_id: input.org_id });
-      if (!existing) throw new Error('Document not found or access denied');
+      // M4-document: ownership-aware lookup (staff → any; else uploader/org).
+      // Never `{ org_id: undefined }`, which would collapse to match-by-id.
+      const existing = await Document.findOne(
+        documentScopeFilter(documentId, { is_staff: input.is_staff, user_id: input.user_id, org_id: input.org_id }),
+      );
+      if (!existing) throw new UploadAuthorizationError('Document not found or access denied');
       versionNumber = existing.version_count + 1;
     }
 
@@ -147,7 +250,7 @@ export const documentService = {
       document_id: documentId,
       version_number: versionNumber,
       s3_bucket: BUCKET,
-      s3_key: input.s3_key,
+      s3_key: s3Key,
       s3_region: process.env.AWS_REGION ?? 'ap-south-1',
       original_filename: input.name,
       mime_type: mimeType,
@@ -179,7 +282,7 @@ export const documentService = {
         resource_type: 'document',
         resource_id: documentId,
         action: 'document_replaced',
-        after: { version: versionNumber, s3_key: input.s3_key, sha256: input.sha256 },
+        after: { version: versionNumber, s3_key: s3Key, sha256: input.sha256 },
         ip: input.ip,
         user_agent: input.user_agent,
       });
@@ -205,7 +308,7 @@ export const documentService = {
         resource_type: 'document',
         resource_id: doc._id as Types.ObjectId,
         action: 'document_uploaded',
-        after: { name: doc.name, doc_type: doc.doc_type, s3_key: input.s3_key },
+        after: { name: doc.name, doc_type: doc.doc_type, s3_key: s3Key },
         ip: input.ip,
         user_agent: input.user_agent,
       });

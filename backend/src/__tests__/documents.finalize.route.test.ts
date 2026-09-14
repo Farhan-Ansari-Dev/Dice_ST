@@ -67,6 +67,17 @@ function adminToken() {
   return jwt.sign({ sub: adminId, role: 'admin', jti: 'test-' + Date.now() }, JWT_SECRET, { expiresIn: '15m' });
 }
 
+// H1: finalize now requires a server-issued upload transaction bound to the
+// caller. Seed one matching the key/user (and document, for versions).
+async function seedTicket(s3_key: string, document_id?: string) {
+  const { UploadTicket } = await import('../models');
+  await UploadTicket.create({
+    s3_key, user_id: adminId, document_id: document_id ? new mongoose.Types.ObjectId(document_id) : undefined,
+    doc_type: 'general', mime_type: 'application/pdf', size_bytes: 1, sha256: 'a'.repeat(64),
+    status: 'pending', expires_at: new Date(Date.now() + 15 * 60 * 1000),
+  });
+}
+
 const finalizeBody = {
   s3_key: 'orgs/platform/docs/new-x/v1-report.pdf',
   name: 'report.pdf',
@@ -78,6 +89,7 @@ const finalizeBody = {
 
 it('S3 HeadObject SUCCESS → 201 (new doc, admin with no org_id)', async () => {
   headObjectFails = false;
+  await seedTicket(finalizeBody.s3_key);
   const res = await request(app)
     .post('/api/v2/documents/finalize')
     .set('Authorization', `Bearer ${adminToken()}`)
@@ -94,6 +106,7 @@ it('S3 HeadObject SUCCESS → 201 (new doc, admin with no org_id)', async () => 
 
 it('S3 HeadObject FAILURE → 400 (reproduces the reported symptom)', async () => {
   headObjectFails = true;
+  await seedTicket('orgs/platform/docs/new-y/v1-report.pdf');
   const res = await request(app)
     .post('/api/v2/documents/finalize')
     .set('Authorization', `Bearer ${adminToken()}`)
@@ -115,6 +128,7 @@ it('rejects an invalid finalize body with 400 validation_error (server-side vali
 it('Replace Version: finalize with document_id creates v2 and repoints current_version_id', async () => {
   headObjectFails = false;
   // v1 — new document
+  await seedTicket('orgs/platform/docs/replace/v1.pdf');
   const v1 = await request(app)
     .post('/api/v2/documents/finalize')
     .set('Authorization', `Bearer ${adminToken()}`)
@@ -123,7 +137,8 @@ it('Replace Version: finalize with document_id creates v2 and repoints current_v
   const docId = v1.body.data.document._id;
   const v1VersionId = v1.body.data.version._id;
 
-  // v2 — replacement of the same document
+  // v2 — replacement of the same document (ticket bound to that document_id)
+  await seedTicket('orgs/platform/docs/replace/v2.pdf', docId);
   const v2 = await request(app)
     .post('/api/v2/documents/finalize')
     .set('Authorization', `Bearer ${adminToken()}`)

@@ -59,6 +59,14 @@
     "winston": "^3.13.0",
     "zod": "^3.23.8"
   },
+  "overrides": {
+    "ws": "8.21.3",
+    "engine.io": "6.6.10",
+    "socket.io-adapter": "2.5.8",
+    "socket.io-parser": "4.2.7",
+    "form-data": "4.0.6",
+    "undici": "7.29.1"
+  },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",

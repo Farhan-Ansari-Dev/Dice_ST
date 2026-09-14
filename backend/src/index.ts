@@ -23,6 +23,7 @@ import path from 'path';
 import { connectMongo, disconnectMongo, pingMongo } from './db/mongo';
 import routes from './routes/index';
 import { errorHandler } from './middleware/errorHandler';
+import { authenticateSocket, canJoinRoom, roomFor } from './middleware/socketAuth';
 import { logger } from './utils/logger';
 import { validateEnv } from './config/validateEnv';
 import { startBackgroundJobs } from './jobs';
@@ -77,16 +78,34 @@ async function main() {
     },
     transports: ['websocket', 'polling'],
   });
+  // H2: authenticate every socket at the handshake. Anonymous connections are
+  // rejected before any event handler runs (fail closed).
+  io.use(authenticateSocket);
+
   io.on('connection', (socket) => {
-    socket.on('join_org', (orgId: string) => socket.join(`org:${orgId}`));
-    socket.on('join_application', (appId: string) => socket.join(`app:${appId}`));
-    // Support chat: both the customer and staff join the ticket room so new
-    // messages, read receipts and typing indicators fan out in realtime.
-    socket.on('join_ticket', (ticketId: string) => socket.join(`ticket:${ticketId}`));
+    const user = socket.data.user;
+
+    // Each join is authorized SERVER-SIDE against the authenticated identity and
+    // the same ownership/role rules the REST routes use. Unauthorized joins never
+    // add the socket to the room. The optional ack reports allow/deny.
+    const ack = (cb: unknown, ok: boolean) => { if (typeof cb === 'function') (cb as (r: any) => void)({ ok }); };
+    const guardedJoin = async (kind: 'org' | 'app' | 'ticket', id: string, cb?: unknown) => {
+      if (await canJoinRoom(user, kind, id)) { socket.join(roomFor(kind, id)); ack(cb, true); }
+      else ack(cb, false);
+    };
+
+    socket.on('join_org', (orgId: string, cb?: unknown) => { void guardedJoin('org', orgId, cb); });
+    socket.on('join_application', (appId: string, cb?: unknown) => { void guardedJoin('app', appId, cb); });
+    // Support chat: customer + staff join the ticket room — only after server-side
+    // authorization (owner or staff).
+    socket.on('join_ticket', (ticketId: string, cb?: unknown) => { void guardedJoin('ticket', ticketId, cb); });
     socket.on('leave_ticket', (ticketId: string) => socket.leave(`ticket:${ticketId}`));
-    socket.on('ticket:typing', (payload: { ticketId: string; userId: string; name?: string }) => {
-      if (!payload?.ticketId) return;
-      socket.to(`ticket:${payload.ticketId}`).emit('ticket:typing', payload);
+    socket.on('ticket:typing', (payload: { ticketId: string; userId?: string; name?: string }) => {
+      // Only broadcast to a ticket room the socket has actually joined (authorized),
+      // and stamp the authenticated user id (never trust the client value).
+      const ticketId = payload?.ticketId;
+      if (!ticketId || !socket.rooms.has(`ticket:${ticketId}`)) return;
+      socket.to(`ticket:${ticketId}`).emit('ticket:typing', { ticketId, userId: String((user as any)?._id ?? ''), name: payload?.name });
     });
   });
   app.locals.io = io;
