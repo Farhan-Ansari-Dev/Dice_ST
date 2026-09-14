@@ -60,3 +60,7 @@ mobile-app/android/key.properties
 
 # Redis snapshot
 dump.rdb
+
+# Local dev MongoDB data (created by `npm run dev:db`)
+.local-db/
+**/.local-db/
