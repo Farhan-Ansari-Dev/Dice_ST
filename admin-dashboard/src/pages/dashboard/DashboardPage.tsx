@@ -8,6 +8,28 @@ import Button from '../../components/common/Button'
 import { formatCurrency, formatDate } from '../../utils/formatters'
 import apiClient from '../../services/apiClient'
 import { useAuthStore } from '../../store/authStore'
+import { useNavigate } from 'react-router-dom'
+
+// Friendly labels for audit actions shown in the activity feed.
+const ACTION_LABEL: Record<string, string> = {
+  logged_in: 'signed in',
+  logged_out: 'signed out',
+  created: 'created a record',
+  updated: 'updated their profile',
+  deleted: 'deleted a record',
+  document_uploaded: 'uploaded a document',
+  document_replaced: 'replaced a document',
+  status_changed: 'changed an application status',
+  cert_issued: 'was issued a certificate',
+  cert_revoked: 'had a certificate revoked',
+  payment_received: 'made a payment',
+  onboarding_completed: 'completed onboarding',
+  testing_started: 'started testing',
+  inspection_scheduled: 'scheduled an inspection',
+  renewal_created: 'created a renewal',
+  assigned: 'was assigned',
+}
+const actionLabel = (a?: string) => ACTION_LABEL[a ?? ''] ?? (a ?? '').replace(/_/g, ' ')
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
@@ -27,6 +49,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
     active_certifications: 0,
@@ -61,11 +84,13 @@ export default function DashboardPage() {
         setStats(statsRes.data.data)
         const apps = appsRes.data.data || []
         setRecentApplications(apps.slice(0, 5))
-        // Real recent activity from the audit log (replaces the hardcoded row).
+        // Real recent activity from the audit log — now with the actual actor's
+        // name (resolved server-side) and a click-through to their profile.
         setActivities((actRes.data.data || []).map((a: any) => ({
-          actor: (a.title || '').split(' ')[0] || 'System',
-          action: (a.title || '').split(' ').slice(1).join(' ') || a.type,
-          target: '',
+          actorId: a.actor_id ?? null,
+          actorName: a.actor_name || 'System',
+          actorRole: a.actor_role ?? null,
+          action: actionLabel(a.action ?? a.type),
           time: a.created_at ? new Date(a.created_at).toLocaleString() : '',
         })))
       } catch (err) {
@@ -278,21 +303,28 @@ export default function DashboardPage() {
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20 }}>
           <h3 style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 600, margin: '0 0 16px' }}>Activity Feed</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {activities.map((act, i) => (
-              <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: 16, position: 'relative' }}>
+            {activities.map((act, i) => {
+              const clickable = act.actorRole === 'client' && act.actorId
+              return (
+              <div
+                key={i}
+                onClick={clickable ? () => navigate(`/clients/${act.actorId}`) : undefined}
+                style={{ display: 'flex', gap: 12, paddingBottom: 16, position: 'relative', cursor: clickable ? 'pointer' : 'default' }}
+                title={clickable ? `Open ${act.actorName}'s profile` : undefined}
+              >
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                  <Avatar name={act.actor} size={28} />
+                  <Avatar name={act.actorName} size={28} />
                   {i < activities.length - 1 && <div style={{ width: 1, flex: 1, background: 'var(--border)', marginTop: 4 }} />}
                 </div>
                 <div style={{ flex: 1 }}>
                   <p style={{ color: 'var(--text-primary)', fontSize: 12, margin: '0 0 2px', lineHeight: 1.5 }}>
-                    <strong>{act.actor}</strong> {act.action}{' '}
-                    <span style={{ color: 'var(--accent-purple)' }}>{act.target}</span>
+                    <strong style={clickable ? { color: 'var(--accent-purple)' } : undefined}>{act.actorName}</strong> {act.action}
                   </p>
                   <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{act.time}</span>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>

@@ -192,6 +192,7 @@ export default function ClientsPage() {
                <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>No clients found.</td></tr>
             ) : filtered.map((client: any) => (
               <tr key={client._id} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.15s', opacity: client.deleted_at ? 0.5 : 1 }}
+                onClick={() => navigate(`/clients/${client._id}`)}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 <td style={{ padding: '14px 16px' }}>
@@ -231,7 +232,7 @@ export default function ClientsPage() {
                 </td>
                 <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 13, fontWeight: 400 }}>{client.open_applications_count ?? 0}</td>
                 <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 12 }}>{formatDate(client.updated_at)}</td>
-                <td style={{ padding: '14px 16px' }}>
+                <td style={{ padding: '14px 16px' }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <button onClick={() => navigate(`/clients/${client._id}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="View full profile">
                       <Eye size={14} />

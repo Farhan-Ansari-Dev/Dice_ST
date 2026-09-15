@@ -59,8 +59,10 @@ export default function ApplicationsPage() {
     _id: app._id,
     id: app.application_number,
     client: 'My Organization', // In a multi-tenant admin, this would be populated from org_id
-    type: app.cert_type,
-    product: app.product_id?.name || (app.product_status === 'pending_validation' ? 'Pending Validation' : 'Unknown Product'),
+    // Show a human label, never the internal MANUAL_REVIEW code.
+    type: app.cert_type === 'MANUAL_REVIEW' ? 'Certification application' : app.cert_type,
+    // Prefer the linked product; else the customer's typed product; never a bare code.
+    product: app.product_id?.name || app.manual_review?.original_product || (app.product_status === 'pending_validation' ? 'Product pending validation' : 'Unknown Product'),
     productArchived: !!app.product_id?.deleted_at,
     status: app.status,
     priority: app.priority || 'medium',

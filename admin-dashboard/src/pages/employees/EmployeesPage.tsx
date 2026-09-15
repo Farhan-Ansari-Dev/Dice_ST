@@ -66,7 +66,7 @@ export default function EmployeesPage() {
       queryClient.invalidateQueries({ queryKey: ['admin_users'] })
       toast.success('User removed')
     },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to remove user')
+    onError: (err: any) => toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to remove user')
   })
 
   const openEdit = (emp: any) => {
